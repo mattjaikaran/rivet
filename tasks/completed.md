@@ -170,3 +170,49 @@ inherits them. Served by the SwarmForge constraint-tools pattern in
   `check-file-length`, an undocumented rule module fails
   `check-rule-modules`, a leftover `- [x]` line fails `check-tracker`,
   and the full gate exits 1 with the violation visible.
+
+## Phase 2 - Context engine (complete 2026-09-09)
+
+Served by `prompts/prompt-05-context.md`. The `.rivet/` store persists
+command history, sessions, and fingerprints next to the app module; a
+LanceDB vector index answers `rivet explain`. Decisions recorded in
+`docs/pillars/04-persistent-context-engine.md`.
+
+### 2.1 Local store
+
+- `.rivet/` layout and SQLite schema (`commands`, `sessions`,
+  `fingerprints`) behind `rivet-cli/src/store/`; rusqlite (bundled) chosen
+  for portability and recorded in pillar 04; idempotent migration via
+  `PRAGMA user_version` (`617632e`).
+- `rivet history` lists recorded commands newest-first with exit status
+  and duration; invocations are recorded before they run and finished with
+  their status and duration (`617632e`, `68e93f9`).
+- `rivet session save` renders the current module context (parsed
+  blueprint, gauntlet config, diagnostics) as compact markdown and stores
+  it; `session resume` prints it back; `session list` names the saved
+  sessions (`617632e`).
+
+### 2.2 Semantic search
+
+- LanceDB behind `store::vector`: blueprint routes become deterministic
+  character-trigram chunks in `.rivet/lancedb`; an async test indexes two
+  routes and ranks the orders route first for an orders symptom
+  (`8dd08e7`).
+- `rivet explain "<symptom>"` embeds the symptom, finds the nearest route,
+  and reports the introducing commit via git pickaxe on the handler; the
+  module digest is stored per commit (`8dd08e7`).
+
+### 2.3 Docs
+
+- Pillar 04 rewritten with the store layout, crate choices (rusqlite
+  bundled; lancedb 0.38 requiring the `remote` feature), and the commands;
+  phase-2 ROADMAP checkboxes ticked; tracker section closed in this commit.
+
+### Verification
+
+- 106 tests green; fmt, clippy (`-D warnings`), and `cargo deny check`
+  clean.
+- End to end: two builds and a failing build appear in `rivet history`
+  with correct statuses; a session round-trips save -> resume; on a
+  two-commit fixture `rivet explain "orders failing"` names the commit
+  that added the orders route.

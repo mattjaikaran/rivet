@@ -58,11 +58,11 @@ scans the dependency tree. See `tasks/completed.md`.
 **Goal**: Persist state for humans and AI agents.
 
 **Deliverables**:
-- [ ] SQLite schema: commands, sessions, AST fingerprints.
-- [ ] LanceDB vector store for semantic code search.
-- [ ] `rivet session save` - dumps current state.
-- [ ] `rivet session resume` - restores state with compacted Markdown dump.
-- [ ] `rivet explain "bug"` - traces the commit that introduced a bug.
+- [x] SQLite schema: commands, sessions, AST fingerprints.
+- [x] LanceDB vector store for semantic code search.
+- [x] `rivet session save` - dumps current state.
+- [x] `rivet session resume` - restores state with compacted Markdown dump.
+- [x] `rivet explain "bug"` - traces the commit that introduced a bug.
 
 **Success Metric**: `rivet explain "TypeError on line 42"` returns a human-readable summary with the offending commit.
 

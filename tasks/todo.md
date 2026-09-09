@@ -104,40 +104,14 @@ parking-lot bullet stays open (generated-code test story, pillar 06).
 
 ---
 
-## Phase 2 - Context engine
+## Phase 2 - Context engine (complete 2026-09-09)
 
 Goal: persist state for humans and agents, per
 `docs/pillars/04-persistent-context-engine.md`.
 
-### 2.1 Local store
-
-- [ ] Define the `.rivet/` store layout and SQLite schema (`commands`,
-  `sessions`, AST fingerprints per commit); choose and document the SQLite
-  crate for `rivet-cli`.
-  Acceptance: the schema migration runs clean on an empty store and the choice
-  is recorded in the pillar doc.
-- [ ] `rivet history`: list recorded commands with exit status and timing.
-  Acceptance: two recorded builds appear in order with correct statuses.
-- [ ] `rivet session save`: dump current command context to compact markdown in
-  the store.
-  Acceptance: the saved session file round-trips and reads back as markdown.
-- [ ] `rivet session resume`: restore a saved session as compacted markdown.
-  Acceptance: resuming prints the same context the save produced.
-
-### 2.2 Semantic search
-
-- [ ] Stand up LanceDB behind a small abstraction and index parsed blueprints.
-  Acceptance: an index test searches a known chunk and ranks it first.
-- [ ] `rivet explain "<symptom>"`: vector search plus AST fingerprints and git
-  history to report the likely offending commit.
-  Acceptance: the command on a fixture returns the introducing commit with a
-  human-readable summary.
-
-### 2.3 Docs
-
-- [ ] Update `docs/pillars/04-persistent-context-engine.md` and ROADMAP
-  checkboxes as stores land.
-  Acceptance: shipped features map one-to-one to ticked roadmap items.
+All sections (2.1 store, 2.2 semantic search, 2.3 docs) are done; see
+`tasks/completed.md`. The phase-2 ROADMAP checkboxes are ticked and the
+SQLite/LanceDB choices are recorded in pillar 04.
 
 ---
 
