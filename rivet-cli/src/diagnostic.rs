@@ -4,21 +4,57 @@
 //! prints it to stderr as one JSON object so AI agents can act on it, and as a
 //! one-line human summary. The shape follows the Gauntlet error contract from
 //! the design docs (`docs/pillars/07-the-gauntlet.md`).
+//!
+//! Error-code ranges: the parser front end owns `E1xxx`, the generator and
+//! the Gauntlet own `E2xxx`. The Gauntlet rules (see
+//! [`crate::gauntlet`]) report `E2042`-`E2046`.
 
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
-/// Severity of a diagnostic. Phase 0 reports only blockers; warnings arrive
-/// with the Gauntlet, which will extend this enum.
+/// Severity of a diagnostic.
+///
+/// Phase 0 reported only blockers. The Gauntlet added warnings: a warning
+/// prints to stderr and lets the build continue, a blocker stops it. The
+/// `[gauntlet]` config maps rule outcomes to these severities, so the same
+/// enum deserializes from `rivet.toml`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
+    /// Report and continue.
+    Warning,
+    /// Stop the build with this finding.
     Blocker,
 }
 
 impl Severity {
     fn as_str(self) -> &'static str {
         match self {
+            Severity::Warning => "warning",
             Severity::Blocker => "blocker",
         }
+    }
+
+    /// Parse a config word. `rivet.toml` writes `warn`/`warning` or
+    /// `block`/`blocker`; anything else is an error naming the value.
+    pub fn from_config_word(word: &str) -> Result<Severity, String> {
+        match word {
+            "warn" | "warning" => Ok(Severity::Warning),
+            "block" | "blocker" => Ok(Severity::Blocker),
+            other => Err(format!(
+                "`{other}` is not a severity; use `warn` or `block`"
+            )),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Severity {
+    fn deserialize<D>(deserializer: D) -> Result<Severity, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let word = String::deserialize(deserializer)?;
+        Severity::from_config_word(&word).map_err(D::Error::custom)
     }
 }
 
@@ -38,9 +74,13 @@ pub struct Diagnostic {
 impl Diagnostic {
     /// Create a blocker with a stable error code.
     pub fn blocker(error_code: &str, message: impl Into<String>) -> Self {
+        Self::new(error_code, Severity::Blocker, message)
+    }
+
+    fn new(error_code: &str, severity: Severity, message: impl Into<String>) -> Self {
         Self {
             error_code: error_code.to_string(),
-            severity: Severity::Blocker,
+            severity,
             message: message.into(),
             file: None,
             line: None,
@@ -130,5 +170,45 @@ mod tests {
         assert_eq!(json["file"], "app.py");
         assert_eq!(json["line"], 12);
         assert_eq!(json["suggested_fix"], "add a return type annotation");
+    }
+
+    #[test]
+    fn warning_severity_serializes_in_the_payload() {
+        let diagnostic = Diagnostic {
+            error_code: "E2044".to_string(),
+            severity: Severity::Warning,
+            message: "helper is never called".to_string(),
+            file: None,
+            line: None,
+            column: None,
+            suggested_fix: None,
+            ast_path: None,
+        };
+        let json: Value = serde_json::from_str(&diagnostic.to_json()).expect("payload must parse");
+        assert_eq!(json["severity"], "warning");
+        assert_eq!(json["error_code"], "E2044");
+    }
+
+    #[test]
+    fn severity_parses_config_words() {
+        assert_eq!(Severity::from_config_word("warn"), Ok(Severity::Warning));
+        assert_eq!(Severity::from_config_word("warning"), Ok(Severity::Warning));
+        assert_eq!(Severity::from_config_word("block"), Ok(Severity::Blocker));
+        assert_eq!(Severity::from_config_word("blocker"), Ok(Severity::Blocker));
+        assert!(Severity::from_config_word("loud").is_err());
+    }
+
+    #[test]
+    fn severity_deserializes_from_toml_words() {
+        #[derive(serde::Deserialize)]
+        struct Holder {
+            severity: Severity,
+        }
+        let holder: Holder = toml::from_str(r#"severity = "warn""#).expect("word must parse");
+        assert_eq!(holder.severity, Severity::Warning);
+        let holder: Holder = toml::from_str(r#"severity = "blocker""#).expect("word must parse");
+        assert_eq!(holder.severity, Severity::Blocker);
+        let bad: Result<Holder, _> = toml::from_str(r#"severity = "loud""#);
+        assert!(bad.is_err());
     }
 }

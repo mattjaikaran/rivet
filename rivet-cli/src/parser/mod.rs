@@ -9,7 +9,7 @@
 //! parsing lives in the per-language modules.
 
 mod body;
-mod decorator;
+pub(crate) mod decorator;
 mod expr;
 pub mod python;
 mod signature;

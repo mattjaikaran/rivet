@@ -38,15 +38,68 @@
 
 use crate::diagnostic::Diagnostic;
 use crate::parser::{
-    NamedChildren, body, decorator, line_of, node_text, signature, types, validate,
+    NamedChildren, body, decorator, is_docstring, line_of, node_text, signature, types, validate,
 };
 use rivet_core::ir::{Expr, ResponseSpec, RouteDefinition, ServiceBlueprint, StructDefinition};
 use std::collections::HashMap;
 use std::path::Path;
 use tree_sitter::{Node, Parser};
 
-/// Parse `app.py` from disk.
-pub fn parse_python_file(path: &Path) -> Result<ServiceBlueprint, Diagnostic> {
+/// What a top-level module item is, for the Gauntlet rules.
+///
+/// Items that the grammar accepts but the engine does not translate
+/// (runtime classes, foreign-decorated functions, stray statements) get a
+/// declaration so the type-strictness rule can reject them instead of
+/// dropping them silently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeclKind {
+    /// An `api`-decorated function that becomes a route.
+    Route,
+    /// An undecorated top-level function.
+    Helper,
+    /// A decorated function whose decorators are not `api.*`.
+    Foreign,
+    /// An annotation-only class that parses as a DTO.
+    Dto,
+    /// A class with methods or values, or a decorated class.
+    RuntimeClass,
+    /// A module-level statement that is neither an import nor a docstring.
+    Other,
+}
+
+/// One top-level declaration, kept so rules can map a syntax-tree node back
+/// to its meaning without re-analyzing the module.
+#[derive(Debug, Clone)]
+pub struct Declaration {
+    pub kind: DeclKind,
+    pub name: String,
+    /// 1-based source line, for diagnostics.
+    pub line: usize,
+    /// Byte offset of the node in the source text; nodes and declarations
+    /// line up by this key.
+    pub start_byte: usize,
+}
+
+/// A parsed DSL module: the syntax tree the Gauntlet rules inspect plus the
+/// blueprint the generator consumes.
+pub struct ParsedModule {
+    pub file: String,
+    /// The source text, owned so rules can slice it by byte range.
+    pub source: String,
+    pub tree: tree_sitter::Tree,
+    pub blueprint: ServiceBlueprint,
+    pub decls: Vec<Declaration>,
+}
+
+impl ParsedModule {
+    /// The declaration for the top-level node starting at `start_byte`.
+    pub fn decl_at(&self, start_byte: usize) -> Option<&Declaration> {
+        self.decls.iter().find(|decl| decl.start_byte == start_byte)
+    }
+}
+
+/// Parse `app.py` from disk into a module the Gauntlet can audit.
+pub fn parse_python_file(path: &Path) -> Result<ParsedModule, Diagnostic> {
     let source = std::fs::read_to_string(path).map_err(|err| {
         Diagnostic::blocker("E1008", format!("failed to read {}: {err}", path.display()))
     })?;
@@ -54,19 +107,20 @@ pub fn parse_python_file(path: &Path) -> Result<ServiceBlueprint, Diagnostic> {
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "app".to_string());
-    parse_python_source(&source, &name, &path.display().to_string())
+    parse_python_module(&source, &name, &path.display().to_string())
 }
 
 /// Parse a Python DSL module from a source string.
 ///
 /// `module_name` becomes the blueprint name (and later the generated package
 /// name); `file_label` is used in diagnostics and may be a path or `<source>`.
-pub fn parse_python_source(
+pub fn parse_python_module(
     source: &str,
     module_name: &str,
     file_label: &str,
-) -> Result<ServiceBlueprint, Diagnostic> {
+) -> Result<ParsedModule, Diagnostic> {
     let mut parser = Parser::new();
+
     parser
         .set_language(&tree_sitter_python::LANGUAGE.into())
         .map_err(|_| Diagnostic::blocker("E1008", "failed to load the Python grammar"))?;
@@ -84,6 +138,10 @@ pub fn parse_python_source(
             ),
         );
     }
+
+    // Pass zero: classify every top-level item so the Gauntlet rules can
+    // find routes, helpers, classes, and stray statements by byte offset.
+    let decls = collect_declarations(root, source, file_label)?;
 
     // Pass one: collect DTO candidate classes in declaration order.
     let mut dtos: HashMap<String, StructDefinition> = HashMap::new();
@@ -131,12 +189,140 @@ pub fn parse_python_source(
     }
     let structs = validate::reachable_structs(&routes, &dtos, &dto_order, file_label)?;
 
-    Ok(ServiceBlueprint {
-        name: module_name.to_string(),
-        routes,
-        structs,
-        dependencies: vec![],
+    Ok(ParsedModule {
+        file: file_label.to_string(),
+        source: source.to_string(),
+        tree,
+        blueprint: ServiceBlueprint {
+            name: module_name.to_string(),
+            routes,
+            structs,
+            dependencies: vec![],
+        },
+        decls,
     })
+}
+
+/// Classify the top-level items of a parsed module, in source order.
+///
+/// Imports, module docstrings, and comments are inert and produce no
+/// declaration. Everything else becomes one, so the type-strictness rule
+/// can reject module constructs that the engine cannot translate.
+fn collect_declarations(
+    root: Node<'_>,
+    source: &str,
+    file: &str,
+) -> Result<Vec<Declaration>, Diagnostic> {
+    let mut decls = Vec::new();
+    for child in root.named_children_all() {
+        let start_byte = child.start_byte();
+        let line = line_of(&child);
+        let declaration = match child.kind() {
+            "class_definition" => match types::parse_dto_class(&child, source, file)? {
+                Some(dto) => Some(Declaration {
+                    kind: DeclKind::Dto,
+                    name: dto.name,
+                    line,
+                    start_byte,
+                }),
+                None => Some(Declaration {
+                    kind: DeclKind::RuntimeClass,
+                    name: decl_name(&child, source).to_string(),
+                    line,
+                    start_byte,
+                }),
+            },
+            "function_definition" => Some(Declaration {
+                kind: DeclKind::Helper,
+                name: decl_name(&child, source).to_string(),
+                line,
+                start_byte,
+            }),
+            "decorated_definition" => classify_decorated(&child, source, file, start_byte, line)?,
+            // Imports, comments, and the module docstring are inert.
+            "import_statement"
+            | "import_from_statement"
+            | "future_import_statement"
+            | "comment" => None,
+            "expression_statement" if is_docstring(&child) => None,
+            "expression_statement" => Some(Declaration {
+                kind: DeclKind::Other,
+                name: "statement".to_string(),
+                line,
+                start_byte,
+            }),
+            _ => Some(Declaration {
+                kind: DeclKind::Other,
+                name: child.kind().to_string(),
+                line,
+                start_byte,
+            }),
+        };
+        if let Some(declaration) = declaration {
+            decls.push(declaration);
+        }
+    }
+    Ok(decls)
+}
+
+/// Classify a decorated definition: a route when an `api` decorator is
+/// present, otherwise a foreign (untranslatable) definition. Decorated
+/// classes count as runtime classes.
+fn classify_decorated(
+    node: &Node<'_>,
+    source: &str,
+    file: &str,
+    start_byte: usize,
+    line: usize,
+) -> Result<Option<Declaration>, Diagnostic> {
+    let mut api_decorators = 0usize;
+    let mut inner_function: Option<String> = None;
+    let mut inner_class: Option<String> = None;
+    for child in node.named_children_all() {
+        match child.kind() {
+            "function_definition" => {
+                inner_function = Some(decl_name(&child, source).to_string());
+            }
+            "class_definition" => {
+                inner_class = Some(decl_name(&child, source).to_string());
+            }
+            "decorator" => {
+                if decorator::parse_api_decorator(&child, source, file)?.is_some() {
+                    api_decorators += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    if let Some(name) = inner_function {
+        let kind = if api_decorators > 0 {
+            DeclKind::Route
+        } else {
+            DeclKind::Foreign
+        };
+        Ok(Some(Declaration {
+            kind,
+            name,
+            line,
+            start_byte,
+        }))
+    } else if let Some(name) = inner_class {
+        Ok(Some(Declaration {
+            kind: DeclKind::RuntimeClass,
+            name,
+            line,
+            start_byte,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+/// The identifier a class or function definition declares.
+fn decl_name<'a>(node: &Node<'_>, source: &'a str) -> &'a str {
+    node.child_by_field_name("name")
+        .map(|name| node_text(&name, source))
+        .unwrap_or("?")
 }
 
 /// Parse a route candidate. Returns `None` when the definition carries no
@@ -256,10 +442,10 @@ fn first_error(node: Node<'_>) -> Option<Node<'_>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rivet_core::ir::{Expr, HttpMethod, RequestSpec, TypeRef};
+    use rivet_core::ir::{Expr, HttpMethod, RequestSpec, ServiceBlueprint, TypeRef};
 
     fn parse(source: &str) -> Result<ServiceBlueprint, Diagnostic> {
-        parse_python_source(source, "app", "app.py")
+        parse_python_module(source, "app", "app.py").map(|module| module.blueprint)
     }
 
     const ECHO: &str = r#"
@@ -469,5 +655,74 @@ def vectors(request: Payload) -> dict:
         )
         .expect_err("must fail");
         assert_eq!(diagnostic.error_code, "E1003");
+    }
+
+    #[test]
+    fn classifies_top_level_declarations() {
+        let source = r#"
+"""Module docstring."""
+from rivet import api
+
+class Order:
+    sku: str
+
+class OrderService:
+    def create(self) -> None:
+        pass
+
+def helper(value: int) -> int:
+    return value
+
+@api.post("/orders", stories=["US-1"])
+def create_order(request: Order) -> Order:
+    return request
+
+@cache
+def cached() -> dict:
+    return {}
+
+PRICE = 10
+"#;
+        let module = parse_python_module(source, "app", "app.py").expect("parse");
+        let kinds: Vec<(DeclKind, String)> = module
+            .decls
+            .iter()
+            .map(|decl| (decl.kind, decl.name.clone()))
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                (DeclKind::Dto, "Order".to_string()),
+                (DeclKind::RuntimeClass, "OrderService".to_string()),
+                (DeclKind::Helper, "helper".to_string()),
+                (DeclKind::Route, "create_order".to_string()),
+                (DeclKind::Foreign, "cached".to_string()),
+                (DeclKind::Other, "statement".to_string()),
+            ]
+        );
+        assert!(
+            module
+                .decls
+                .iter()
+                .all(|decl| module.decl_at(decl.start_byte).is_some())
+        );
+    }
+
+    #[test]
+    fn declarations_preserve_source_order_lines() {
+        let source = r#"
+@api.get("/a")
+def a() -> dict:
+    return {}
+
+def helper() -> None:
+    pass
+"#;
+        let module = parse_python_module(source, "app", "app.py").expect("parse");
+        assert_eq!(module.decls.len(), 2);
+        assert_eq!(module.decls[0].kind, DeclKind::Route);
+        assert_eq!(module.decls[0].line, 2);
+        assert_eq!(module.decls[1].kind, DeclKind::Helper);
+        assert_eq!(module.decls[1].line, 6);
     }
 }

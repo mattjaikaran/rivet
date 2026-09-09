@@ -4,7 +4,7 @@ This is the smallest possible app to test the transpiler.
 """
 from rivet import api
 
-@api.get("/ping")
+@api.get("/ping", stories=["US-001"])
 def ping() -> dict:
     """
     A simple health check endpoint.
@@ -12,7 +12,7 @@ def ping() -> dict:
     """
     return {"status": "pong"}
 
-@api.post("/echo", stories=["US-001"])
+@api.post("/echo", stories=["US-002"])
 def echo(request: dict) -> dict:
     """
     Echoes back the request body.

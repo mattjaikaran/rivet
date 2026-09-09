@@ -11,12 +11,17 @@ architecture = "monolith"
 [environments]
 development = { host = "127.0.0.1", port = 3000, log_level = "debug" }
 
-# The Gauntlet lands in the next phase and enforces these at compile time.
+# The Gauntlet enforces these rules at compile time, before code generation.
 [gauntlet]
-max_complexity = 8
+max_complexity = 8            # E2042: cyclomatic complexity limit
+stories_required = true       # E2045: every route needs a story ID
+strict_type_checking = true   # E2046: the module must translate whole
+duplicate_code = "blocker"    # E2043 outcome: warn or block
+dead_code = "warning"         # E2044 outcome: warn or block
+
+# Audit knobs for the quality index phase; not enforced by this build yet.
 min_test_coverage = 80.0
 surviving_mutants_allowed = 0
-strict_type_checking = true
 
 # Rust-native features, in the order later phases implement them.
 [rust_native_features]

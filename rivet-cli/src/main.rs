@@ -3,13 +3,15 @@
 //!
 //! Every command reports failures as structured, machine-readable JSON on
 //! stderr (see [`diagnostic::Diagnostic`]) so agents and humans see the same
-//! error.
+//! error. A command may return several diagnostics at once — the Gauntlet
+//! emits one per finding — so the CLI prints every line before failing.
 
 #![allow(clippy::result_large_err)] // Diagnostics are self-contained JSON payloads
 
 mod commands;
 mod config;
 mod diagnostic;
+mod gauntlet;
 mod parser;
 mod transpiler;
 
@@ -43,9 +45,11 @@ fn main() -> ExitCode {
 
     match result {
         Ok(()) => ExitCode::SUCCESS,
-        Err(diagnostic) => {
-            eprintln!("{}", diagnostic.to_json());
-            eprintln!("{}", diagnostic.summary());
+        Err(diagnostics) => {
+            for diagnostic in diagnostics {
+                eprintln!("{}", diagnostic.to_json());
+                eprintln!("{}", diagnostic.summary());
+            }
             ExitCode::FAILURE
         }
     }

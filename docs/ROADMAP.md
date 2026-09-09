@@ -33,14 +33,18 @@ standalone binary.
 ## Phase 1: The Gauntlet (Weeks 3-4)
 
 **Goal**: Enforce strict quality at compile time.
-
 **Deliverables**:
-- [ ] Complexity Walker (CC < 8) - fails build if exceeded.
-- [ ] Type Checker (0 `any`/`unknown`) - rejects dynamic types.
-- [ ] Duplicate Code Detector (AST hashing) - blocks redundant code.
-- [ ] Mutation Tester (`cargo-mutants` integration) - requires 100% survival.
+- [x] Complexity Walker (CC < 8) - fails build if exceeded.
+- [x] Type Checker (0 accidental any/unknown) - rejects dynamic types
+  outside the documented JSON boundary.
+- [x] Duplicate Code Detector (AST hashing) - blocks redundant code.
+- [x] Story gate and dead-code rules (pillar 05) - every route tagged.
+- [ ] Mutation Tester (`cargo-mutants` integration) - requires 100%
+  survival; blocked on the generated-code test story (see task 1.3).
 
-**Success Metric**: A PR with "bad" code (CC > 8) fails the build with a machine-readable JSON error.
+**Status**: Rules ship as `rivet-cli/src/gauntlet/` (`E2042`-`E2046`),
+configured through `rivet.toml` `[gauntlet]`. `rivet audit` and the CI
+gauntlet job land with the audit and CI tasks.
 
 ---
 
