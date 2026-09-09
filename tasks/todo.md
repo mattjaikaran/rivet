@@ -48,7 +48,7 @@ A task is done when all of the following hold:
 | 0 - Spike | weeks 1-2 | pipeline proof | `prompts/prompt-00..03` (done) |
 | 1 - The Gauntlet | weeks 3-4 | 05, 06, 07 | `prompts/prompt-04-gauntlet.md` (done) |
 | 2 - Context engine | weeks 5-6 | 04 | `prompts/prompt-05-context.md` (done) |
-| 3 - MCP & agentic CLI | weeks 7-8 | 09 | `prompts/prompt-06-mcp.md` (to author) |
+| 3 - MCP & agentic CLI | weeks 7-8 | 09 | `prompts/prompt-06-mcp.md` (done) |
 | 4 - Ecosystem & multi-service | weeks 9-10 | 01, 02, 03 | `prompts/prompt-07-ecosystem.md` (to author) |
 | 5 - WASM & mobile | weeks 11-12 | 08 | `prompts/prompt-08-wasm-mobile.md` (to author) |
 
