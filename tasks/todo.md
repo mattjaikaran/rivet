@@ -46,7 +46,7 @@ A task is done when all of the following hold:
 | Phase | Roadmap | Pillars | Seed prompt |
 | :--- | :--- | :--- | :--- |
 | 0 - Spike | weeks 1-2 | pipeline proof | `prompts/prompt-00..03` (done) |
-| 1 - The Gauntlet | weeks 3-4 | 05, 06, 07 | `prompts/prompt-04-gauntlet.md` (to author) |
+| 1 - The Gauntlet | weeks 3-4 | 05, 06, 07 | `prompts/prompt-04-gauntlet.md` (done) |
 | 2 - Context engine | weeks 5-6 | 04 | `prompts/prompt-05-context.md` (to author) |
 | 3 - MCP & agentic CLI | weeks 7-8 | 09 | `prompts/prompt-06-mcp.md` (to author) |
 | 4 - Ecosystem & multi-service | weeks 9-10 | 01, 02, 03 | `prompts/prompt-07-ecosystem.md` (to author) |
@@ -84,44 +84,8 @@ the feature is actually implemented, so the config never over-claims.
 Goal: enforce strict quality at compile time, per `docs/pillars/07-the-gauntlet.md`,
 `docs/pillars/06-matt-quality-index.md`, and `docs/pillars/05-story-to-code-traceability.md`.
 
-### 1.1 Foundation
-
-- [ ] Author `prompts/prompt-04-gauntlet.md` in the prompts 00-03 format and
-  draft its checklist into this section.
-  Acceptance: the prompt doc exists, and every task below traces to it or to a
-  pillar.
-- [ ] Define the Gauntlet rule interface: one small module per rule under
-  `rivet-cli/src/gauntlet/` (severity model, rule trait, structured JSON
-  output), mirroring the parser layout.
-  Acceptance: a rule can be registered and its findings serialize to the
-  agentic-JSON diagnostic shape; unit tests cover the harness.
-- [ ] Wire the Gauntlet between parse and generate in
-  `rivet-cli/src/commands/build.rs`; failures reuse the `Diagnostic` JSON path.
-  Acceptance: a module that violates a rule fails `rivet build` with JSON on
-  stderr and no crate written.
-
-### 1.2 Rules
-
-- [ ] Cyclomatic complexity walker over DSL handler bodies and DTO classes,
-  failing above `rivet.toml` `[gauntlet] max_complexity`.
-  Acceptance: a synthetic handler with complexity 9 fails with an
-  `E2042`-style diagnostic carrying `ast_path`; the `examples/basic` handlers
-  pass.
-- [ ] Duplicate-code detector (AST hashing over the parsed module).
-  Acceptance: two byte-identical handlers produce one finding naming both
-  locations and the build blocks per severity.
-- [ ] Dead-code rule for the DSL: unused helper functions and unreferenced DTOs
-  are rejected or reported per the severity model.
-  Acceptance: an unused helper in a module triggers the configured outcome and
-  a test locks the behavior.
-- [ ] Story-to-code gate (pillar 05): every public route carries a story ID
-  unless the project config opts out.
-  Acceptance: a route without `stories=[...]` fails with a fix suggestion;
-  `examples/basic/app.py` passes the default gate.
-- [ ] Type-strictness rule closing the remaining gaps the parser leaves to the
-  IR, with the contract documented.
-  Acceptance: each accepted dynamic shape is listed in the rule doc; anything
-  outside it fails with a code the Gauntlet owns.
+Sections 1.1 (foundation) and 1.2 (rules) are complete; see
+`tasks/completed.md`.
 
 ### 1.3 The MQI (Matt Quality Index)
 

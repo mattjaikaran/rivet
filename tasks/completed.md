@@ -57,3 +57,50 @@ Commits: `dd8920f` (foundation) and `77fe374` (feature).
   `cargo fmt --check` clean.
 - Live spike verified from the compiled binary: `GET /ping` returns
   `{"status":"pong"}` and `POST /echo` echoes the JSON body.
+
+## Phase 1 - The Gauntlet (foundation and rules, 2026-09-09)
+
+Served by `prompts/prompt-04-gauntlet.md`. Sections 1.1 and 1.2 are done;
+the audit (1.3) and CI (1.4) tasks remain in `tasks/todo.md`.
+Commit: `3e09b54`.
+
+### 1.1 Foundation
+
+- Authored `prompts/prompt-04-gauntlet.md` in the prompts 00-03 format;
+  every 1.1-1.4 task traces to it (`3e09b54`).
+- Defined the Gauntlet rule interface under `rivet-cli/src/gauntlet/`: one
+  module per rule, a severity model (blocker/warning), a `Rule` trait, and
+  findings that serialize to the agentic-JSON diagnostic shape; unit tests
+  cover the harness (`3e09b54`).
+- Wired the Gauntlet between parse and generate in `commands/build.rs`;
+  blockers return on the `Diagnostic` JSON path with no crate written, and
+  warnings print while the build continues (`3e09b54`).
+
+### 1.2 Rules
+
+- Cyclomatic complexity walker over DSL handler bodies and DTO classes,
+  failing above `rivet.toml` `[gauntlet] max_complexity`: a synthetic
+  handler with score 10 fails with `E2042` and an `ast_path` naming the
+  crossing decision; the `examples/basic` handlers pass (`3e09b54`).
+- Duplicate-code detector over handler implementation fingerprints: two
+  byte-identical handlers produce one `E2043` finding naming both
+  locations and the build blocks by severity (`3e09b54`).
+- Dead-code rule for helpers and DTOs: an unused helper triggers the
+  configured outcome (`E2044`, warning by default, `block` overridable)
+  and tests lock the behavior (`3e09b54`).
+- Story-to-code gate (pillar 05): a route without `stories=[...]` fails
+  with `E2045` and a fix suggestion; the example passes the default gate
+  (`3e09b54`).
+- Type-strictness rule closing the module-level gaps the parser leaves to
+  the IR: runtime classes, foreign decorators, and stray statements fail
+  with `E2046`; the accepted dynamic shapes are listed in the rule doc
+  (`3e09b54`).
+
+### Verification
+
+- 62 tests green; `cargo clippy -- -D warnings` and `cargo fmt --check`
+  clean (`3e09b54`).
+- End to end: `rivet build examples/basic/app.py` passes the gate, the
+  binary answers `GET /ping` and `POST /echo`, a storyless route exits 1
+  with JSON on stderr and no crate written, and a dead-code warning prints
+  JSON while the build succeeds (`3e09b54`).
