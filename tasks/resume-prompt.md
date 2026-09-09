@@ -156,6 +156,25 @@ in the same commit.
   each subagent a role, explicit file paths, and its acceptance criteria;
   never use a subagent to make design decisions. Subagents do not run gates —
   you run fmt, clippy, and tests once over the union of changed files.
+- **Be token efficient.** Keep reads surgical (offset/limit, one concern per
+  read); delegate wide exploration to subagents; never re-read files you
+  already hold.
+- **Reject bad code, not just failing tests.** Do not land placeholders,
+  stubs, TODO-shims, speculative abstractions, duplicated logic, dead code,
+  or invented facts. Push back with evidence when a plan hides risk or grows
+  the API surface without need; fix at the source instead of papering over
+  the symptom. A change that is not an improvement is a regression.
+- **Follow the existing conventions.** One pattern per concern; never start
+  a second convention beside an existing one. Match the error-code, module,
+  diagnostic, and naming idioms already in the tree.
+- **Keep code modular and files small.** One responsibility per module and
+  function; stay under the self-check file-length ceilings (300 lines for
+  Gauntlet rule modules, 400 for constraint tools) and keep normal source
+  files well below those limits.
+- **Use Rust best practices.** Prefer idiomatic ownership and borrowing over
+  clones; small, fallible, single-purpose functions; `Result` with
+  structured errors, never panics in library paths; no `unsafe` without a
+  comment explaining why it is sound.
 - **Route long cargo output through `rtk`** (`rtk cargo test --workspace`,
   `rtk cargo clippy -- -D warnings`) to save context.
 - **Make multiple focused commits**, one concern each; push when the work is
