@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  rust-checks:
+    name: Rust Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          
+      - name: Cache Dependencies
+        uses: swatinem/rust-cache@v2
+      
+      - name: Format Check
+        run: cargo fmt --all -- --check
+      
+      - name: Clippy (Lints)
+        run: cargo clippy -- -D warnings
+      
+      - name: Run Tests
+        run: cargo test --workspace
+
+  gauntlet-check:
+    name: Rivet Gauntlet (Future Integration)
+    runs-on: ubuntu-latest
+    needs: rust-checks
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build Rivet CLI (Placeholder)
+        run: cargo build --bin rivet --release
+      
+      - name: Run Audit (MQI)
+        run: |
+          # In v1, this will enforce the Gauntlet.
+          # For Phase 0, we just verify the binary exists.
+          ./target/release/rivet --version

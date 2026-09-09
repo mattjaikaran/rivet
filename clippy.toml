@@ -1,0 +1,13 @@
+# Enforces the core Gauntlet metrics at the Rust level too
+too_many_arguments_threshold = 5
+too_many_lines_threshold = 500
+cognitive_complexity_threshold = 8
+# Type complexity
+type_complexity_threshold = 10
+# Disallow unwrap (forces proper error handling)
+disallowed-methods = [
+    "std::option::Option::unwrap",
+    "std::result::Result::unwrap",
+    "std::option::Option::expect",
+    "std::result::Result::expect",
+]

@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 18 (with pgvector) - default
+  postgres:
+    image: postgres:18-alpine
+    container_name: rivet-postgres
+    environment:
+      POSTGRES_USER: rivet
+      POSTGRES_PASSWORD: rivet
+      POSTGRES_DB: rivet_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    command: >
+      postgres -c shared_preload_libraries=pgvector
+    profiles:
+      - dev
+      - full
+
+  # Redis for caching and background queues
+  redis:
+    image: redis:7-alpine
+    container_name: rivet-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    profiles:
+      - dev
+      - full
+
+  # Local LanceDB (vector DB) - runs as a sidecar
+  lancedb:
+    image: lance/lance:latest
+    container_name: rivet-lancedb
+    ports:
+      - "50051:50051"
+    volumes:
+      - lance_data:/data
+    environment:
+      - LANCE_DB_PATH=/data
+    profiles:
+      - full
+
+  # The Rivet application (built from the local context)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rivet-app
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://rivet:rivet@postgres:5432/rivet_dev
+      REDIS_URL: redis://redis:6379
+      LANCE_DB_URI: http://lancedb:50051
+    volumes:
+      - ./:/app
+    depends_on:
+      - postgres
+      - redis
+    profiles:
+      - full
+
+volumes:
+  pg_data:
+  redis_data:
+  lance_data:
