@@ -1,0 +1,11 @@
+.git
+.gitignore
+target
+generated
+*.log
+.env
+.env.*
+.github
+docs
+prompts
+examples

@@ -1,26 +1,26 @@
+# Example Rivet project configuration.
+# `rivet build` reads this file from the directory that contains app.py.
+# Unknown sections are ignored, so this file can grow ahead of the engine.
+
 [project]
 name = "my-api"
 version = "0.1.0"
 description = "A Rivet-powered API"
-architecture = "multi-service"   # Options: monolith, multi-service, microservices
-default_postgres_version = "18"  # We support 16, 17, 18, and beta 19
+architecture = "monolith"
 
+[environments]
+development = { host = "127.0.0.1", port = 3000, log_level = "debug" }
+
+# The Gauntlet lands in the next phase and enforces these at compile time.
 [gauntlet]
 max_complexity = 8
 min_test_coverage = 80.0
 surviving_mutants_allowed = 0
-strict_type_checking = true      # Enforces 0 `any`/`unknown`
+strict_type_checking = true
 
-[git]
-strategy = "pr"                  # Options: direct, pr, worktree
-auto_commit_message_template = "feat: {ticket_id} - {description}"
-
-[environments]
-development = { host = "localhost", port = 3000, log_level = "debug" }
-staging = { host = "staging.example.com", port = 8080, log_level = "info" }
-production = { host = "0.0.0.0", port = 80, log_level = "warn" }
-
-[features]
-# Future flags for Phase 4 & 5
-enable_admin_panel = false
-enable_wasm_export = false
+# Rust-native features, in the order later phases implement them.
+[rust_native_features]
+zero_copy_deserialization = false   # planned: borrowed &str bodies
+raii_connections = false            # planned: connection pooling + RAII
+compile_time_rbac = false           # planned: typestate auth layers
+const_generics = false              # planned: List[T, N] fixed-size arrays

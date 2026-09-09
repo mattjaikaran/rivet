@@ -1,48 +1,81 @@
-# Rivet · The Structural API Framework
+# Rivet
 
-[![License: MIT/Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue.svg)](LICENSE)
-[![MQI](https://img.shields.io/badge/MQI-A%2B-brightgreen)]()
-[![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange)](https://www.rust-lang.org/)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+**Rivet** is a next-generation API framework: you write your API in a Python
+DSL and the Rivet CLI transpiles it into a fast, memory-safe Rust server built
+on [axum](https://github.com/tokio-rs/axum).
 
-**Rivet** is a next-generation API framework that combines the ergonomics of Python (Django/FastAPI) and TypeScript (NestJS) with the raw speed, memory safety, and concurrency of Rust.
+The project is in early development. The phase-0 spike is working end to end:
+`rivet build` parses a Python module, validates it, and compiles a runnable
+Rust binary. The long-term design lives in [`docs/`](docs/ARCHITECTURE.md) and
+the roadmap in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
-**It is built for the AI era.** You write business logic in a Python/TS DSL. The **Rivet CLI** parses your code, enforces strict architectural "Gauntlets" (complexity < 8, 0 dead code, 0 surviving mutants), and transpiles it to a blazing-fast, multi-threaded Rust binary.
+## Status
 
----
+Pre-alpha. One milestone is complete: the [phase-0
+spike](docs/phase-0-spike.md) — a working transpilation pipeline for a
+documented subset of the DSL.
 
-## Why Rivet?
-
-| Feature | Description |
-| :--- | :--- |
-| 🦀 **Rust Runtime, Polyglot Surface** | Zero-cost abstractions, no GIL, true parallelism. Write in Python/TS, run as Rust. |
-| 🤖 **Agent-Native** | Built-in MCP (Model Context Protocol) server and a local Vector DB (LanceDB) so AI agents understand your codebase semantically. |
-| 🏗️ **Compile-Time Architecture** | Hexagonal architecture, IoC, and RBAC are enforced at compile time—not runtime. If it compiles, it's secure. |
-| 🧪 **The Gauntlet** | Enforces Cyclomatic Complexity < 8, 0 `any`/`unknown` types, 0 duplicate code, and 100% mutation survival. No AI slop. |
-| 📱 **Mobile Ready** | Generate native Kotlin (Android), Swift (iOS), and React Native SDKs from your Rust core via UniFFI. |
-| 🌊 **WASM First** | Compile your entire API to `wasm32-wasi` for sub-millisecond cold starts on Cloudflare Workers or Fermyon Spin. |
-| 🧠 **Super CLI** | Slash-commands for agents: `/plan`, `/fix`, `/trace`. Live TUI dashboard with request logging. |
-| 🔒 **Strict by Default** | Zero `any`/`unknown` types. Type safety is enforced at the DSL level. Configurable to be less strict, but default is rigid. |
-
----
-
-## Quick Start (Vision)
+## Try it
 
 ```bash
-# Install the CLI
-cargo install rivet-cli
+# Build the CLI
+cargo build --release --bin rivet
 
-# Create a new project
-rivet new my-api --arch multi-service
+# Transpile the example app and compile the generated Rust server
+./target/release/rivet build examples/basic/app.py
 
-# Write a route in Python DSL (app.py)
-@api.post("/orders", stories=["US-123"])
-def create_order(request: OrderCreate) -> OrderResponse:
-    # Your business logic here
-    return OrderResponse(status="ok")
+# Run it
+./examples/basic/generated/target/release/basic
 
-# Run the Gauntlet & transpile to Rust
-rivet build --release
+# In another shell
+curl localhost:3000/ping
+# {"status":"pong"}
 
-# Run the native binary
-./target/release/my-api
+curl -X POST localhost:3000/echo \
+  -H 'Content-Type: application/json' \
+  -d '{"hello":"world"}'
+# {"echo":{"hello":"world"}}
+```
+
+The example app is a plain Python file:
+
+```python
+from rivet import api
+
+@api.get("/ping")
+def ping() -> dict:
+    return {"status": "pong"}
+
+@api.post("/echo", stories=["US-001"])
+def echo(request: dict) -> dict:
+    return {"echo": request}
+```
+
+## What phase 0 transpiles
+
+- `@api.get|post|put|delete|patch|options|head(path, stories=[...])` routes
+- handler signatures with type hints: one optional JSON-body parameter
+  (`dict`, a DTO, or a primitive) and a return annotation (`dict`,
+  primitives, or `-> None`)
+- annotation-only DTO classes (`class OrderCreate: sku: str`)
+- handler bodies that return literals, request values, or a single DTO
+  constructor
+
+Anything outside the subset fails the build with a structured, machine-readable
+JSON error instead of a silent mistranslation. Full Python semantics are the
+goal of later phases; see [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+## Repository layout
+
+| Path | Purpose |
+| :--- | :--- |
+| `rivet-core/` | The IR and shared types for the pipeline |
+| `rivet-cli/` | The `rivet` CLI: parser, generator, build command |
+| `examples/basic/` | The smoke-test app used by phase 0 |
+| `docs/` | Architecture, roadmap, and the nine pillars |
+| `prompts/` | The phase-by-phase build prompts that scaffolded this repo |
+
+## License
+
+Licensed under either of [Apache-2.0](LICENSE-APACHE) or
+[MIT](LICENSE-MIT) at your option.

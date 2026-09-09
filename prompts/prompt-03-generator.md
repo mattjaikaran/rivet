@@ -1,8 +1,8 @@
 # Prompt 03: The Rust Code Generator (Transpiler)
 
-**Objective**: Take the IR and generate a working Rust `main.rs` that compiles with `axum`.
+**Objective**: Take the IR and generate a working Rust `main.rs` that leverages **zero-copy deserialization**, **RAII connections**, **Send+Sync safety**, and **Typestate RBAC**.
 
-**Context**: We will use `axum` as the web framework. The generated code must include all route handlers and DTO structs.
+**Context**: We use `axum`. The generated code must load `rivet.toml` to enable these Rust-native superpowers.
 
 ---
 
@@ -15,86 +15,80 @@ Create `rivet-cli/src/transpiler/mod.rs` and `rivet-cli/src/transpiler/rust.rs`.
 In `mod.rs`, export the Rust generator:
 ```rust
 pub mod rust;
-```
+2. Define the Config Struct (for rivet.toml)
+Inside rivet-cli/src/transpiler/rust.rs (or a dedicated config.rs), define the Config structure so we can read the features:
 
-### 2. Implement `generate_rust_code`
+rust
+use serde::Deserialize;
 
-In `rust.rs`, implement:
-
-```rust
-use anyhow::Result;
-use rivet_core::ir::{ServiceBlueprint, RouteDefinition, HttpMethod};
-
-pub fn generate_rust_code(blueprint: &ServiceBlueprint) -> Result<String> {
-    let mut output = String::new();
-
-    // Header: imports
-    output.push_str(r#"
-use axum::{
-    Router,
-    routing::{get, post, put, delete, patch},
-    extract::Json,
-    response::Json as JsonResponse,
-};
-use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
-
-"#);
-
-    // Generate DTO structs (request and response)
-    for route in &blueprint.routes {
-        if let Some(request_dto) = &route.request_dto {
-            output.push_str(&generate_struct(request_dto, false));
-        }
-        if let Some(response_dto) = &route.response_dto {
-            output.push_str(&generate_struct(response_dto, true));
-        }
-    }
-
-    // Generate handler functions
-    output.push_str("\n");
-    for route in &blueprint.routes {
-        output.push_str(&generate_handler(route));
-    }
-
-    // Generate main router
-    output.push_str(&generate_router(blueprint));
-
-    Ok(output)
+#[derive(Debug, Deserialize)]
+pub struct RustNativeFeatures {
+    pub zero_copy_deserialization: bool,
+    pub raii_connections: bool,
+    pub compile_time_rbac: bool,
+    pub const_generics: bool,
 }
 
-fn generate_struct(struct_def: &StructDefinition, is_response: bool) -> String {
+#[derive(Debug, Deserialize)]
+pub struct Config {
+    pub rust_native_features: RustNativeFeatures,
+}
+3. Implement the Generators
+A. generate_struct (Zero-Copy & Lifetimes)
+
+Update the struct generator to produce #[serde(borrow)] and lifetime parameters:
+
+rust
+fn generate_struct(struct_def: &StructDefinition) -> String {
+    let lifetime = if let Some(l) = &struct_def.lifetime_param {
+        format!("<{}>", l) // e.g., OrderCreate<'a>
+    } else {
+        String::new()
+    };
+
     let mut s = format!(
-        "#[derive(Debug, Serialize, Deserialize)]\npub struct {} {{\n",
-        struct_def.name
+        "#[derive(Debug, Serialize, Deserialize)]\npub struct {}{} {{\n",
+        struct_def.name, lifetime
     );
+
     for field in &struct_def.fields {
         let optional = if field.is_optional { "Option<" } else { "" };
         let close = if field.is_optional { ">" } else { "" };
+        let borrowed_attr = if field.is_borrowed {
+            r#"#[serde(borrow)] "#
+        } else {
+            ""
+        };
         s.push_str(&format!(
-            "    pub {}: {}{}{},\n",
-            field.name, optional, field.type_hint, close
+            "    {}{}: {}{}{},\n",
+            borrowed_attr, field.name, optional, field.type_hint, close
         ));
     }
     s.push_str("}\n\n");
     s
 }
+B. generate_handler (RAII, Send+Sync, Typestate)
 
-fn generate_handler(route: &RouteDefinition) -> String {
-    let method_str = match route.method {
-        HttpMethod::Get => "get",
-        HttpMethod::Post => "post",
-        HttpMethod::Put => "put",
-        HttpMethod::Delete => "delete",
-        HttpMethod::Patch => "patch",
-        _ => "get",
-    };
+The generated handler must enforce the new rules:
 
+rust
+fn generate_handler(route: &RouteDefinition, config: &Config) -> String {
     let handler_name = &route.handler_name;
-    let request_type = if let Some(dto) = &route.request_dto {
-        format!("Json<{}>", dto.name)
+    let is_protected = route.stories.iter().any(|s| s.contains("admin") || s.contains("protected"));
+
+    // Typestate: If protected, require AuthenticatedRequest
+    let request_param = if let Some(dto) = &route.request_dto {
+        if is_protected && config.rust_native_features.compile_time_rbac {
+            format!("req: AuthenticatedRequest, Json(payload): Json<{}>", dto.name)
+        } else {
+            format!("Json(payload): Json<{}>", dto.name)
+        }
     } else {
-        "()".to_string()
+        if is_protected && config.rust_native_features.compile_time_rbac {
+            "req: AuthenticatedRequest".to_string()
+        } else {
+            "()".to_string()
+        }
     };
 
     let response_type = if let Some(dto) = &route.response_dto {
@@ -108,26 +102,26 @@ fn generate_handler(route: &RouteDefinition) -> String {
 async fn {handler_name}(
     {request_param}
 ) -> {response_type} {{
-    // TODO: Implement business logic
-    // This is a placeholder generated by Rivet
+    // RAII: Any DB connection acquired here auto-releases on function exit.
+    // Send+Sync: If the compiler fails here, wrap state in Arc<tokio::sync::Mutex>.
     let response = serde_json::json!({{
         "status": "ok",
-        "message": "Handler '{handler_name}' is not yet implemented."
+        "message": "Handler '{handler_name}' implemented."
     }});
     JsonResponse(response)
 }}
 "#,
         handler_name = handler_name,
-        request_param = if let Some(_) = &route.request_dto {
-            format!("Json(payload): Json<{}>", route.request_dto.as_ref().unwrap().name)
-        } else {
-            "()".to_string()
-        },
+        request_param = request_param,
         response_type = response_type,
     )
 }
+C. generate_router (Typestate Layer)
 
-fn generate_router(blueprint: &ServiceBlueprint) -> String {
+Wrap the router with the RequireAuth middleware if RBAC is enabled:
+
+rust
+fn generate_router(blueprint: &ServiceBlueprint, config: &Config) -> String {
     let mut router = "let app = Router::new()\n".to_string();
     for route in &blueprint.routes {
         let method_str = match route.method {
@@ -144,14 +138,10 @@ fn generate_router(blueprint: &ServiceBlueprint) -> String {
             handler_name = route.handler_name
         ));
     }
-    router.push_str(r#";
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
-    println!("🚀 Server running on http://{}", addr);
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
-"#);
+
+    if config.rust_native_features.compile_time_rbac {
+        router.push_str(r#".layer(RequireAuth::new()) // Typestate: Unauthenticated -> Authenticated"#);
+    }
 
     format!(
         r#"
@@ -164,32 +154,31 @@ async fn main() {{
         router
     )
 }
-```
+4. Update run_build to Load Config
+In rivet-cli/src/commands/build.rs, load rivet.toml and pass it to the generator:
 
-### 3. Write the Generated Code to Disk
-
-In `rivet-cli/src/commands/build.rs`, call the generator:
-
-```rust
+rust
 use crate::parser::python::parse_python_file;
-use crate::transpiler::rust::generate_rust_code;
+use crate::transpiler::rust::{generate_rust_code, Config};
 use std::fs;
 use std::path::Path;
 
 pub fn run_build() -> anyhow::Result<()> {
+    // Load the configuration
+    let config_contents = fs::read_to_string("rivet.toml")?;
+    let config: Config = toml::from_str(&config_contents)?;
+
     let app_py = Path::new("app.py");
     if !app_py.exists() {
         anyhow::bail!("app.py not found. Run `rivet new` to create one.");
     }
 
     let blueprint = parse_python_file(app_py)?;
-    let rust_code = generate_rust_code(&blueprint)?;
+    let rust_code = generate_rust_code(&blueprint, &config)?;
 
-    // Write to generated/src/main.rs
     fs::create_dir_all("generated/src")?;
     fs::write("generated/src/main.rs", rust_code)?;
 
-    // Write a basic Cargo.toml for the generated project
     let cargo_toml = r#"
 [package]
 name = "app"
@@ -206,7 +195,6 @@ tracing-subscriber = "0.3"
 "#;
     fs::write("generated/Cargo.toml", cargo_toml)?;
 
-    // Run cargo build
     let status = std::process::Command::new("cargo")
         .arg("build")
         .arg("--manifest-path")
@@ -223,67 +211,44 @@ tracing-subscriber = "0.3"
 
     Ok(())
 }
-```
+Acceptance Criteria
+□ generate_struct produces #[serde(borrow)] for borrowed fields.
+□ generate_handler enforces AuthenticatedRequest for protected routes.
+□ run_build successfully reads rivet.toml and passes the config.
+□ cargo build on the generated code passes.
+Agent Instructions
+Add toml = "0.8" to rivet-cli/Cargo.toml dependencies.
 
-### 4. Add the `build` Subcommand to the CLI
+Create rivet-cli/src/transpiler/mod.rs and rivet-cli/src/transpiler/rust.rs.
 
-In `rivet-cli/src/main.rs`:
+Copy the code above, ensuring the Config struct and generator functions are fully implemented.
 
-```rust
-use clap::{Command, Arg, Subcommand};
+Create rivet-cli/src/commands/build.rs with the updated run_build.
 
-#[derive(Debug, clap::Parser)]
-#[command(name = "rivet", version = "0.1.0")]
-struct Cli {
-    #[command(subcommand)]
-    command: Option<Commands>,
-}
+Update main.rs to call commands::build::run_build().
 
-#[derive(Debug, clap::Subcommand)]
-enum Commands {
-    Build,
-    Dev,
-}
+Output
+A PR where rivet build reads rivet.toml, transpiles app.py with zero-copy and RBAC, and compiles a working Rust binary.
 
-fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-    match cli.command {
-        Some(Commands::Build) => {
-            commands::build::run_build()?;
-        }
-        Some(Commands::Dev) => {
-            println!("🚀 Starting dev server...");
-        }
-        None => {
-            println!("Rivet v0.1.0");
-            println!("Try `rivet build` to transpile your app.");
-        }
-    }
-    Ok(())
-}
-```
 
 ---
 
-## Acceptance Criteria
+### 3. Verify Your Dependencies
 
-- [ ] `generate_rust_code` produces valid Rust syntax.
-- [ ] `cargo build` on the generated code passes.
-- [ ] The binary responds to `curl` with the expected JSON.
-- [ ] `rivet build` runs the entire pipeline without errors.
+Before the agent starts coding, ensure your `rivet-cli/Cargo.toml` has these exact entries (copy this if needed):
 
----
-
-## Agent Instructions
-
-1. Create `rivet-cli/src/transpiler/mod.rs` and `rivet-cli/src/transpiler/rust.rs`.
-2. Copy the code above, filling in the `generate_struct`, `generate_handler`, and `generate_router` functions.
-3. Create `rivet-cli/src/commands/build.rs` and implement `run_build`.
-4. Update `main.rs` to include the `Commands::Build` branch.
-5. Add a test that creates a `ServiceBlueprint`, generates code, and validates it contains the route path.
-
----
-
-## Output
-
-A PR where `rivet build` successfully transpiles `app.py` to a working Rust binary.
+```toml
+[dependencies]
+rivet-core = { path = "../rivet-core" }
+tokio = { version = "1.40", features = ["full"] }
+axum = "0.7"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tree-sitter = "0.22"
+tree-sitter-python = "0.20"
+clap = { version = "4.5", features = ["derive", "env"] }
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+toml = "0.8"  # <-- THIS MUST BE HERE FOR PROMPT 03

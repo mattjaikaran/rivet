@@ -9,10 +9,9 @@
 *.rmeta
 
 # Generated code (the transpiled Rust server)
-/generated/
-/generated-*/
+generated/
 
-# Local context engine (SQLite + LanceDB)
+# Local context engine (SQLite + LanceDB), future phases
 /.rivet/
 *.db
 *.db-wal

@@ -1,58 +1,34 @@
-# Multi-stage build for Rivet CLI and the generated services
+# Multi-stage build for the Rivet CLI.
 
-# Stage 1: Builder
-FROM rust:1.81-alpine AS builder
+# Stage 1: builder
+FROM rust:1.94-alpine AS builder
 
-# Install dependencies for compiling Rust and PostgreSQL development headers
-RUN apk add --no-cache \
-    musl-dev \
-    pkgconfig \
-    openssl-dev \
-    libpq-dev \
-    build-base \
-    git \
-    ca-certificates
+# Toolchain and headers for compiling C dependencies (tree-sitter).
+RUN apk add --no-cache build-base pkgconfig ca-certificates
 
 WORKDIR /workspace
 
-# Cache dependencies (Cargo.toml + Cargo.lock)
+# Cache dependency compilation: manifests first, then a stub binary, then the
+# real sources.
 COPY Cargo.toml Cargo.lock ./
 COPY rivet-core/Cargo.toml rivet-core/
 COPY rivet-cli/Cargo.toml rivet-cli/
+RUN mkdir -p rivet-core/src rivet-cli/src \
+    && touch rivet-core/src/lib.rs \
+    && printf 'fn main() {}\n' > rivet-cli/src/main.rs \
+    && cargo build --release --bin rivet \
+    && rm -rf rivet-core/src rivet-cli/src
 
-# Create a dummy main.rs to cache dependency compilation
-RUN mkdir -p rivet-core/src && echo "fn main() {}" > rivet-core/src/lib.rs
-RUN mkdir -p rivet-cli/src && echo "fn main() { println!(\"Hello\"); }" > rivet-cli/src/main.rs
-RUN cargo build --release --bin rivet
-RUN rm -rf rivet-core/src rivet-cli/src
-
-# Copy actual source code
-COPY rivet-core/src ./rivet-core/src
-COPY rivet-cli/src ./rivet-cli/src
-
-# Build the actual binary
+COPY rivet-core/src rivet-core/src
+COPY rivet-cli/src rivet-cli/src
 RUN cargo build --release --bin rivet
 
-# Stage 2: Runner
-FROM alpine:3.20 AS runner
+# Stage 2: runtime
+FROM alpine:3.21
 
-# Install runtime dependencies (PostgreSQL client, SSL, and CA certificates)
-RUN apk add --no-cache \
-    ca-certificates \
-    openssl \
-    libpq \
-    curl
+RUN apk add --no-cache ca-certificates
 
-WORKDIR /app
-
-# Copy the built binary
 COPY --from=builder /workspace/target/release/rivet /usr/local/bin/rivet
 
-# Copy entrypoint
-COPY docker-entrypoint.sh /usr/local/bin/entrypoint
-RUN chmod +x /usr/local/bin/entrypoint
-
-# Default command
-ENTRYPOINT ["/usr/local/bin/entrypoint"]
-
-EXPOSE 3000
+WORKDIR /app
+ENTRYPOINT ["rivet"]

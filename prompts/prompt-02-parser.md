@@ -1,8 +1,6 @@
 # Prompt 02: Implement the Python DSL Parser
 
-**Objective**: Parse a Python file (`app.py`) using `tree-sitter` and extract the IR.
-
-**Context**: We use `tree-sitter-python` to parse the file into a syntax tree, then traverse it to find `@api` decorators.
+**Objective**: Parse a Python file (`app.py`) using `tree-sitter` and extract the IR, including the new Rust-native hints.
 
 **Strictness**: If a function lacks type hints, the parser must return an error `E1001` (Type Safety Violation).
 
@@ -17,18 +15,16 @@ Create `rivet-cli/src/parser/mod.rs` and `rivet-cli/src/parser/python.rs`.
 In `mod.rs`, export the Python parser:
 ```rust
 pub mod python;
-```
 
-### 2. Implement `parse_python_file`
-
-In `python.rs`, implement:
+2. Implement parse_python_file
+In python.rs, implement the main entry point:
 
 ```rust
 use anyhow::{Context, Result};
 use std::path::Path;
-use tree_sitter::{Language, Parser, Node};
+use tree_sitter::Parser;
 use tree_sitter_python::language as python_language;
-use rivet_core::ir::{ServiceBlueprint, RouteDefinition, HttpMethod, StructDefinition, FieldDefinition};
+use rivet_core::ir::ServiceBlueprint;
 
 pub fn parse_python_file(path: &Path) -> Result<ServiceBlueprint> {
     let source = std::fs::read_to_string(path)
@@ -43,75 +39,68 @@ pub fn parse_python_file(path: &Path) -> Result<ServiceBlueprint> {
 
     let root = tree.root_node();
 
-    // Traverse the AST to find function definitions with decorators
     let mut routes = Vec::new();
     traverse_node(&root, &source, &mut routes)?;
 
     Ok(ServiceBlueprint {
         name: path.file_stem().unwrap_or_default().to_string_lossy().to_string(),
         routes,
-        dependencies: vec![], // We'll populate this in Phase 1
+        dependencies: vec![],
     })
 }
 ```
+3. Traverse the AST
+Write a recursive function traverse_node that walks the AST, finds function_definition nodes with an @api decorator, and extracts the route data.
 
-### 3. Traverse the AST
+Crucial Upgrade (Rust Native Features):
+While extracting field type hints, you must detect these special Python annotations and map them to the IR fields:
 
-Write a recursive function `traverse_node` that:
-
-- Walks the AST.
-- Finds `function_definition` nodes.
-- Checks if the function has a `decorator` list.
-- Looks for decorators named `api.get`, `api.post`, `api.put`, etc.
-- Extracts:
-  - The function name (from the `identifier` child).
-  - The path string (from the decorator's argument, e.g., `"/orders"`).
-  - The request type hint (from the first parameter's type annotation).
-  - The response type hint (from the `->` return type annotation).
-  - The `stories` list (from the decorator keyword arguments).
-
-**Example of extracting a decorator:**
+Python DSL Syntax	IR Field Value	Resulting Rust Code
+borrowed: str	is_borrowed = true	#[serde(borrow)] field: &'a str
+List[float, 768]	array_size = Some(768)	field: [f64; 768]
+List[int, 512]	array_size = Some(512)	field: [i64; 512]
+Implementation Snippet for the Type Parser:
 
 ```rust
-fn extract_route_from_decorator(
-    decorator_node: &Node,
-    source: &str,
-    function_node: &Node,
-) -> Option<RouteDefinition> {
-    // Find the call node inside the decorator
-    let mut call_node = None;
-    let mut cursor = decorator_node.walk();
-    for child in decorator_node.children(&mut cursor) {
-        if child.kind() == "call" {
-            call_node = Some(child);
-            break;
+fn parse_type_hint(type_node: &Node, source: &str, field_name: &str) -> FieldDefinition {
+    let type_text = type_node.utf8_text(source).unwrap_or("Unknown");
+    let mut is_borrowed = false;
+    let mut array_size = None;
+    let mut type_name = type_text.to_string();
+
+    // Detect borrowing (e.g., "borrowed: str")
+    if type_text.contains("borrowed") {
+        is_borrowed = true;
+        type_name = "&str".to_string();
+    }
+
+    // Detect const generics (e.g., "List[float, 768]")
+    if type_text.starts_with("List[") && type_text.ends_with("]") {
+        let inner = &type_text[5..type_text.len()-1];
+        let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+        if parts.len() == 2 {
+            if let Ok(size) = parts[1].parse::<usize>() {
+                array_size = Some(size);
+                let base_type = match parts[0] {
+                    "float" => "f64",
+                    "int" => "i64",
+                    _ => "serde_json::Value",
+                };
+                type_name = format!("[{}; {}]", base_type, size);
+            }
         }
     }
 
-    let call = call_node?;
-    // The call has a "identifier" and an "argument_list"
-    let mut method = None;
-    let mut path = None;
-    let mut stories = Vec::new();
-
-    // ... parse the call node ...
-    // This is where you extract method (get/post) and path ("/ping")
-    // And extract stories from keyword arguments
-
-    Some(RouteDefinition {
-        path: path?,
-        method: method?,
-        handler_name: function_node.child_by_field_name("name")?.utf8_text(source)?.to_string(),
-        request_dto: None, // We'll add this in Phase 1
-        response_dto: None,
-        stories,
-        middlewares: vec![],
-    })
+    FieldDefinition {
+        name: field_name.to_string(),
+        type_hint: type_name,
+        is_optional: false, // Detect Optional[...] later
+        is_borrowed,
+        array_size,
+    }
 }
 ```
-
-### 4. Error Handling
-
+4. Error Handling
 If a function has no type hints, return a custom error:
 
 ```rust
@@ -123,10 +112,8 @@ pub enum ParseError {
     InvalidDecorator { line: usize },
 }
 ```
-
-### 5. Unit Test
-
-Write a test that parses a raw Python string:
+5. Unit Test
+Write a test that parses a raw Python string with the new syntax:
 
 ```rust
 #[cfg(test)]
@@ -134,62 +121,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_ping_route() {
+    fn test_parse_borrowed_and_array_syntax() {
         let source = r#"
 from rivet import api
 
-@api.get("/ping")
-def ping() -> dict:
-    return {"status": "pong"}
+@api.post("/order")
+def create_order(request: OrderCreate) -> OrderResponse:
+    pass
 "#;
-
         let blueprint = parse_python_string(source).unwrap();
-        assert_eq!(blueprint.routes.len(), 1);
-        let route = &blueprint.routes[0];
-        assert_eq!(route.path, "/ping");
-        assert_eq!(route.method, HttpMethod::Get);
-        assert_eq!(route.handler_name, "ping");
-        assert_eq!(route.stories, Vec::<String>::new());
-    }
-
-    #[test]
-    fn test_missing_type_hint_errors() {
-        let source = r#"
-from rivet import api
-
-@api.get("/ping")
-def ping():
-    return {"status": "pong"}
-"#;
-        let result = parse_python_string(source);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("Missing type hint"));
+        // Assert that fields are correctly parsed
     }
 }
 ```
 
----
+Acceptance Criteria
+□ parse_python_file("app.py") returns a valid ServiceBlueprint.
+□ A field borrowed: str sets is_borrowed = true.
+□ A field List[float, 768] sets array_size = Some(768).
+□ A function without type hints returns a MissingTypeHint error.
+Agent Instructions
+Add tree-sitter and tree-sitter-python to rivet-cli/Cargo.toml.
 
-## Acceptance Criteria
+Add thiserror for error handling.
 
-- [ ] `parse_python_file("app.py")` returns a valid `ServiceBlueprint`.
-- [ ] The test with `@api.get("/ping")` passes.
-- [ ] A function without type hints returns a `MissingTypeHint` error.
+Create rivet-cli/src/parser/mod.rs and rivet-cli/src/parser/python.rs.
 
----
+Implement the full traversal logic as described.
 
-## Agent Instructions
+Write the unit tests.
 
-1. Add `tree-sitter` and `tree-sitter-python` to `rivet-cli/Cargo.toml`.
-2. Create `rivet-cli/src/parser/mod.rs` and `rivet-cli/src/parser/python.rs`.
-3. Copy the implementation above, filling in the traversal logic.
-4. Use `thiserror` for error handling (add it to `Cargo.toml` if not already).
-5. Write the unit tests.
-
----
-
-
-## Output
-
-A PR with a working Python parser that can extract a route definition from `app.py`.
+Output
+A PR with a working Python parser that can extract route definitions and Rust-native type hints from app.py.

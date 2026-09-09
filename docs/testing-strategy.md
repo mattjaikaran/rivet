@@ -1,60 +1,20 @@
-## Testing Strategy
-- Unit tests: Each route and service is tested in isolation.
-- Integration tests: The full transpilation pipeline is tested end-to-end.
-- Mutation tests: `cargo-mutants` ensures tests catch edge cases.
-- Performance benchmarks: `criterion` tracks latency and throughput.
+# Testing strategy
 
-```text
+| Level | What it covers |
+| :--- | :--- |
+| Unit tests | IR types, the DSL expression translator, parser rules, and generator output, per module |
+| Integration tests | The full pipeline: `rivet build` on `examples/basic/app.py` produces a crate that compiles and answers HTTP requests |
+| Mutation tests | `cargo-mutants` (planned with the Gauntlet) ensures tests catch edge cases |
+| Performance | `criterion` benchmarks for parse and generation latency (planned) |
 
----
+## Current gates
 
-```markdown
-# Phase 0: The Transpiler Spike
+The workspace keeps the bar enforced by CI:
 
-**Goal**: Prove that we can parse a Python DSL and generate a working Rust HTTP server.
+- `cargo fmt --all -- --check`
+- `cargo clippy -- -D warnings` (the project disallows `unwrap`/`expect` in
+  non-test code)
+- `cargo test --workspace`
 
-**Duration**: 2 Weeks
-
----
-
-## Success Criteria
-
-- [ ] The CLI can parse `@api.get("/ping")` from `app.py`.
-- [ ] The CLI generates a `main.rs` with a `/ping` route.
-- [ ] `cargo build` on the generated code passes without errors.
-- [ ] The binary responds to `curl localhost:3000/ping` with a 200 OK and JSON body.
-```
-
-
-## Acceptance Tests
-
-1. Create a new project:
-   ```bash
-   rivet new test-app
-   cd test-app
-```
-
-2. write `app.py`:
-```python
-from rivet import api
-
-@api.get("/ping")
-def ping() -> dict:
-    return {"status": "pong"}
-    ```
-3. Run the transpiler:
-```bash
-rivet build
-```
-4. Run the generated binary:
-```bash
-./generated/target/release/test-app
-```
-5. Send a request:
-```bash
-curl http://localhost:3000/ping
-```
-*Expected output*:
-```json
-{"status": "pong"}
-```
+The Gauntlet (phase 1) adds complexity limits, coverage floors, and mutation
+survival as compile-time gates on the DSL.
