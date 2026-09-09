@@ -37,12 +37,17 @@ contributing. Harassment or toxic behavior is not tolerated.
    cargo fmt --all -- --check
    cargo clippy -- -D warnings
    cargo test --workspace
+   cargo deny check
+   ./target/release/rivet audit --json examples/basic/app.py
    ```
 5. Open a PR against the main branch.
 
 ## Quality gates
 
-CI enforces format, clippy (with `-D warnings`), and tests today. The Gauntlet
-(`rivet audit`) is a planned milestone that adds compile-time quality
-enforcement on top: complexity limits, coverage floors, mutation testing, and
-machine-readable JSON diagnostics for every failure.
+CI enforces format, clippy (with `-D warnings`), tests, and cargo-deny CVE
+scanning, and runs the Gauntlet on `examples/basic` through `rivet build`.
+`rivet audit` reports the MQI grade for a DSL module: complexity,
+duplicate-code, dead-code, and type-strictness dimensions fold into an A+
+to F grade with a JSON breakdown (see `docs/pillars/06-matt-quality-index.md`).
+Every Gauntlet failure prints machine-readable JSON diagnostics on stderr
+that agents can act on.

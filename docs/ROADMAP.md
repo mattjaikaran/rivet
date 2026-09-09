@@ -39,12 +39,17 @@ standalone binary.
   outside the documented JSON boundary.
 - [x] Duplicate Code Detector (AST hashing) - blocks redundant code.
 - [x] Story gate and dead-code rules (pillar 05) - every route tagged.
+- [x] `rivet audit` reports the MQI grade and a JSON breakdown (pillar 06).
+- [x] CI runs the Gauntlet on `examples/basic` and scans dependencies with
+  cargo-deny.
 - [ ] Mutation Tester (`cargo-mutants` integration) - requires 100%
-  survival; blocked on the generated-code test story (see task 1.3).
+  survival; stays open, blocked on the generated-code test story (see
+  pillar 06, `not_scored`).
 
-**Status**: Rules ship as `rivet-cli/src/gauntlet/` (`E2042`-`E2046`),
-configured through `rivet.toml` `[gauntlet]`. `rivet audit` and the CI
-gauntlet job land with the audit and CI tasks.
+**Status**: Closed except the mutation tester. `rivet build` enforces the
+five rules (`E2042`-`E2046`) between parse and generate; `rivet audit`
+grades the module on the phase-1 MQI dimensions; CI gates the example and
+scans the dependency tree. See `tasks/completed.md`.
 
 ---
 

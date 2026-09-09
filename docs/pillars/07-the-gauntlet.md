@@ -66,9 +66,9 @@ can point a fix at the exact branch. Every finding carries a
 
 ## Phase-1 status
 
-The five rules above are enforced by `rivet build`. `rivet audit` (the MQI
-grade over these findings) and the CI `gauntlet-check` job that runs the
-example through the rules land with the audit and CI tasks; coverage and
-mutation-survival numbers stay Rust-side until the generated-code test
-story exists, as recorded in the MQI pillar
-(`docs/pillars/06-matt-quality-index.md`).
+The five rules above are enforced by `rivet build`, which runs them
+between parse and generate. `rivet audit` folds the findings into the MQI
+grade and a JSON breakdown (see `docs/pillars/06-matt-quality-index.md`),
+and the CI `gauntlet-check` job runs `examples/basic` through both
+commands. Coverage and mutation-survival numbers stay Rust-side until the
+generated-code test story exists; the audit lists them under `not_scored`.

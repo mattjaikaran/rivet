@@ -4,16 +4,21 @@
 DSL and the Rivet CLI transpiles it into a fast, memory-safe Rust server built
 on [axum](https://github.com/tokio-rs/axum).
 
-The project is in early development. The phase-0 spike is working end to end:
-`rivet build` parses a Python module, validates it, and compiles a runnable
-Rust binary. The long-term design lives in [`docs/`](docs/ARCHITECTURE.md) and
-the roadmap in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+The project is in early development. The phase-0 spike is working end to
+end, and phase 1 (the Gauntlet) is closed except the mutation tester:
+`rivet build` parses a Python module, runs the quality rules between parse
+and generate, and compiles a runnable Rust binary; `rivet audit` reports
+the MQI grade. The long-term design lives in
+[`docs/`](docs/ARCHITECTURE.md) and the roadmap in
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Status
 
 Pre-alpha. One milestone is complete: the [phase-0
 spike](docs/phase-0-spike.md) — a working transpilation pipeline for a
-documented subset of the DSL.
+documented subset of the DSL. Phase 1 (the [Gauntlet](docs/pillars/07-the-gauntlet.md))
+adds compile-time quality rules and the [MQI
+audit](docs/pillars/06-matt-quality-index.md) on top.
 
 ## Try it
 
@@ -42,11 +47,11 @@ The example app is a plain Python file:
 ```python
 from rivet import api
 
-@api.get("/ping")
+@api.get("/ping", stories=["US-001"])
 def ping() -> dict:
     return {"status": "pong"}
 
-@api.post("/echo", stories=["US-001"])
+@api.post("/echo", stories=["US-002"])
 def echo(request: dict) -> dict:
     return {"echo": request}
 ```
