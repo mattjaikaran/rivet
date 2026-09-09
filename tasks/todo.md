@@ -47,7 +47,7 @@ A task is done when all of the following hold:
 | :--- | :--- | :--- | :--- |
 | 0 - Spike | weeks 1-2 | pipeline proof | `prompts/prompt-00..03` (done) |
 | 1 - The Gauntlet | weeks 3-4 | 05, 06, 07 | `prompts/prompt-04-gauntlet.md` (done) |
-| 2 - Context engine | weeks 5-6 | 04 | `prompts/prompt-05-context.md` (to author) |
+| 2 - Context engine | weeks 5-6 | 04 | `prompts/prompt-05-context.md` (done) |
 | 3 - MCP & agentic CLI | weeks 7-8 | 09 | `prompts/prompt-06-mcp.md` (to author) |
 | 4 - Ecosystem & multi-service | weeks 9-10 | 01, 02, 03 | `prompts/prompt-07-ecosystem.md` (to author) |
 | 5 - WASM & mobile | weeks 11-12 | 08 | `prompts/prompt-08-wasm-mobile.md` (to author) |
@@ -79,28 +79,15 @@ the feature is actually implemented, so the config never over-claims.
 
 ---
 
-## Phase 1 - The Gauntlet
+## Phase 1 - The Gauntlet (complete 2026-09-09)
 
 Goal: enforce strict quality at compile time, per `docs/pillars/07-the-gauntlet.md`,
 `docs/pillars/06-matt-quality-index.md`, and `docs/pillars/05-story-to-code-traceability.md`.
 
-Sections 1.1 (foundation) and 1.2 (rules) are complete; see
-`tasks/completed.md`.
-
-### 1.4 Integration and docs
-
-- [ ] CI: run the Gauntlet on `examples/basic` in the `gauntlet-check` GitHub
-  Actions job (replace the placeholder `--version` step).
-  Acceptance: a pushed branch with a rule violation fails that job with JSON
-  output visible in the log.
-- [ ] CI: add `cargo-deny` CVE scanning.
-  Acceptance: the CI job runs `cargo deny check` and fails on a known-vulnerable
-  dependency in a test.
-- [ ] Update `docs/ROADMAP.md` phase-1 checkboxes and
-  `docs/development-workflow.md` as rules land; align `CONTRIBUTING.md` once
-  `rivet audit` exists.
-  Acceptance: every shipped rule has its roadmap checkbox ticked and the
-  workflow doc shows the real commands.
+All sections (1.1 foundation, 1.2 rules, 1.3 the MQI, 1.4 integration
+and docs) are complete; see `tasks/completed.md`. The mutation-tester
+roadmap bullet stays open: it is blocked on the generated-code test
+story (see pillar 06, `not_scored`).
 
 ---
 

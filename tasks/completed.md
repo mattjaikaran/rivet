@@ -58,25 +58,11 @@ Commits: `dd8920f` (foundation) and `77fe374` (feature).
 - Live spike verified from the compiled binary: `GET /ping` returns
   `{"status":"pong"}` and `POST /echo` echoes the JSON body.
 
-## Phase 1 - The Gauntlet (foundation and rules, 2026-09-09)
+## Phase 1 - The Gauntlet (complete 2026-09-09)
 
-Served by `prompts/prompt-04-gauntlet.md`. Sections 1.1 and 1.2 are done;
-the audit (1.3) and CI (1.4) tasks remain in `tasks/todo.md`.
-Commit: `3e09b54`.
-
-### 1.3 The MQI
-
-- Implemented `rivet audit` (grade plus JSON breakdown) per pillar 06:
-  complexity, duplicate code, dead code, and type strictness carry the
-  pillar weights into an A+ to F grade; a blocker finding deducts 20 points
-  and a warning 10. Unit tests cover the aggregation and the grade bands
-  (`55e599d`).
-
-
-- Decided and documented how coverage and mutation survival enter the MQI:
-  they stay Rust-side until the generated-code test story exists and appear
-  in the `rivet audit` `not_scored` JSON list with their reasons; written
-  into pillar 06 and the audit module doc (`b0c96c8`).
+Served by `prompts/prompt-04-gauntlet.md`. All four sections are done;
+see the per-section entries below. The mutation-tester roadmap bullet
+stays open (blocked on the generated-code test story).
 
 ### 1.1 Foundation
 
@@ -118,3 +104,32 @@ Commit: `3e09b54`.
   binary answers `GET /ping` and `POST /echo`, a storyless route exits 1
   with JSON on stderr and no crate written, and a dead-code warning prints
   JSON while the build succeeds (`3e09b54`).
+
+### 1.3 The MQI
+
+- Implemented `rivet audit` (grade plus JSON breakdown) per pillar 06:
+  complexity, duplicate code, dead code, and type strictness carry the
+  pillar weights into an A+ to F grade; a blocker finding deducts 20
+  points and a warning 10. Unit tests cover the aggregation and the
+  grade bands (`55e599d`).
+- Decided and documented how coverage and mutation survival enter the
+  MQI: they stay Rust-side until the generated-code test story exists
+  and appear in the `rivet audit` `not_scored` JSON list with their
+  reasons; written into pillar 06 and the audit module doc (`b0c96c8`).
+
+### 1.4 Integration and docs
+
+- The CI `gauntlet-check` job runs the Gauntlet on `examples/basic`: a
+  real `rivet build` plus `rivet audit --json`, replacing the
+  placeholder `--version` step (`ce70633`).
+- Added cargo-deny CVE scanning: `deny.toml` and a CI job that runs
+  `cargo deny check`; verified locally that the check fails on
+  `RUSTSEC-2020-0071` (`ce70633`).
+- Ticked the phase-1 ROADMAP checkboxes, documented the real commands
+  in `docs/development-workflow.md`, and aligned `CONTRIBUTING.md`,
+  pillar 07, and the README with `rivet audit` (`99f086e`).
+- Authored `prompts/prompt-05-context.md` for phase 2 in the prompts
+  00-04 format (`24be798`).
+- Closed phase 1 in the tracker and roadmap; the mutation-tester
+  roadmap bullet stays open, blocked on the generated-code test story
+  (see pillar 06, `not_scored`).
