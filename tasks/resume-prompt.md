@@ -12,27 +12,24 @@ pillars already live in the repo; you build from them, phase by phase.
 
 ## Where the project stands
 
-- Phase 0 (the transpiler spike) is complete: `rivet-core` defines the
-  serializable IR; `rivet-cli` parses `app.py` with tree-sitter into that IR,
-  validates it, generates a standalone axum crate, and compiles it with cargo.
-- Phase 1 (the Gauntlet) is **complete except the mutation tester**, which
-  stays open until the generated-code test story exists:
-  - `rivet-cli/src/gauntlet/` enforces five rules between parse and generate:
-    `E2042` complexity, `E2043` duplicate handlers, `E2044` dead code,
-    `E2045` story gate, `E2046` type strictness.
-  - `rivet audit` parses a module, runs the same rules, and folds the findings
-    into an A+ to F MQI grade plus a JSON breakdown
-    (`commands/audit.rs`; `--json` for the machine shape). Coverage, mutation
-    survival, and doc coverage stay Rust-side and appear in the breakdown's
-    `not_scored` list.
-  - CI runs a real Gauntlet check on `examples/basic` (`rivet build` +
-    `rivet audit --json`) and a cargo-deny CVE scan (`deny.toml`).
-  - `prompts/prompt-05-context.md` seeds phase 2.
-- Quality gates pass: 73 tests, `cargo clippy -- -D warnings`, and
-  `cargo fmt --check`. The tree is clean and pushed to `origin/main`.
-- Recent commits: `55e599d` (audit), `b0c96c8` (MQI decision),
-  `ce70633` (CI gauntlet + cargo-deny), `99f086e` (docs alignment),
-  `24be798` (phase-2 prompt), `284711b` (phase-1 tracker close).
+- Phases 0, 1, and 2 are complete. `rivet-core` defines the serializable IR;
+  `rivet-cli` parses `app.py` with tree-sitter, validates it against the
+  Gauntlet rules, generates a standalone axum crate, and compiles it.
+- The mutation tester stays open until the generated-code test story exists
+  (pillar 06, `not_scored`). Constraint tools gate the Rivet source tree and
+  are done.
+- Phase 2 (the context engine) ships: `.rivet/` SQLite store, `rivet history`,
+  `rivet session save`/`resume`/`list`, the LanceDB blueprint index, and
+  `rivet explain "<symptom>"`. See `tasks/completed.md` section 2.
+- GitHub Actions auto-runs are paused until the app ships (workflow is
+  `workflow_dispatch`-only). `./scripts/gate.sh` is the acceptance bar and
+  passes on the current tree: fmt, clippy `-D warnings`, 106 tests,
+  `cargo deny`, the example build/audit, and the repo self-checks.
+- Tracker coherent: 19 todo items, 46 completed.
+- Recent commits: `38cdb1d` (SQLite/LanceDB deps, MSRV 1.91), `617632e`
+  (store + history + session), `68e93f9` (RFC 3339 history), `8dd08e7`
+  (vector index + explain), `bd3443d` (phase-2 close), `b56b66a` (crate-doc
+  nit), `2c60876` (protoc for CI), `04b6119` (CI pause).
 
 ## Repo map
 
@@ -48,13 +45,20 @@ pillars already live in the repo; you build from them, phase by phase.
   `Warning` or `Blocker`. JSON is built by hand from `serde_json::Value` —
   the `json!` macro expands to `unwrap` calls, which clippy bans.
 - `rivet-cli/src/config.rs` - `RivetConfig` with the `[gauntlet]` section.
-- `rivet-cli/src/commands/` - one module per CLI command (`build`, `audit`;
-  later `history`, `session`, `explain`). Each returns structured
+- `rivet-cli/src/store/` - the `.rivet/` SQLite store (command history,
+  sessions, module digests) plus `vector.rs`, the local LanceDB embedding
+  index over blueprints. Recorded in pillar 04.
+- `rivet-cli/src/commands/` - one module per CLI command (`build`, `audit`,
+  `history`, `session`, `explain`). Each returns structured
   `Diagnostic`s on failure.
 - `rivet-cli/src/main.rs` - clap command enum; failures print every
   diagnostic as JSON plus a summary line.
+- `constraint-tools/` + `scripts/gate.sh` - repo self-checks (file-length,
+  rule-module coherence, tracker coherence) and the gate that chains fmt,
+  clippy, tests, deny, the example build/audit, and the self-checks.
 - `deny.toml` + `.github/workflows/ci.yml` - dependency CVE scanning and the
-  three CI jobs (`rust-checks`, `cargo-deny`, `gauntlet-check`).
+  three CI jobs (`rust-checks`, `cargo-deny`, `gauntlet-check`); auto-runs
+  are paused until the app ships.
 - `docs/` - roadmap, nine pillars, phase notes. Pillar 06 documents the MQI
   grade scale, weights, and the coverage/mutation `not_scored` decision;
   pillar 07 documents the shipped rules and severity model.
@@ -84,52 +88,54 @@ pillars already live in the repo; you build from them, phase by phase.
   generated-code test story exists (pillar 06).
 - The `examples/basic` routes carry `US-001` and `US-002` so the example
   passes the default story gate.
+- The `.rivet/` store lives next to the app module (SQLite via bundled
+  rusqlite for portability; idempotent migration keyed on
+  `PRAGMA user_version`); history records every invocation before it runs and
+  finishes it with exit status and duration, newest first. Sessions save by
+  name and overwrite on re-save.
+- Semantic search uses a local LanceDB table of blueprint embeddings with a
+  hashed module digest stored per commit; `rivet explain "<symptom>"`
+  embeds the symptom, finds the nearest route, and reports the introducing
+  commit via git pickaxe on the handler. Commit 8dd08e7 records the design.
+- CI auto-runs stay paused until the app ships; local `./scripts/gate.sh`
+  is the bar. Re-enable by restoring the push and pull_request triggers in
+  `.github/workflows/ci.yml`.
 
 ## Next up, in order
 
-### 1. Constraint tools: gate the Rivet repo itself
+### 1. Phase 3: MCP and agentic CLI
 
-The repo enforces quality on DSL apps through the Gauntlet, but nothing yet
-checks the Rivet source tree with the same rigor. Mirror the constraint-tools
-pattern from the Django-ninja-boilerplate reference
-(`~/dev/django-ninja-boilerplate/docs/CONSTRAINT_TOOLS.md`, after Uncle Bob
-Martin's SwarmForge philosophy): small deterministic programs that produce a
-binary pass/fail, chained in one gate, self-enforcing.
+Goal: first-class AI integration, per `docs/pillars/09-super-cli.md` and the
+phase-3 roadmap section. The todo.md phase-3 checklist already lists five
+items with acceptances; draft nothing new until the seed prompt exists.
 
-Draft the checklist into `tasks/todo.md` under a dedicated section before
-coding, then build:
+**Author `prompts/prompt-06-mcp.md` first** — repo rule: every phase starts
+by authoring its seed prompt, then drafts that prompt's checklist into the
+phase section of `tasks/todo.md`. Model the seed on
+`prompts/prompt-05-context.md` (structure, acceptance style, references to
+the pillars it serves) and read `docs/pillars/09-super-cli.md` plus the
+phase-2 commits so the MCP server can expose what phase 2 built.
 
-1. **Repository self-checks**: deterministic checks over the source tree —
-   file-length ceilings (constraint tools stay under 400 lines; Gauntlet rule
-   modules stay under 300 including tests), one documented module per rule,
-   error codes listed in the Gauntlet module table stay in sync with the
-   rules that emit them, and the tracker (todo/completed) stays coherent.
-   Decide and document each threshold so every existing file passes.
-2. **One gate command**: an orchestrator that runs fmt, clippy
-   (`-D warnings`), tests, `cargo deny check`, the example build and audit,
-   and the self-checks, and exits non-zero with a clear message on the first
-   failure.
-3. **CI wiring**: the orchestrator (or the new self-checks) runs in CI; a
-   pushed branch with a planted violation fails the job with the violation
-   visible in the log.
-4. **Self-enforcement and docs**: each tool passes its own checks; record the
-   suite (real commands, thresholds, how to add a check) in
-   `docs/development-workflow.md` and `CONTRIBUTING.md`.
+Then work the checklist in order:
 
-Acceptance: one command passes on a clean tree; a planted violation (an
-over-long module, an undocumented rule module, a tracker drift) fails it;
-CI runs the suite; docs show the real commands.
+1. **MCP server SDK**: research and pin a maintained Rust SDK (official SDK
+   or `rmcp`); no placeholder crates. A hello-world MCP tool must answer a
+   probe request.
+2. **MCP server**: expose the parsed AST and the phase-2 vector index over
+   MCP; a client must list the tools and get valid data.
+3. **Slash commands** `/plan`, `/fix`, `/trace` backed by the MQI and the
+   context stores; each command carries an integration test on a fixture
+   project.
+4. **Auto-PR generation** (`rivet /plan` on a fixture story) producing a
+   branch whose tests pass.
+5. **Agentic error handling**: every emitted diagnostic in an error scenario
+   carries `suggested_fix`, including Gauntlet findings.
 
-### 2. Phase 2: the context engine
+Update pillar 09, the ROADMAP checkboxes, and the README in the commit that
+lands each feature; move each finished tracker line to `tasks/completed.md`
+in the same commit.
 
-Author nothing new — `prompts/prompt-05-context.md` is the seed. Draft its
-checklist into the phase-2 section of `tasks/todo.md` (items 2.1-2.3 already
-exist), then work it in order: the `.rivet/` SQLite store and schema
-migration, `rivet history`, `rivet session save`/`resume`, the LanceDB
-blueprint index, and `rivet explain "<symptom>"`. Update pillar 04 and the
-ROADMAP checkboxes as each lands.
-
-### 3. Coherence as you go
+### 2. Coherence as you go
 
 - Keep files small and modular; extend existing module patterns.
 - Every behavior change is verified end to end on `examples/basic`
@@ -138,8 +144,6 @@ ROADMAP checkboxes as each lands.
   lands the feature.
 - Move each finished tracker line to `tasks/completed.md` in the commit that
   finishes it, with the commit hash.
-- After 1 and 2 land, author `prompts/prompt-06-mcp.md` for phase 3 before
-  starting it.
 
 ## Operating rules
 
@@ -168,11 +172,11 @@ ROADMAP checkboxes as each lands.
 ## First steps in the session
 
 1. `git status` and `git log --oneline -5` to confirm the checkout.
-2. Run `rtk cargo test --workspace` to confirm the baseline is green.
-3. Read `tasks/todo.md` (source of truth), `prompts/prompt-05-context.md`,
-   and `docs/pillars/04-persistent-context-engine.md`.
-4. Read the constraint-tools reference at
-   `~/dev/django-ninja-boilerplate/docs/CONSTRAINT_TOOLS.md`.
+2. Run `./scripts/gate.sh` to confirm the baseline is green.
+3. Read `tasks/todo.md` (source of truth) and `docs/pillars/09-super-cli.md`;
+   skim `tasks/completed.md` section 2 for what phase 2 built.
+4. Read `prompts/prompt-05-context.md` as the template before authoring
+   `prompts/prompt-06-mcp.md`.
 5. Work the sections above in order. Mark tracker items `[~]` while in
    progress, tick them when done, and move finished lines to
    `tasks/completed.md` in the same commit.
@@ -180,10 +184,8 @@ ROADMAP checkboxes as each lands.
 
 ## Definition of done (every change)
 
-- `cargo fmt --all -- --check` passes.
-- `cargo clippy -- -D warnings` passes.
-- `cargo test --workspace` passes.
-- `cargo deny check` passes.
+- `./scripts/gate.sh` passes (fmt, clippy `-D warnings`, tests,
+  `cargo deny check`, the example build and audit, repo self-checks).
 - Pipeline changes are verified end to end: rebuild `examples/basic`, run
   the binary, and `curl` the affected routes.
 - Affected docs are updated.
