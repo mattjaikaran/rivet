@@ -11,11 +11,14 @@ Last updated: 2026-09-09
 - Keep `tasks/todo.md` authoritative for outstanding work.
 - When a task is finished: tick it, add the date and commit, then move the
   line to `tasks/completed.md` in the same change.
-- Group work by roadmap phase. Never jump ahead of the phase the session is
-  in unless the task says otherwise.
+- Group work by roadmap phase. Never jump ahead of the phase the session is in
+  unless the task says otherwise.
 - Every phase starts by authoring its `prompts/prompt-NN-*.md` seed so future
-  sessions inherit the same structure the first prompts gave this repo.
+  sessions inherit the same structure the first prompts gave this repo, then
+  drafting that prompt's checklist into the phase section here.
 - Checkboxes: `- [ ]` open, `- [x]` done (awaiting move), `- [~]` in progress.
+- Every item carries a one-line acceptance criterion. An item is done only
+  when its acceptance is demonstrated.
 
 ## Definition of done
 
@@ -51,87 +54,139 @@ A task is done when all of the following hold:
 
 ---
 
-## Phase 1 - The Gauntlet (in progress)
+## Cross-phase: Rust-native features
+
+`rivet.toml` `[rust_native_features]` advertises four flags. Each is false
+today; each item below flips its flag to true in the example config only when
+the feature is actually implemented, so the config never over-claims.
+
+- [ ] `zero_copy_deserialization`: borrowed request bodies (`&str` fields via
+  `#[serde(borrow)]`).
+  Acceptance: a DTO with a borrowed `str` field builds and a request round-trips
+  without owned copies; `rivet.toml` flag true.
+- [ ] `raii_connections`: pooled connections released automatically at handler
+  exit.
+  Acceptance: a handler that touches the database compiles with no explicit
+  close calls; a test proves the connection returns to the pool; flag true.
+- [ ] `compile_time_rbac`: typestate auth so protected routes require an
+  authenticated request type at compile time.
+  Acceptance: a route flagged protected fails to compile without an
+  authentication layer; the generated code has no runtime role lookup; flag true.
+- [ ] `const_generics`: fixed-size arrays from `List[T, N]` generate
+  `[T; N]` instead of erroring with `E2003`.
+  Acceptance: a DTO with `List[float, 768]` generates `[f64; 768]` and builds;
+  flag true.
+
+---
+
+## Phase 1 - The Gauntlet
 
 Goal: enforce strict quality at compile time, per `docs/pillars/07-the-gauntlet.md`,
 `docs/pillars/06-matt-quality-index.md`, and `docs/pillars/05-story-to-code-traceability.md`.
 
 ### 1.1 Foundation
 
-- [ ] Author `prompts/prompt-04-gauntlet.md` following the `prompts/` format of
-  prompts 00-03 (objective, tasks, agent instructions, acceptance criteria).
-- [ ] Define the Gauntlet rule interface: one small module per rule under a new
-  `rivet-cli/src/gauntlet/` tree (rules, severity model, structured JSON output),
-  mirroring how the parser is split into focused files.
-- [ ] Wire the Gauntlet into the build pipeline between parse and generate in
-  `rivet-cli/src/commands/build.rs`; failures reuse the `Diagnostic`/agentic-JSON
-  path already emitted by the parser.
+- [ ] Author `prompts/prompt-04-gauntlet.md` in the prompts 00-03 format and
+  draft its checklist into this section.
+  Acceptance: the prompt doc exists, and every task below traces to it or to a
+  pillar.
+- [ ] Define the Gauntlet rule interface: one small module per rule under
+  `rivet-cli/src/gauntlet/` (severity model, rule trait, structured JSON
+  output), mirroring the parser layout.
+  Acceptance: a rule can be registered and its findings serialize to the
+  agentic-JSON diagnostic shape; unit tests cover the harness.
+- [ ] Wire the Gauntlet between parse and generate in
+  `rivet-cli/src/commands/build.rs`; failures reuse the `Diagnostic` JSON path.
+  Acceptance: a module that violates a rule fails `rivet build` with JSON on
+  stderr and no crate written.
 
 ### 1.2 Rules
 
-- [ ] Cyclomatic complexity walker over DSL handler bodies and DTO classes;
-  fail the build above the `rivet.toml` `[gauntlet] max_complexity` threshold
-  with an `E2042`-style diagnostic that carries an `ast_path`.
-- [ ] Duplicate-code detector (AST hashing over the parsed module) that blocks
-  redundant handlers with a pointer to both copies.
-- [ ] Dead-code rule for the DSL: unused helper functions and unused DTOs are
-  rejected or reported per the severity model.
-- [ ] Story-to-code gate (pillar 05): every public route must carry a story ID
-  unless the project config opts out; update `examples/basic/app.py` so it
-  passes the default gate.
-- [ ] Type-strictness rule: reject untyped/dynamic shapes that reach the IR
-  (the parser already blocks most of these; the rule closes remaining gaps and
-  documents the contract).
+- [ ] Cyclomatic complexity walker over DSL handler bodies and DTO classes,
+  failing above `rivet.toml` `[gauntlet] max_complexity`.
+  Acceptance: a synthetic handler with complexity 9 fails with an
+  `E2042`-style diagnostic carrying `ast_path`; the `examples/basic` handlers
+  pass.
+- [ ] Duplicate-code detector (AST hashing over the parsed module).
+  Acceptance: two byte-identical handlers produce one finding naming both
+  locations and the build blocks per severity.
+- [ ] Dead-code rule for the DSL: unused helper functions and unreferenced DTOs
+  are rejected or reported per the severity model.
+  Acceptance: an unused helper in a module triggers the configured outcome and
+  a test locks the behavior.
+- [ ] Story-to-code gate (pillar 05): every public route carries a story ID
+  unless the project config opts out.
+  Acceptance: a route without `stories=[...]` fails with a fix suggestion;
+  `examples/basic/app.py` passes the default gate.
+- [ ] Type-strictness rule closing the remaining gaps the parser leaves to the
+  IR, with the contract documented.
+  Acceptance: each accepted dynamic shape is listed in the rule doc; anything
+  outside it fails with a code the Gauntlet owns.
 
 ### 1.3 The MQI (Matt Quality Index)
 
-- [ ] Implement the phase-1 subset of `rivet audit`:
-  - complexity per function (High weight)
-  - DSL duplicate/dead-code findings (High/Medium)
-  - type strictness findings (High)
-  - output an overall grade and a machine-readable breakdown, per
-    `docs/pillars/06-matt-quality-index.md`.
-- [ ] Decide and document how test coverage and mutation survival enter the MQI
+- [ ] Implement the phase-1 subset of `rivet audit` (complexity High weight,
+  duplicate/dead-code and type-strictness findings, overall grade, JSON
+  breakdown) per `docs/pillars/06-matt-quality-index.md`.
+  Acceptance: `rivet audit` on the example prints a grade and a parseable
+  breakdown; unit tests cover the aggregation.
+- [ ] Decide and document how coverage and mutation survival enter the MQI
   before phase 1 closes (they may stay Rust-side until the generated-code test
   story exists).
+  Acceptance: the decision is written into the pillar doc or this section and
+  reflected in `rivet audit` output fields.
 
 ### 1.4 Integration and docs
 
 - [ ] CI: run the Gauntlet on `examples/basic` in the `gauntlet-check` GitHub
   Actions job (replace the placeholder `--version` step).
-- [ ] CI: add `cargo-deny` for CVE scanning (already mentioned in
-  `docs/development-workflow.md`).
-- [ ] Update `docs/ROADMAP.md` phase-1 checkboxes and `docs/development-workflow.md`
-  as rules land; align `CONTRIBUTING.md` wording once `rivet audit` exists.
+  Acceptance: a pushed branch with a rule violation fails that job with JSON
+  output visible in the log.
+- [ ] CI: add `cargo-deny` CVE scanning.
+  Acceptance: the CI job runs `cargo deny check` and fails on a known-vulnerable
+  dependency in a test.
+- [ ] Update `docs/ROADMAP.md` phase-1 checkboxes and
+  `docs/development-workflow.md` as rules land; align `CONTRIBUTING.md` once
+  `rivet audit` exists.
+  Acceptance: every shipped rule has its roadmap checkbox ticked and the
+  workflow doc shows the real commands.
 
 ---
 
 ## Phase 2 - Context engine
 
-Goal: persist state for humans and agents, per `docs/pillars/04-persistent-context-engine.md`.
+Goal: persist state for humans and agents, per
+`docs/pillars/04-persistent-context-engine.md`.
 
 ### 2.1 Local store
 
-- [ ] Define the `.rivet/` local store layout and the SQLite schema
-  (`commands`, `sessions`, AST fingerprints per commit); pick the SQLite crate
-  for `rivet-cli` and document the choice in the pillar doc.
+- [ ] Define the `.rivet/` store layout and SQLite schema (`commands`,
+  `sessions`, AST fingerprints per commit); choose and document the SQLite
+  crate for `rivet-cli`.
+  Acceptance: the schema migration runs clean on an empty store and the choice
+  is recorded in the pillar doc.
 - [ ] `rivet history`: list recorded commands with exit status and timing.
-- [ ] `rivet session save`: dump the current command context to a compact
-  markdown summary in the store.
+  Acceptance: two recorded builds appear in order with correct statuses.
+- [ ] `rivet session save`: dump current command context to compact markdown in
+  the store.
+  Acceptance: the saved session file round-trips and reads back as markdown.
 - [ ] `rivet session resume`: restore a saved session as compacted markdown.
+  Acceptance: resuming prints the same context the save produced.
 
 ### 2.2 Semantic search
 
-- [ ] Stand up LanceDB (local vector store) behind a small abstraction and
-  index code chunks from parsed blueprints.
-- [ ] `rivet explain "<symptom>"`: vector-search the code index, join AST
-  fingerprints with git history, and report the likely offending commit with a
+- [ ] Stand up LanceDB behind a small abstraction and index parsed blueprints.
+  Acceptance: an index test searches a known chunk and ranks it first.
+- [ ] `rivet explain "<symptom>"`: vector search plus AST fingerprints and git
+  history to report the likely offending commit.
+  Acceptance: the command on a fixture returns the introducing commit with a
   human-readable summary.
 
 ### 2.3 Docs
 
 - [ ] Update `docs/pillars/04-persistent-context-engine.md` and ROADMAP
-  checkboxes when the stores land.
+  checkboxes as stores land.
+  Acceptance: shipped features map one-to-one to ticked roadmap items.
 
 ---
 
@@ -139,15 +194,22 @@ Goal: persist state for humans and agents, per `docs/pillars/04-persistent-conte
 
 Goal: first-class AI integration, per `docs/pillars/09-super-cli.md`.
 
-- [ ] Research and pin a maintained MCP server SDK (e.g. the official Rust SDK
-  or `rmcp`); do not reintroduce placeholder crates.
-- [ ] MCP server exposing parsed AST and the vector index built in phase 2.
-- [ ] Slash commands: `/plan`, `/fix`, `/trace`, backed by the MQI and
-  context-engine stores.
-- [ ] Auto-PR generation with performance benchmarks (`rivet /plan` producing a
-  branch with tests).
-- [ ] Agentic error handling: attach suggested fixes to every JSON diagnostic
-  (parser diagnostics already carry them; extend to Gauntlet findings).
+- [ ] Research and pin a maintained MCP server SDK (official Rust SDK or
+  `rmcp`); no placeholder crates.
+  Acceptance: the crate resolves from the registry and a hello-world MCP tool
+  answers a probe request.
+- [ ] MCP server exposing parsed AST and the phase-2 vector index.
+  Acceptance: an MCP client lists the AST/vector tools and gets valid data.
+- [ ] Slash commands `/plan`, `/fix`, `/trace` backed by MQI and context
+  stores.
+  Acceptance: each command has an integration test with a fixture project.
+- [ ] Auto-PR generation with passing tests (`rivet /plan`).
+  Acceptance: on a fixture story the command produces a branch whose tests
+  pass.
+- [ ] Agentic error handling: suggested fixes on every JSON diagnostic,
+  including Gauntlet findings.
+  Acceptance: every emitted diagnostic in an error scenario carries
+  `suggested_fix`.
 
 ---
 
@@ -155,39 +217,51 @@ Goal: first-class AI integration, per `docs/pillars/09-super-cli.md`.
 
 Goal: production readiness, per pillars 01, 02, and 03.
 
-- [ ] Compile-time plugin system composed via traits (`rivet add plugin ...`
-  with zero runtime overhead), pillar 01 design notes.
-- [ ] Multi-service architecture switch: the same internal-channel service
-  code runs in-process (monolith) or over gRPC by config, pillar 02.
-- [ ] Polyglot frontend dev server: `rivet dev` proxies `/api` to the Rust
-  backend and detects Vite/Rsbuild/Next.js, pillar 03.
-- [ ] Production static assets embedded in the binary (rust-embed), pillar 03.
-- [ ] Service discovery integration (Consul/etcd) and the built-in admin panel
-  (React/Solid), per ROADMAP phase 4.
+- [ ] Compile-time plugin system composed via traits
+  (`rivet add plugin ...`, zero runtime overhead).
+  Acceptance: a fixture plugin compiles in with no registry lookup and its
+  route answers a request.
+- [ ] Multi-service switch: same internal-channel code runs in-process
+  (monolith) or over gRPC by config (pillar 02).
+  Acceptance: one blueprint builds and runs both topologies; the integration
+  test exercises both.
+- [ ] `rivet dev` polyglot frontend proxy detecting Vite/Rsbuild/Next.js
+  (pillar 03).
+  Acceptance: with a fixture Vite app, `/api/*` reaches the Rust backend and
+  other paths reach the dev server.
+- [ ] Static assets embedded in the binary (rust-embed) for production.
+  Acceptance: a built binary serves a fixture `dist/` file without a filesystem.
+- [ ] Service discovery (Consul/etcd) and built-in admin panel (React/Solid).
+  Acceptance: a two-service compose stack registers and the panel lists routes.
 - [ ] Story-to-Jira/Linear sync (`rivet sync`), closing pillar 05's loop.
+  Acceptance: a dry run against a mock API reports the expected story diff.
 
 ---
 
 ## Phase 5 - WASM and mobile
 
-Goal: edge and native distribution, per `docs/pillars/08-wasm-mobile-sdk-support.md`
-and `docs/pillars/data-structured-under-the-hood.md` (WASM-friendly core).
+Goal: edge and native distribution, per
+`docs/pillars/08-wasm-mobile-sdk-support.md` and
+`docs/pillars/data-structured-under-the-hood.md` (WASM-friendly core).
 
-- [ ] `rivet build --target wasm` compiling to `wasm32-wasi` (Cloudflare
-  Workers / Wasmtime).
-- [ ] UniFFI bindings for Kotlin, Swift, and TypeScript from the Rust core.
-- [ ] `rivet mobile init --platforms ios,android` generating SDKs that compile
+- [ ] `rivet build --target wasm` compiling to `wasm32-wasi`.
+  Acceptance: a generated app runs under Wasmtime and answers the ping route.
+- [ ] UniFFI bindings for Kotlin, Swift, and TypeScript from the core.
+  Acceptance: each generated binding compiles against the fixture core.
+- [ ] `rivet mobile init --platforms ios,android` producing SDKs that compile
   and pass tests.
-- [ ] Rust-native feature flags from `rivet.toml` flip on in this phase or
-  earlier ones: `const_generics` (fixed-size `List[T, N]` arrays) and
-  `zero_copy_deserialization` (borrowed bodies), with `compile_time_rbac` and
-  `raii_connections` tracked beside them.
+  Acceptance: the generated projects build in the platform toolchains in CI.
+- [ ] Flip the cross-phase `rust_native_features` flags as their features land
+  (see the cross-phase section).
+  Acceptance: all four flags are true in the example config and no generator
+  error path for them remains.
 
 ---
 
 ## Post-v1 (parking lot)
 
 Items intentionally out of the phase plan; pull in only with explicit scope.
+Each needs its acceptance drafted when pulled.
 
 - Real-time WebSocket support (plugin).
 - GraphQL federation.
@@ -195,4 +269,4 @@ Items intentionally out of the phase plan; pull in only with explicit scope.
 - Edge deployment tooling (Cloudflare Workers, Fly.io).
 - Additional language front ends (Java, Go, C#).
 - Performance benchmarks (`criterion`) and mutation testing that require the
-  generated-code test story from phase 1.4.
+  generated-code test story from phase 1.3.
