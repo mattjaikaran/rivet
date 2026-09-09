@@ -231,9 +231,9 @@ lines finish; the section closes when the phase does.
   bump was needed. Added to the workspace manifest with the `server`,
   `macros`, and `transport-io` features; the choice is recorded in pillar
   09. Tool parameters declare their JSON schema by hand because the
-  schemars derive expands to banned `unwrap` calls (`2292111`).
+  schemars derive expands to banned `unwrap` calls (`21e2cb6`).
 - `rivet mcp` serves the tool router over the stdio transport; an
   in-crate protocol test drives the real server over an in-memory duplex
   through `initialize`, `tools/list`, and `tools/call` and reads valid
   responses. The first tool, `parse_app`, returns the IR blueprint and
-  Gauntlet findings for a DSL module as JSON (`2292111`).
+  Gauntlet findings for a DSL module as JSON (`21e2cb6`).

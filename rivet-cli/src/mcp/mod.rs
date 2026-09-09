@@ -129,7 +129,16 @@ pub(crate) mod tests {
             .iter()
             .filter_map(|tool| tool.get("name").and_then(Value::as_str))
             .collect();
-        assert!(names.contains(&"parse_app"), "parse_app listed: {names:?}");
+        for expected in [
+            "parse_app",
+            "audit_app",
+            "session_context",
+            "history",
+            "vector_search",
+            "explain_symptom",
+        ] {
+            assert!(names.contains(&expected), "{expected} listed: {names:?}");
+        }
 
         // tools/call: parse the fixture and read the blueprint back.
         let call = format!(
@@ -158,6 +167,29 @@ pub(crate) mod tests {
             .expect("blueprint routes");
         assert_eq!(routes.len(), 1, "one route in the blueprint");
         assert!(payload.get("findings").is_some(), "findings present");
+
+        // tools/call: the audit tool returns the MQI grade over the wire.
+        let call = format!(
+            r#"{{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{{"name":"audit_app","arguments":{{"app":"{}"}}}}}}"#,
+            app.display()
+        );
+        write_line(&mut writer, &call).await;
+        let called = read_line(&mut reader).await;
+        let content = called
+            .pointer("/result/content")
+            .and_then(Value::as_array)
+            .expect("content array");
+        let text = content
+            .first()
+            .and_then(|item| item.get("text"))
+            .and_then(Value::as_str)
+            .expect("text content");
+        let audit: Value = serde_json::from_str(text).expect("audit parses");
+        assert_eq!(
+            audit.get("grade").and_then(Value::as_str),
+            Some("A+"),
+            "clean fixture grades A+ over the wire"
+        );
 
         // Closing the client ends the server cleanly.
         drop(writer);

@@ -27,6 +27,15 @@ calls, which the repo's clippy policy bans, and lint allows on a struct
 do not reach macro-expanded code.
 
 Every tool is a thin wrapper over an existing CLI function; a tool never
-re-implements pipeline logic. `parse_app` parses a DSL module and returns
-its IR blueprint and Gauntlet findings as JSON. The audit, vector, and
-context-store tools arrive as this phase lands each surface.
+re-implements pipeline logic. The tool set maps onto the shipped
+machinery:
+
+- `parse_app` parses a DSL module and returns its IR blueprint and
+  Gauntlet findings as JSON.
+- `audit_app` returns the MQI grade and dimension breakdown.
+- `vector_search` embeds a symptom and returns the nearest blueprint
+  route chunks with distances.
+- `explain_symptom` traces a symptom to its nearest route, introducing
+  commit, and module digest.
+- `session_context` renders the compact markdown module context.
+- `history` lists the recorded CLI invocations for the project.

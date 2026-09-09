@@ -372,11 +372,10 @@ fn plural(count: usize) -> &'static str {
     if count == 1 { "" } else { "s" }
 }
 
-/// Parse the module, run the Gauntlet, and print the MQI grade.
-///
-/// Findings do not fail the audit: it is a measurement, not a gate. Only a
-/// config or parse failure returns diagnostics.
-pub fn run_audit(app_file: &Path, json: bool) -> Result<(), Vec<Diagnostic>> {
+/// Parse the module, run the Gauntlet, and fold the findings into a
+/// report. Findings do not fail the audit: it is a measurement, not a
+/// gate. Only a config or parse failure returns diagnostics.
+fn build_report(app_file: &Path) -> Result<Report, Vec<Diagnostic>> {
     let project_dir = app_file
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -398,8 +397,18 @@ pub fn run_audit(app_file: &Path, json: bool) -> Result<(), Vec<Diagnostic>> {
 
     let module = parse_python_file(app_file).map_err(|diagnostic| vec![diagnostic])?;
     let findings = gauntlet::run_gauntlet(&module, &config.gauntlet);
-    let report = Report::build(&module.file, &findings, &config.gauntlet);
+    Ok(Report::build(&module.file, &findings, &config.gauntlet))
+}
 
+/// The MQI audit report as its JSON breakdown, for callers that want the
+/// payload without printing it (for example the MCP `audit_app` tool).
+pub(crate) fn audit_json(app_file: &Path) -> Result<String, Vec<Diagnostic>> {
+    Ok(build_report(app_file)?.to_json())
+}
+
+/// Parse the module, run the Gauntlet, and print the MQI grade.
+pub fn run_audit(app_file: &Path, json: bool) -> Result<(), Vec<Diagnostic>> {
+    let report = build_report(app_file)?;
     if json {
         println!("{}", report.to_json());
     } else {

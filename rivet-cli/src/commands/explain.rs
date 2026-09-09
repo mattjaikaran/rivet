@@ -19,10 +19,45 @@ use crate::parser::python::parse_python_file;
 use crate::store;
 use crate::store::vector::{RouteSummary, digest, index_blueprint, search};
 use std::path::Path;
+/// One searchable chunk per blueprint route, in route order.
+pub(crate) fn route_summaries(module: &crate::parser::python::ParsedModule) -> Vec<RouteSummary> {
+    module
+        .blueprint
+        .routes
+        .iter()
+        .map(|route| RouteSummary {
+            method: route.method.as_str().to_string(),
+            path: route.path.clone(),
+            handler: route.handler_name.clone(),
+            stories: route.stories.clone(),
+        })
+        .collect()
+}
 
-/// Run `explain` inside a small tokio runtime so the async vector store
-/// works from the otherwise synchronous command layer.
-pub fn run_explain(symptom: &str, app_file: &Path) -> Result<(), Vec<Diagnostic>> {
+/// One structured explanation: the route chunk, the introducing commit,
+/// and the context around them.
+pub(crate) struct Explanation {
+    /// The best-matching route chunk text, when any route matches.
+    pub route: Option<String>,
+    /// Distance of the best match.
+    pub distance: Option<f32>,
+    /// The commit that first added the matched handler, when git knows it.
+    pub introducer: Option<String>,
+    /// Current HEAD of the project, when it is a git checkout.
+    pub commit: Option<String>,
+    /// The module digest recorded against the current commit.
+    pub digest: String,
+    /// Gauntlet findings on the module.
+    pub findings: usize,
+}
+
+/// Trace a symptom through the vector index and git history, awaiting the
+/// vector store directly. Callable from async contexts (the MCP server);
+/// the synchronous [`explain_data`] wraps this in a one-off runtime.
+pub(crate) async fn explain_async(
+    symptom: &str,
+    app_file: &Path,
+) -> Result<Explanation, Vec<Diagnostic>> {
     let project_dir = store::project_dir_for(app_file);
     let config = RivetConfig::load(&project_dir)
         .map_err(|message| vec![Diagnostic::blocker("E1008", message)])?;
@@ -33,18 +68,7 @@ pub fn run_explain(symptom: &str, app_file: &Path) -> Result<(), Vec<Diagnostic>
     // symptom points at.
     let findings = gauntlet::run_gauntlet(&module, &config.gauntlet);
 
-    let routes: Vec<RouteSummary> = module
-        .blueprint
-        .routes
-        .iter()
-        .map(|route| RouteSummary {
-            method: route.method.as_str().to_string(),
-            path: route.path.clone(),
-            handler: route.handler_name.clone(),
-            stories: route.stories.clone(),
-        })
-        .collect();
-
+    let routes = route_summaries(&module);
     let module_text = format!("{:?}", module.blueprint);
     let module_digest = digest(&module_text);
     let app_label = app_file
@@ -64,8 +88,44 @@ pub fn run_explain(symptom: &str, app_file: &Path) -> Result<(), Vec<Diagnostic>
         )?;
     }
 
-    // Index and search on the async runtime. Errors from the vector store
-    // surface as a single structured diagnostic.
+    index_blueprint(&project_dir, &app_label, &routes)
+        .await
+        .map_err(|err| Diagnostic::blocker("E3005", err))?;
+    let result = search(&project_dir, &app_label, symptom)
+        .await
+        .map_err(|err| Diagnostic::blocker("E3005", err))?;
+
+    let mut introducer = None;
+    let mut distance = None;
+    let route = result.first().map(|(text, d)| {
+        distance = Some(*d);
+        text.clone()
+    });
+    if let Some(text) = &route {
+        // Pick the matched route's handler out of the chunk text: the
+        // chunk is "METHOD path handler NAME stories ...".
+        let handler = text
+            .split_whitespace()
+            .skip_while(|w| *w != "handler")
+            .nth(1);
+        if let Some(handler) = handler {
+            introducer = introducing_commit(&project_dir, handler, app_file);
+        }
+    }
+
+    Ok(Explanation {
+        route,
+        distance,
+        introducer,
+        commit,
+        digest: module_digest,
+        findings: findings.len(),
+    })
+}
+
+/// Run the explanation inside a small tokio runtime so the async vector
+/// store works from the otherwise synchronous command layer.
+pub(crate) fn explain_data(symptom: &str, app_file: &Path) -> Result<Explanation, Vec<Diagnostic>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -75,57 +135,53 @@ pub fn run_explain(symptom: &str, app_file: &Path) -> Result<(), Vec<Diagnostic>
                 format!("runtime error: {err}"),
             )]
         })?;
-    let result = runtime.block_on(async {
-        index_blueprint(&project_dir, &app_label, &routes)
-            .await
-            .map_err(|err| Diagnostic::blocker("E3005", err))?;
-        search(&project_dir, &app_label, symptom)
-            .await
-            .map_err(|err| Diagnostic::blocker("E3005", err))
-    })?;
+    runtime.block_on(explain_async(symptom, app_file))
+}
+
+/// Run `explain` and print the explanation for a human.
+pub fn run_explain(symptom: &str, app_file: &Path) -> Result<(), Vec<Diagnostic>> {
+    let explanation = explain_data(symptom, app_file)?;
 
     println!("Explain: {symptom:?}");
-    match result.first() {
-        Some((text, distance)) => {
+    match &explanation.route {
+        Some(text) => {
             println!("Best matching route: {text}");
-            println!("Distance: {distance:.4}");
-            // Pick the matched route's handler out of the chunk text: the
-            // chunk is "METHOD path handler NAME stories ...".
-            let handler = text
-                .split_whitespace()
-                .skip_while(|w| *w != "handler")
-                .nth(1);
-            if let Some(handler) = handler {
-                match introducing_commit(&project_dir, handler, app_file) {
-                    Some(introducer) => {
-                        println!("Introduced by commit: {introducer}");
-                    }
-                    None => {
-                        println!(
-                            "Could not find the commit that introduced handler {handler:?} \
-                             (not a git checkout?)"
-                        );
-                    }
-                }
+            if let Some(distance) = explanation.distance {
+                println!("Distance: {distance:.4}");
+            }
+            match &explanation.introducer {
+                Some(introducer) => println!("Introduced by commit: {introducer}"),
+                None => println!(
+                    "Could not find the commit that introduced this handler \
+                     (not a git checkout?)"
+                ),
             }
         }
         None => println!("No indexed routes match this symptom"),
     }
-    match commit {
-        Some(commit) => println!("Current commit {commit}, module digest {module_digest}"),
+    match &explanation.commit {
+        Some(commit) => {
+            println!(
+                "Current commit {commit}, module digest {}",
+                explanation.digest
+            )
+        }
         None => println!("Not a git checkout; no commit fingerprint recorded"),
     }
-    if findings.is_empty() {
+    if explanation.findings == 0 {
         println!("Gauntlet: no findings on the module");
     } else {
-        println!("Gauntlet: {} finding(s) on the module", findings.len());
+        println!(
+            "Gauntlet: {} finding(s) on the module",
+            explanation.findings
+        );
     }
     Ok(())
 }
 
 /// Resolve the current git commit hash of the project, when it is a git
 /// checkout. Returns `None` for a non-git directory.
-fn current_commit(project_dir: &Path) -> Option<String> {
+pub(crate) fn current_commit(project_dir: &Path) -> Option<String> {
     git(project_dir, &["rev-parse", "HEAD"])
 }
 
