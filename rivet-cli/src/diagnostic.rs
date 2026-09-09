@@ -151,7 +151,11 @@ impl std::fmt::Display for Diagnostic {
     }
 }
 
-impl std::error::Error for Diagnostic {}
+impl From<Diagnostic> for Vec<Diagnostic> {
+    fn from(diagnostic: Diagnostic) -> Self {
+        vec![diagnostic]
+    }
+}
 
 #[cfg(test)]
 mod tests {
