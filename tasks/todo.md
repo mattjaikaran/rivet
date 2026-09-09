@@ -119,10 +119,6 @@ SQLite/LanceDB choices are recorded in pillar 04.
 
 Goal: first-class AI integration, per `docs/pillars/09-super-cli.md`.
 
-- [ ] Research and pin a maintained MCP server SDK (official Rust SDK or
-  `rmcp`); no placeholder crates.
-  Acceptance: the crate resolves from the registry and a hello-world MCP tool
-  answers a probe request.
 - [ ] MCP server exposing parsed AST and the phase-2 vector index.
   Acceptance: an MCP client lists the AST/vector tools and gets valid data.
 - [ ] Slash commands `/plan`, `/fix`, `/trace` backed by MQI and context

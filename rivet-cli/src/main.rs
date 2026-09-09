@@ -17,6 +17,7 @@ mod commands;
 mod config;
 mod diagnostic;
 mod gauntlet;
+mod mcp;
 mod parser;
 mod store;
 mod transpiler;
@@ -67,6 +68,9 @@ enum Command {
         #[arg(default_value = "app.py")]
         app: PathBuf,
     },
+    /// Serve the Model Context Protocol (MCP) server over stdio so AI
+    /// agents can call Rivet tools (phase 3, pillar 09).
+    Mcp,
     /// Save, list, or resume a compact markdown session context.
     Session {
         #[command(subcommand)]
@@ -112,6 +116,7 @@ impl Command {
             Command::Audit { .. } => "audit".into(),
             Command::History { .. } => "history".into(),
             Command::Explain { .. } => "explain".into(),
+            Command::Mcp => "mcp".into(),
             Command::Session { action, .. } => match action {
                 SessionAction::Save { .. } => "session save".into(),
                 SessionAction::Resume { .. } => "session resume".into(),
@@ -127,6 +132,7 @@ impl Command {
                 app.clone()
             }
             Command::Explain { app, .. } => app.clone(),
+            Command::Mcp => PathBuf::new(),
             Command::Session { action } => match action {
                 SessionAction::Save { app, .. }
                 | SessionAction::Resume { app, .. }
@@ -160,6 +166,7 @@ fn main() -> ExitCode {
         Command::Audit { app, json } => commands::audit::run_audit(&app, json),
         Command::History { app } => commands::history::run_history(&app),
         Command::Explain { symptom, app } => commands::explain::run_explain(&symptom, &app),
+        Command::Mcp => mcp::run_stdio().map_err(|diagnostic| vec![diagnostic]),
         Command::Session { action } => match action {
             SessionAction::Save { name, app } => commands::session::run_session_save(&app, &name),
             SessionAction::Resume { name, app } => {

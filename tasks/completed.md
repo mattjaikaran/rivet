@@ -216,3 +216,24 @@ LanceDB vector index answers `rivet explain`. Decisions recorded in
   with correct statuses; a session round-trips save -> resume; on a
   two-commit fixture `rivet explain "orders failing"` names the commit
   that added the orders route.
+
+## Phase 3 - MCP and agentic CLI
+
+Served by `prompts/prompt-06-mcp.md`. Entries land here as their tracker
+lines finish; the section closes when the phase does.
+
+### 1.1 SDK pin
+
+- Pinned `rmcp` 3.2 as the MCP server SDK: it is the official Rust SDK
+  for the Model Context Protocol (`modelcontextprotocol/rust-sdk`,
+  Apache-2.0), actively released, and compiles at the workspace MSRV (its
+  `rust-version` is 1.88, below the workspace 1.91), so no `rust-version`
+  bump was needed. Added to the workspace manifest with the `server`,
+  `macros`, and `transport-io` features; the choice is recorded in pillar
+  09. Tool parameters declare their JSON schema by hand because the
+  schemars derive expands to banned `unwrap` calls (`2292111`).
+- `rivet mcp` serves the tool router over the stdio transport; an
+  in-crate protocol test drives the real server over an in-memory duplex
+  through `initialize`, `tools/list`, and `tools/call` and reads valid
+  responses. The first tool, `parse_app`, returns the IR blueprint and
+  Gauntlet findings for a DSL module as JSON (`2292111`).

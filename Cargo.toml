@@ -35,5 +35,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tree-sitter = "0.27"
 tree-sitter-python = "0.25"
 
+# MCP server (phase 3, pillar 09): the official Rust SDK for the Model
+# Context Protocol (github.com/modelcontextprotocol/rust-sdk). The `server`,
+# `macros`, and `transport-io` features give the tool macros, the server
+# service, and the stdio transport the `rivet mcp` command serves on.
+rmcp = { version = "3.2", default-features = false, features = ["server", "macros", "transport-io"] }
+
 # Each later phase adds the crates it needs here. Keep this table limited
 # to dependencies that at least one workspace member actually uses.

@@ -119,6 +119,15 @@ impl Diagnostic {
     /// infallible, so this method cannot panic (the project bans `unwrap` and
     /// `expect`).
     pub fn to_json(&self) -> String {
+        self.to_json_value().to_string()
+    }
+
+    /// The diagnostic as a JSON value, for embedding in larger payloads.
+    ///
+    /// Built from [`serde_json::Value`] constructors only, which are
+    /// infallible, so this method cannot panic (the project bans `unwrap` and
+    /// `expect`).
+    pub fn to_json_value(&self) -> Value {
         let mut object = serde_json::Map::new();
         object.insert("error_code".into(), Value::String(self.error_code.clone()));
         object.insert(
@@ -141,7 +150,7 @@ impl Diagnostic {
         if let Some(path) = &self.ast_path {
             object.insert("ast_path".into(), Value::String(path.clone()));
         }
-        Value::Object(object).to_string()
+        Value::Object(object)
     }
 }
 
