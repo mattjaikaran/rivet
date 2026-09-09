@@ -1,0 +1,18 @@
+[package]
+name = "rivet-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Intermediate representation and shared types for the Rivet transpilation pipeline"
+readme = "../README.md"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+# Keep rivet-core free of heavy runtimes and platform-specific crates so it
+# can compile to WASM later (roadmap phase 5).
