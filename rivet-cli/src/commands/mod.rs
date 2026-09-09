@@ -8,5 +8,6 @@
 
 pub mod audit;
 pub mod build;
+pub mod explain;
 pub mod history;
 pub mod session;

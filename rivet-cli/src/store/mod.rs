@@ -17,6 +17,7 @@
 //!
 //! Error codes owned by the context engine: `E3000`-`E3010`.
 
+pub mod vector;
 use crate::diagnostic::Diagnostic;
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
@@ -196,6 +197,22 @@ pub fn list_sessions(conn: &Connection) -> Result<Vec<SessionRecord>, Diagnostic
         .map_err(|err| store_error("E3003", format!("cannot query sessions: {err}")))?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|err| store_error("E3003", format!("cannot read sessions: {err}")))
+}
+
+/// Store an AST fingerprint for one commit and app path.
+pub fn save_fingerprint(
+    conn: &Connection,
+    commit: &str,
+    app_path: &str,
+    digest: &str,
+) -> Result<(), Diagnostic> {
+    conn.execute(
+        "INSERT INTO fingerprints (commit_hash, app_path, digest) VALUES (?1, ?2, ?3)
+         ON CONFLICT(commit_hash, app_path) DO UPDATE SET digest = ?3",
+        rusqlite::params![commit, app_path, digest],
+    )
+    .map_err(|err| store_error("E3004", format!("cannot save fingerprint: {err}")))?;
+    Ok(())
 }
 
 /// Build a diagnostic with a context-engine error code.

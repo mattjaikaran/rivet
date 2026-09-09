@@ -35,3 +35,5 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 # that feature (upstream 0.38.0).
 lancedb = { version = "0.38.0", default-features = false, features = ["remote"] }
 time = { workspace = true }
+futures = "0.3"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros"] }

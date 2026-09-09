@@ -56,6 +56,16 @@ enum Command {
         #[arg(default_value = "app.py")]
         app: PathBuf,
     },
+    /// Trace a symptom to the route and commit most likely to have
+    /// introduced it.
+    Explain {
+        /// The symptom to search for, for example "orders endpoint 500".
+        symptom: String,
+        /// Path to the app module that owns the store (defaults to
+        /// `app.py`; the store lives next to it).
+        #[arg(default_value = "app.py")]
+        app: PathBuf,
+    },
     /// Save, list, or resume a compact markdown session context.
     Session {
         #[command(subcommand)]
@@ -100,6 +110,7 @@ impl Command {
             Command::Build { .. } => "build".into(),
             Command::Audit { .. } => "audit".into(),
             Command::History { .. } => "history".into(),
+            Command::Explain { .. } => "explain".into(),
             Command::Session { action, .. } => match action {
                 SessionAction::Save { .. } => "session save".into(),
                 SessionAction::Resume { .. } => "session resume".into(),
@@ -114,6 +125,7 @@ impl Command {
             Command::Build { app } | Command::Audit { app, .. } | Command::History { app } => {
                 app.clone()
             }
+            Command::Explain { app, .. } => app.clone(),
             Command::Session { action } => match action {
                 SessionAction::Save { app, .. }
                 | SessionAction::Resume { app, .. }
@@ -146,6 +158,7 @@ fn main() -> ExitCode {
         Command::Build { app } => commands::build::run_build(&app),
         Command::Audit { app, json } => commands::audit::run_audit(&app, json),
         Command::History { app } => commands::history::run_history(&app),
+        Command::Explain { symptom, app } => commands::explain::run_explain(&symptom, &app),
         Command::Session { action } => match action {
             SessionAction::Save { name, app } => commands::session::run_session_save(&app, &name),
             SessionAction::Resume { name, app } => {
