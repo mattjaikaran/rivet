@@ -76,7 +76,7 @@ Commit: `3e09b54`.
 - Decided and documented how coverage and mutation survival enter the MQI:
   they stay Rust-side until the generated-code test story exists and appear
   in the `rivet audit` `not_scored` JSON list with their reasons; written
-  into pillar 06 and the audit module doc (`bdcb65e`).
+  into pillar 06 and the audit module doc (`b0c96c8`).
 
 ### 1.1 Foundation
 
