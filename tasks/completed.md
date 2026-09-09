@@ -64,6 +64,14 @@ Served by `prompts/prompt-04-gauntlet.md`. Sections 1.1 and 1.2 are done;
 the audit (1.3) and CI (1.4) tasks remain in `tasks/todo.md`.
 Commit: `3e09b54`.
 
+### 1.3 The MQI
+
+- Implemented `rivet audit` (grade plus JSON breakdown) per pillar 06:
+  complexity, duplicate code, dead code, and type strictness carry the
+  pillar weights into an A+ to F grade; a blocker finding deducts 20 points
+  and a warning 10. Unit tests cover the aggregation and the grade bands
+  (`<hash>`).
+
 ### 1.1 Foundation
 
 - Authored `prompts/prompt-04-gauntlet.md` in the prompts 00-03 format;

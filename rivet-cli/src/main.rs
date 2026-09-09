@@ -35,12 +35,22 @@ enum Command {
         #[arg(default_value = "app.py")]
         app: PathBuf,
     },
+    /// Run the Gauntlet and report the phase-1 MQI grade (pillar 06).
+    Audit {
+        /// Path to the app module (defaults to `app.py`).
+        #[arg(default_value = "app.py")]
+        app: PathBuf,
+        /// Print only the JSON breakdown.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Build { app } => commands::build::run_build(&app),
+        Command::Audit { app, json } => commands::audit::run_audit(&app, json),
     };
 
     match result {

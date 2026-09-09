@@ -89,11 +89,6 @@ Sections 1.1 (foundation) and 1.2 (rules) are complete; see
 
 ### 1.3 The MQI (Matt Quality Index)
 
-- [ ] Implement the phase-1 subset of `rivet audit` (complexity High weight,
-  duplicate/dead-code and type-strictness findings, overall grade, JSON
-  breakdown) per `docs/pillars/06-matt-quality-index.md`.
-  Acceptance: `rivet audit` on the example prints a grade and a parseable
-  breakdown; unit tests cover the aggregation.
 - [ ] Decide and document how coverage and mutation survival enter the MQI
   before phase 1 closes (they may stay Rust-side until the generated-code test
   story exists).
