@@ -7,8 +7,9 @@
 //! emits one per finding — so the CLI prints every line before failing.
 //!
 //! Every invocation is recorded in the project context store before it runs
-//! (see [`store`]): `rivet history` lists what ran, and `rivet session`
-//! saves and resumes the context around it.
+//! (see [`store`]): `rivet history` lists what ran, `rivet session` saves and
+//! resumes the context around it, and `rivet explain` traces a symptom to its
+//! introducing commit.
 
 #![allow(clippy::result_large_err)] // Diagnostics are self-contained JSON payloads
 
