@@ -286,10 +286,8 @@ fn classify_decorated(
             "class_definition" => {
                 inner_class = Some(decl_name(&child, source).to_string());
             }
-            "decorator" => {
-                if decorator::parse_api_decorator(&child, source, file)?.is_some() {
-                    api_decorators += 1;
-                }
+            "decorator" if decorator::parse_api_decorator(&child, source, file)?.is_some() => {
+                api_decorators += 1;
             }
             _ => {}
         }
