@@ -34,3 +34,4 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 # job.rs unconditionally constructs Error::Http, which only exists under
 # that feature (upstream 0.38.0).
 lancedb = { version = "0.38.0", default-features = false, features = ["remote"] }
+time = { workspace = true }
