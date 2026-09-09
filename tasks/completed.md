@@ -237,3 +237,16 @@ lines finish; the section closes when the phase does.
   through `initialize`, `tools/list`, and `tools/call` and reads valid
   responses. The first tool, `parse_app`, returns the IR blueprint and
   Gauntlet findings for a DSL module as JSON (`21e2cb6`).
+
+### 1.2 MCP tool set
+
+- Completed the `rivet mcp` tool set, each tool a thin wrapper over an
+  existing command or store function: `audit_app` (via the new
+  `audit_json` seam), `vector_search` and `explain_symptom` (over the
+  phase-2 LanceDB index), `session_context`, and `history`. The protocol
+  probe test lists all six tools and calls two over the wire; unit tests
+  cover every payload (`5642450`).
+- Split `rivet explain` into an async core (`explain_async`) plus a sync
+  runtime wrapper (`explain_data`) so the MCP server can await the vector
+  store without nesting tokio runtimes, and shared `route_summaries`
+  between the command and the tools (`5642450`).

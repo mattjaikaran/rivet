@@ -119,8 +119,6 @@ SQLite/LanceDB choices are recorded in pillar 04.
 
 Goal: first-class AI integration, per `docs/pillars/09-super-cli.md`.
 
-- [ ] MCP server exposing parsed AST and the phase-2 vector index.
-  Acceptance: an MCP client lists the AST/vector tools and gets valid data.
 - [ ] Slash commands `/plan`, `/fix`, `/trace` backed by MQI and context
   stores.
   Acceptance: each command has an integration test with a fixture project.
