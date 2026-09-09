@@ -147,30 +147,31 @@ pub fn parse_python_module(
     let mut dtos: HashMap<String, StructDefinition> = HashMap::new();
     let mut dto_order: Vec<String> = Vec::new();
     for child in root.named_children_all() {
-        if child.kind() == "class_definition" {
-            if let Some(dto) = types::parse_dto_class(&child, source, file_label)? {
-                if dtos.contains_key(&dto.name) {
-                    return Err(Diagnostic::blocker(
-                        "E1003",
-                        "duplicate DTO definition; class names must be unique",
-                    )
-                    .located(file_label, line_of(&child), None::<String>));
-                }
-                let name = dto.name.clone();
-                dtos.insert(name.clone(), dto);
-                dto_order.push(name);
+        if child.kind() == "class_definition"
+            && let Some(dto) = types::parse_dto_class(&child, source, file_label)?
+        {
+            if dtos.contains_key(&dto.name) {
+                return Err(Diagnostic::blocker(
+                    "E1003",
+                    "duplicate DTO definition; class names must be unique",
+                )
+                .located(file_label, line_of(&child), None::<String>));
             }
+            let name = dto.name.clone();
+            dtos.insert(name.clone(), dto);
+            dto_order.push(name);
         }
     }
 
     // Pass two: parse routes. Undecorated functions and non-`api` decorators
     // are not routes and are skipped.
     let mut routes = Vec::new();
+
     for child in root.named_children_all() {
-        if child.kind() == "decorated_definition" {
-            if let Some(route) = parse_route(&child, source, file_label, &dtos)? {
-                routes.push(route);
-            }
+        if child.kind() == "decorated_definition"
+            && let Some(route) = parse_route(&child, source, file_label, &dtos)?
+        {
+            routes.push(route);
         }
     }
 

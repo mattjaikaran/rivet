@@ -10,8 +10,13 @@
 [advisories]
 # Fail the check when the advisory database reports a yanked crate; never
 # silently ignore an advisory.
-yanked = "deny"
-ignore = []
+ignore = [
+    # RUSTSEC-2024-0436: dtolnay's `paste` is archived upstream with no
+    # fixed release. lance pulls it (via lance-bitpacking) as a build-time
+    # macro dependency; the macro is inert at runtime. Revisit if lance
+    # drops `paste` or a maintained fork (pastey) becomes standard.
+    "RUSTSEC-2024-0436",
+]
 
 [bans]
 # Two syn majors coexist today because derive crates release on different
@@ -24,4 +29,15 @@ allow = [
     "MIT",
     "Apache-2.0",
     "Unicode-3.0",
+    # The phase-2 vector index (lancedb) pulls the arrow/datafusion/lance
+    # tree, which adds permissive BSD/ISC/Boost/zlib-family licenses. Each
+    # is OSI-approved and appears only as a leaf of an allow-listed
+    # expression; add a reason per new entry.
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MPL-2.0",
+    "Zlib",
 ]

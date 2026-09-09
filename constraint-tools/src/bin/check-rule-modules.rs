@@ -26,10 +26,8 @@ fn main() -> ExitCode {
                 && name
                     .to_str()
                     .is_some_and(|n| n != "mod.rs" && n.ends_with(".rs"));
-            if keep {
-                if let Ok(text) = fs::read_to_string(&abs) {
-                    files.push((rel_path(root, &abs), text));
-                }
+            if keep && let Ok(text) = fs::read_to_string(&abs) {
+                files.push((rel_path(root, &abs), text));
             }
         }
     }
@@ -86,10 +84,10 @@ fn table_rows(mod_text: &str) -> Vec<(usize, String, String)> {
             break;
         }
         let content = line[3..].trim();
-        if content.starts_with("| E") {
-            if let Some((code, module)) = parse_row(content) {
-                rows.push((idx + 1, code, module));
-            }
+        if content.starts_with("| E")
+            && let Some((code, module)) = parse_row(content)
+        {
+            rows.push((idx + 1, code, module));
         }
     }
     rows

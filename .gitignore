@@ -11,8 +11,8 @@
 # Generated code (the transpiled Rust server)
 generated/
 
-# Local context engine (SQLite + LanceDB), future phases
-/.rivet/
+# Local context engine (SQLite + LanceDB), one store per project dir
+.rivet/
 *.db
 *.db-wal
 *.db-shm
