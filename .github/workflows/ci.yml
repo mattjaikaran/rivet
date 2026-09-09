@@ -34,18 +34,33 @@ jobs:
       - name: Run Tests
         run: cargo test --workspace
 
+  cargo-deny:
+    name: Cargo Deny (CVE scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+
   gauntlet-check:
-    name: Rivet Gauntlet (Future Integration)
+    name: Rivet Gauntlet on examples/basic
     runs-on: ubuntu-latest
     needs: rust-checks
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Build Rivet CLI (Placeholder)
-        run: cargo build --bin rivet --release
-      
-      - name: Run Audit (MQI)
-        run: |
-          # In v1, this will enforce the Gauntlet.
-          # For Phase 0, we just verify the binary exists.
-          ./target/release/rivet --version
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Dependencies
+        uses: swatinem/rust-cache@v2
+
+      - name: Build the rivet CLI
+        run: cargo build --release --bin rivet
+
+      - name: Run the Gauntlet on the example
+        run: ./target/release/rivet build examples/basic/app.py
+
+      - name: Report the example MQI grade
+        run: ./target/release/rivet audit --json examples/basic/app.py

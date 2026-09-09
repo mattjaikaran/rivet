@@ -1,0 +1,27 @@
+# cargo-deny configuration: supply-chain and CVE scanning for the Rivet
+# workspace. CI runs `cargo deny check` in the cargo-deny job of
+# .github/workflows/ci.yml; run the same check locally with `cargo deny
+# check`. The config follows the cargo-deny 0.20 schema.
+#
+# The license allow list is intentionally minimal: when the dependency
+# tree needs a new license, CI fails and you extend this list with the
+# new license and a reason in the commit.
+
+[advisories]
+# Fail the check when the advisory database reports a yanked crate; never
+# silently ignore an advisory.
+yanked = "deny"
+ignore = []
+
+[bans]
+# Two syn majors coexist today because derive crates release on different
+# tracks; warn instead of deny so a transient upstream bump cannot block a
+# build, and CI stays green while the tree converges.
+multiple-versions = "warn"
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Unicode-3.0",
+]
