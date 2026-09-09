@@ -133,3 +133,40 @@ stays open (blocked on the generated-code test story).
 - Closed phase 1 in the tracker and roadmap; the mutation-tester
   roadmap bullet stays open, blocked on the generated-code test story
   (see pillar 06, `not_scored`).
+
+## Constraint tools (complete 2026-09-09)
+
+Not a roadmap phase: deterministic self-checks gate the Rivet source tree
+the way the Gauntlet gates DSL apps, preceding phase 2 so later work
+inherits them. Served by the SwarmForge constraint-tools pattern in
+`~/dev/django-ninja-boilerplate/docs/CONSTRAINT_TOOLS.md`.
+
+- Added the `constraint-tools` workspace crate with three small
+  deterministic binaries: `check-file-length` (400-line default ceiling,
+  300 for Gauntlet rule modules, four grandfathered legacy files frozen
+  at 728/699/679/444), `check-rule-modules` (error-code table, `pub mod`
+  declarations, rule files, and doc codes agree 1:1), and `check-tracker`
+  (no `- [x]` left in todo.md, no duplicate or cross-file task text, no
+  open item under a `(complete ...)` section); each exits 0 or 1
+  (`cb3e3bf`).
+- One gate command: `scripts/gate.sh` runs fmt, clippy (`-D warnings`),
+  tests, `cargo deny check`, the example build and audit, and the three
+  self-checks in order, stopping at the first failure with its output
+  visible; Makefile targets `gate` and `self-check` delegate to it
+  (`86d8803`).
+- CI wiring: the `repo-self-checks` job builds and runs the three
+  self-check binaries on every push to main and PR, so a planted
+  violation fails the job with the violation in the log (`4162a09`).
+- Self-enforcement and docs: the tools gate themselves (the crate is
+  inside the file-length and rule-module checks and passes), and the real
+  commands, thresholds, and how-to-add-a-check steps are recorded in
+  `docs/development-workflow.md`, `CONTRIBUTING.md`, and the README
+  layout table (`25ed04e`).
+
+### Verification
+
+- 93 tests green (20 new), fmt and clippy clean, gate passes end to end.
+- A planted over-long rule module (`complexity.rs` at 309 lines) fails
+  `check-file-length`, an undocumented rule module fails
+  `check-rule-modules`, a leftover `- [x]` line fails `check-tracker`,
+  and the full gate exits 1 with the violation visible.

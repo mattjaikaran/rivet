@@ -91,7 +91,7 @@ story (see pillar 06, `not_scored`).
 
 ---
 
-## Constraint tools: gate the Rivet repo itself
+## Constraint tools: gate the Rivet repo itself (complete 2026-09-09)
 
 The Gauntlet gates DSL apps; this workstream gates the Rivet source tree the
 same way. Deterministic, small, binary pass/fail tools chained in one gate,
@@ -99,21 +99,8 @@ after the SwarmForge pattern in
 `~/dev/django-ninja-boilerplate/docs/CONSTRAINT_TOOLS.md`. Not a roadmap
 phase; it precedes phase 2 so later work inherits the self-checks.
 
-- [ ] Repository self-checks: file-length ceilings, one documented rule
-  module per Gauntlet error code, rule-module size limits, and tracker
-  coherence, each as a small deterministic program.
-  Acceptance: every check is under 400 lines, exits 0 or 1, and passes on
-  the current tree with documented thresholds.
-- [ ] One gate command: an orchestrator running fmt, clippy, tests,
-  `cargo deny check`, the example build and audit, and the self-checks.
-  Acceptance: one command passes on a clean tree and fails on a planted
-  violation with the violation visible.
-- [ ] CI wiring: the orchestrator or self-checks run in a CI job.
-  Acceptance: a pushed branch with a planted violation fails that job.
-- [ ] Self-enforcement and docs: each tool passes its own checks; the suite
-  (real commands, thresholds, how to add a check) is recorded in
-  `docs/development-workflow.md` and `CONTRIBUTING.md`.
-  Acceptance: the docs show the real commands and the tools gate themselves.
+All four items are done; see `tasks/completed.md`. The mutation-tester
+parking-lot bullet stays open (generated-code test story, pillar 06).
 
 ---
 
