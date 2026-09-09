@@ -23,6 +23,53 @@ cargo test --workspace
 cargo deny check
 ```
 
+## Repository self-checks (constraint tools)
+
+The Gauntlet gates DSL apps; `constraint-tools/` gates the Rivet source tree
+itself the same way. Three small deterministic binaries check the repo, and
+`scripts/gate.sh` runs every gate in one command. Run them from the repo root:
+
+```bash
+./scripts/gate.sh                          # every gate, stops at the first failure
+cargo build -p constraint-tools
+./target/debug/check-file-length           # file-length ceilings
+./target/debug/check-rule-modules          # rule table <-> module coherence
+./target/debug/check-tracker               # tasks/ tracker coherence
+```
+
+`scripts/gate.sh` runs, in order: fmt, clippy (`-D warnings`), tests,
+`cargo deny check`, the example build and audit, and the three self-checks.
+It exits non-zero at the first failing stage with that stage's output
+visible. CI runs the same self-checks in the `repo-self-checks` job.
+
+### Thresholds
+
+Each check is a small deterministic program (under 400 lines) that exits 0
+or 1 and prints `path:line: message` violations. The thresholds are:
+
+| Check | Threshold |
+| :--- | :--- |
+| `check-file-length` | 400 lines default; 300 for Gauntlet rule modules (`rivet-cli/src/gauntlet/*.rs` except `mod.rs`); 728/699/679/444 for four grandfathered legacy files (`parser/python.rs`, `transpiler/rust.rs`, `commands/audit.rs`, `parser/validate.rs`) that must shrink, not grow |
+| `check-rule-modules` | every E-code in the Gauntlet module table maps 1:1 to a documented rule module |
+| `check-tracker` | no `- [x]` in `tasks/todo.md`; no duplicate or cross-file task text; no open item under a `(complete ...)` section |
+
+### How to add a check
+
+Add one small binary under `constraint-tools/src/bin/`, auto-discovered by
+cargo. Each check:
+
+- stays under 400 lines and depends only on `std`
+- takes an optional root path argument (default `.`)
+- prints `path:line: message` violations, then `pass: ...` or
+  `fail: N violation(s) found`
+- exits 0 on pass, 1 on failure
+- is deterministic: no network, randomness, or wall-clock input
+- carries inline tests for its decision logic
+
+Register long-running gates (fmt, clippy, tests, deny, example) in
+`scripts/gate.sh`; register repo-wide self-checks there too and in the
+`repo-self-checks` CI job (`.github/workflows/ci.yml`).
+
 ## Build and audit an app
 
 `rivet build` parses the DSL, runs the Gauntlet rules between parse and

@@ -74,9 +74,11 @@ goal of later phases; see [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 | Path | Purpose |
 | :--- | :--- |
+| `constraint-tools/` | Deterministic self-checks that gate the Rivet tree (file length, rule modules, tracker) |
 | `rivet-core/` | The IR and shared types for the pipeline |
 | `rivet-cli/` | The `rivet` CLI: parser, generator, build command |
 | `examples/basic/` | The smoke-test app used by phase 0 |
+| `scripts/` | The `gate.sh` orchestrator running every repo gate |
 | `docs/` | Architecture, roadmap, and the nine pillars |
 | `prompts/` | The phase-by-phase build prompts that scaffolded this repo |
 
