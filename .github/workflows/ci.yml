@@ -64,3 +64,27 @@ jobs:
 
       - name: Report the example MQI grade
         run: ./target/release/rivet audit --json examples/basic/app.py
+
+  repo-self-checks:
+    name: Repo Self-Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Dependencies
+        uses: swatinem/rust-cache@v2
+
+      - name: Build the self-check binaries
+        run: cargo build -p constraint-tools
+
+      - name: Check file-length ceilings
+        run: ./target/debug/check-file-length
+
+      - name: Check rule-module coherence
+        run: ./target/debug/check-rule-modules
+
+      - name: Check tracker coherence
+        run: ./target/debug/check-tracker
