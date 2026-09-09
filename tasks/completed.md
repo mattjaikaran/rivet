@@ -70,7 +70,13 @@ Commit: `3e09b54`.
   complexity, duplicate code, dead code, and type strictness carry the
   pillar weights into an A+ to F grade; a blocker finding deducts 20 points
   and a warning 10. Unit tests cover the aggregation and the grade bands
-  (`<hash>`).
+  (`55e599d`).
+
+
+- Decided and documented how coverage and mutation survival enter the MQI:
+  they stay Rust-side until the generated-code test story exists and appear
+  in the `rivet audit` `not_scored` JSON list with their reasons; written
+  into pillar 06 and the audit module doc (`bdcb65e`).
 
 ### 1.1 Foundation
 

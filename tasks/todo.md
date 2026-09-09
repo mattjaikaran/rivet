@@ -87,14 +87,6 @@ Goal: enforce strict quality at compile time, per `docs/pillars/07-the-gauntlet.
 Sections 1.1 (foundation) and 1.2 (rules) are complete; see
 `tasks/completed.md`.
 
-### 1.3 The MQI (Matt Quality Index)
-
-- [ ] Decide and document how coverage and mutation survival enter the MQI
-  before phase 1 closes (they may stay Rust-side until the generated-code test
-  story exists).
-  Acceptance: the decision is written into the pillar doc or this section and
-  reflected in `rivet audit` output fields.
-
 ### 1.4 Integration and docs
 
 - [ ] CI: run the Gauntlet on `examples/basic` in the `gauntlet-check` GitHub
