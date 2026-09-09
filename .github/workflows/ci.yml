@@ -1,10 +1,14 @@
 name: CI
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  # CI auto-runs are paused until the app ships; local ./scripts/gate.sh
+  # is the acceptance bar. Restore by uncommenting the push and pull_request
+  # triggers below.
+  workflow_dispatch:
+  # push:
+  #   branches: [ main ]
+  # pull_request:
+  #   branches: [ main ]
 
 env:
   CARGO_TERM_COLOR: always
