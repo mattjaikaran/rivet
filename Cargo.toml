@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "constraint-tools",
     "rivet-core",
     "rivet-cli",
 ]

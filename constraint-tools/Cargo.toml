@@ -1,0 +1,17 @@
+[package]
+name = "constraint-tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Deterministic self-checks that gate the Rivet repository itself"
+readme = "../README.md"
+
+# One small binary per check (auto-discovered under src/bin), mirroring the
+# Django-ninja-boilerplate constraint-tools pattern: each check exits 0 on
+# pass and 1 on the first violation, prints `path:line: message`, and stays
+# small enough to audit in one sitting.
+
+[dependencies]
