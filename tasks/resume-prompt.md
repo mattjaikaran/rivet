@@ -20,42 +20,52 @@ pillars already live in the repo; you build from them, phase by phase.
 - Phase 2 ships the context engine: `.rivet/` SQLite store, `rivet history`,
   `rivet session save`/`resume`/`list`, the LanceDB blueprint index, and
   `rivet explain "<symptom>"`.
-- Phase 3 ships first-class AI integration:
-  - `rivet mcp` serves six tools over stdio on `rmcp` (the official Rust MCP
-    SDK): `parse_app`, `audit_app`, `vector_search`, `explain_symptom`,
-    `session_context`, `history`.
-  - Slash commands `rivet /plan`, `/fix`, `/trace` (main strips the leading
-    `/` before clap parses).
-  - `/plan` turns a story into a `rivet/plan/<slug>` branch with a SPEC.md, a
-    verified module, and an audit grade, using an OpenAI-compatible provider
-    from the environment or a prepared module via `--from`.
-  - Every JSON diagnostic carries a required `suggested_fix`.
+- Phase 3 ships first-class AI integration: `rivet mcp` (six tools over stdio
+  on `rmcp`), the slash commands `rivet /plan`, `/fix`, `/trace`, and a
+  required `suggested_fix` on every JSON diagnostic.
+- Phase 4 is in progress and three of its deliverables have landed:
+  - **Plugin system** (`53242fd`): `rivet-plugin-api` holds the `Plugin`
+    trait and a monomorphized `install`; `rivet add plugin` writes the
+    `[plugins]` table; `generate_project` adds one dependency and one install
+    call per plugin. Reference plugin: `examples/basic/plugins/auth-token`.
+  - **Multi-service transport** (`a675668`): the generated crate splits into a
+    transport-free service layer and an internal channel; `[transport] mode`
+    selects an in-process direct call or gRPC.
+  - **Polyglot dev proxy** (`44345fd`): `rivet dev` detects Vite, Rsbuild,
+    Next.js, or Webpack from the config file, serves the blueprint's routes
+    and `/api/*` from the backend (prefix stripped), sends every other path to
+    the frontend dev server, and tunnels the frontend's HMR upgrade.
 - GitHub Actions auto-runs are paused until the app ships (the workflow is
-  `workflow_dispatch`-only). `./scripts/gate.sh` is the acceptance bar and
-  passes on the current tree: fmt, clippy `-D warnings`, **125 tests**,
-  `cargo deny`, the example build/audit, and the repo self-checks.
-- Tracker coherent: 14 todo items, 55 completed.
-- Recent commits: `4b9f4f8` (phase-3 seed prompt), `21e2cb6` (rmcp pin +
-  `rivet mcp`), `5642450` (MCP tool set), `7f7fe89` (tracker), `52f87ed`
-  (required `suggested_fix`), `59ffc8a` (slash commands), `e9bac71`/`3e1cb40`
-  (module splits + phase-3 close), `53d70ca` (generated-artifact cleanup),
-  `4c638c7` (scratch-dir guard).
+  `workflow_dispatch`-only). `./scripts/gate.sh` is the acceptance bar:
+  fmt, clippy `-D warnings`, **149 tests**, `cargo deny`, the example
+  build/audit, and the repo self-checks.
+- Tracker coherent: 12 todo items, 76 completed.
+- Recent commits: `735a100` (dev-proxy tracker move), `44345fd` (`rivet dev`),
+  `99e176d` (transport tracker move), `a675668` (transport switch),
+  `b35e929`/`53242fd` (plugin system), `3a690a6` (phase-4 seed prompt).
 
-## Disk hygiene (do this regularly)
+## Disk hygiene (do this)
 
-Generated crates are large: each `rivet build` writes a crate with its own
-cargo `target/` (about 140 MB), and `./scripts/gate.sh` regenerates
-`examples/basic/generated`. Run this when you finish a work session, before
-you push, or whenever the disk feels tight:
+`rivet build` writes a generated crate with its own cargo `target/` (about
+140 MB per app), and `./scripts/gate.sh` regenerates `examples/basic/generated`.
+The workspace `target/` grows to about 12 GiB. Clean up when you finish a work
+session or before you push:
 
 ```bash
 make clean        # examples/*/generated + Rivet test fixtures in the temp dir
-make clean-all    # the above plus `cargo clean`
+make clean-all    # the above plus `cargo clean` (about 12 GiB)
 ```
 
-Tests clean up after themselves now: `rivet-cli/src/test_support.rs` defines a
+The last session ended with `make clean-all`, so `target/` is gone: the first
+release build takes about 7 minutes, and the first test build about 4. Budget
+for it, and prefer `target/debug/rivet` while you iterate.
+
+Tests clean up after themselves: `rivet-cli/src/test_support.rs` defines a
 `ScratchDir` guard that removes each fixture on drop (success and panic). Do
 not reintroduce pid-suffixed temp paths or hand-rolled `remove_dir_all`.
+
+Never commit build output. `.gitignore` covers `target/` and
+`examples/*/generated/`; verify with `git status --short` before every commit.
 
 ## Repo map
 
@@ -66,14 +76,15 @@ not reintroduce pid-suffixed temp paths or hand-rolled `remove_dir_all`.
 - `rivet-cli/src/gauntlet/` - the quality rules: `mod.rs` holds the `Rule`
   trait, `Finding`, `run_gauntlet`, and the severity policy; one module per
   rule.
-- `rivet-cli/src/diagnostic.rs` - structured JSON diagnostics. `suggested_fix`
-  is a required `String`; do not make it optional again.
+- `rivet-cli/src/diagnostic.rs` - structured JSON diagnostics.
+  `suggested_fix` is a required `String`; do not make it optional again.
 - `rivet-cli/src/store/` - `.rivet/` SQLite store (history, sessions,
   fingerprints) plus `vector.rs`, the LanceDB index over blueprints.
 - `rivet-cli/src/commands/` - one module per command (`build`, `audit`,
-  `history`, `session`, `explain`, `fix`, `trace`, `plan`). Big modules put
-  tests in a sibling `tests.rs` and, where needed, split a submodule
-  (`plan/deliver.rs`, `plan/provider.rs`).
+  `history`, `session`, `explain`, `fix`, `trace`, `plan`, `add`, `dev`).
+  Big modules put tests in a sibling `tests.rs` and split submodules before a
+  file reaches the 400-line ceiling: `plan/deliver.rs`, `plan/provider.rs`,
+  `dev/routing.rs`, `dev/tunnel.rs`.
 - `rivet-cli/src/mcp/` - MCP server (`mod.rs` transport + probe test,
   `tools.rs` tool router, `tools/tests.rs` payload tests). Tools are thin
   wrappers; never grow pipeline logic here.
@@ -81,34 +92,27 @@ not reintroduce pid-suffixed temp paths or hand-rolled `remove_dir_all`.
 - `constraint-tools/` + `scripts/gate.sh` - self-checks (file length, rule
   modules, tracker) and the gate. `scripts/clean.sh` is the cleanup entry
   point.
-- `docs/` - roadmap, nine pillars, phase notes. Pillar 09 documents the MCP
-  tools, slash commands, provider environment, token economy, and the
-  spec-kit lineage of `/plan`.
+- `docs/` - roadmap, nine pillars, phase notes. Pillar 03 documents `rivet
+  dev`; pillar 09 documents the MCP tools and slash commands.
 - `tasks/todo.md` is **the source of truth**; `tasks/completed.md` holds
   finished lines with commit refs.
 
 ## Decisions already made (do not relitigate)
 
-- MCP SDK: `rmcp` 3.x (official Rust SDK), features `server` + `macros` +
-  `transport-io`. Tool parameter schemas are hand-written JSON because the
-  schemars derive expands to banned `unwrap` calls.
-- MCP tools map one-to-one onto CLI/store functions; `explain` is split into
-  `explain_async` (awaitable) plus a sync `explain_data` wrapper so the server
-  never nests tokio runtimes.
-- `/plan` is spec-driven, modeled on `github/spec-kit` (MIT): the provider
-  returns a spec plus the full replacement module as JSON; the CLI converges
-  it against parse + Gauntlet + `rivet build` and is the only arbiter. The
-  provider is any OpenAI-compatible endpoint via `RIVET_PLAN_BASE_URL`,
-  `RIVET_PLAN_API_KEY` (optional for local), `RIVET_PLAN_MODEL`. `--from`
-  is the deterministic, offline path the gate exercises.
-- Token economy is a design constraint: one compact context, structured JSON
-  responses, a two-attempt retry budget carrying structured diagnostics, and
-  a small default model.
-- `/fix` repairs only what is deterministic and safe (dead helpers/DTOs
-  E2044; runtime classes, foreign functions, stray statements E2046) by
-  source span, and never deletes a route.
+- MCP SDK: `rmcp` 3.x, features `server` + `macros` + `transport-io`. Tool
+  parameter schemas are hand-written JSON because the schemars derive expands
+  to banned `unwrap` calls.
+- `/plan` is spec-driven, modeled on `github/spec-kit` (MIT). The provider is
+  any OpenAI-compatible endpoint; `--from` is the deterministic offline path.
+- `/fix` repairs only what is deterministic and safe, and never deletes a
+  route.
 - `suggested_fix` is required on `Diagnostic` and `Finding`.
-- Rule severities, complexity metric, duplicate fingerprinting, dead-code
+- The generated backend mounts the blueprint's own route paths and nothing
+  else. `/api` is a proxy-level convenience only: `rivet dev` strips it before
+  the request goes upstream. Do not add an `/api` mount to the generator.
+- The dev proxy tunnels upgrades over a raw connection (hyper `on_upgrade` +
+  `copy_bidirectional`); an HTTP client cannot carry a websocket handshake.
+- Rule severities, the complexity metric, duplicate fingerprinting, dead-code
   liveness, the type-strictness contract, and the MQI grade scale are
   unchanged from phases 1-2.
 - CI auto-runs stay paused until the app ships; local `./scripts/gate.sh` is
@@ -116,81 +120,75 @@ not reintroduce pid-suffixed temp paths or hand-rolled `remove_dir_all`.
 
 ## Next up, in order
 
-### 1. Phase 4: Ecosystem and multi-service
+Finish phase 4, per `docs/ROADMAP.md` and `tasks/todo.md` (work the checklist
+in order; each line carries its acceptance criterion):
 
-Goal: production readiness, per `docs/ROADMAP.md` and pillars 01, 02, and 03.
-`tasks/todo.md` holds the checklist with acceptance criteria. Work it in
-order:
+1. **Static assets in the binary** (`rust-embed`). Acceptance: a built binary
+   serves a fixture `dist/index.html` after the `dist/` directory is renamed.
+   Pillar 03 owns this: extend `rivet dev`'s project config so `rivet build`
+   embeds `dist/` and the generated server falls back to it.
+2. **Service discovery (Consul/etcd) and the admin panel.** Acceptance:
+   registration posts the service and port to a stub registry in a test, and
+   `/__rivet/routes` lists the routes the app serves.
+3. **Story-to-Jira/Linear sync (`rivet sync`).** Acceptance:
+   `rivet sync --dry-run` reports the expected story diff from a captured
+   tracker payload and writes nothing. Closes pillar 05's loop.
+4. **Phase-4 docs and tracker close.** Finish pillars 01-03, tick the ROADMAP
+   phase-4 boxes, refresh the README, and move every finished line to
+   `tasks/completed.md` with its commit hash.
 
-1. Compile-time plugin system composed via traits (`rivet add plugin ...`,
-   zero runtime overhead).
-2. Multi-service switch: the same internal-channel code runs in-process
-   (monolith) or over gRPC by config (pillar 02).
-3. `rivet dev` polyglot frontend proxy detecting Vite/Rsbuild/Next.js
-   (pillar 03).
-4. Static assets embedded in the binary (rust-embed) for production.
-5. Service discovery (Consul/etcd) and a built-in admin panel.
-6. Story-to-Jira/Linear sync (`rivet sync`), closing pillar 05's loop.
+Then phase 5 (WASM and mobile), which starts by authoring
+`prompts/prompt-08-wasm-mobile.md`.
 
-**Author `prompts/prompt-07-ecosystem.md` first** — repo rule: every phase
-starts by authoring its seed prompt, then drafting that prompt's checklist
-into the phase section of `tasks/todo.md`. Model it on
-`prompts/prompt-06-mcp.md` for structure.
+## How to work (house rules)
 
-### 2. Coherence as you go
-
-- Keep files small and modular; extend existing module patterns. Split tests
-  into `tests.rs` siblings and extract submodules before a file reaches its
-  self-check ceiling (400 lines; Gauntlet rule modules 300).
-- Every behavior change is verified end to end; for pipeline changes rebuild
-  `examples/basic`, run the binary, and curl the affected routes.
-- Update the pillar doc, ROADMAP checkboxes, and README in the commit that
-  lands the feature; author seed prompt first.
-- Move each finished tracker line to `tasks/completed.md` in the commit that
-  finishes it, with the real commit hash (commit the feature first, then the
-  tracker move, so the hash exists).
-
-## Operating rules
-
-- Write prose in ASD-STE100 + Google developer style (short sentences,
-  active voice, "you", imperative for instructions, sentence-case headings).
-  Commit subjects: Conventional Commits prefix, capitalized imperative, 50
-  characters or fewer, body wrapped at 72.
 - **Use subagents.** Fan out with the `task` tool for parallel, file-disjoint
-  work; give each a role, explicit file paths, exact acceptance criteria, and
-  a local:// spec when the change is large. Never use a subagent to make
-  design decisions, and never let one run the gate — you run fmt, clippy, and
-  tests once over the union of changed files.
-- **Be token efficient.** Surgical reads with offset/limit; delegate wide
-  exploration; never re-read what you hold; route long cargo output through
-  `rtk` (`rtk cargo test --workspace`, `rtk cargo clippy -- -D warnings`).
+  work: give each subagent a role, explicit file paths, exact acceptance
+  criteria, and a `local://` spec when the change is large. A read-only
+  question about unfamiliar code goes to a `scout` subagent instead of a chain
+  of reads. Never let a subagent make a design decision, and never let one run
+  the gate.
+- **Save context with `rtk`.** Route long output through it:
+  `rtk cargo test --workspace`, `rtk cargo clippy -- -D warnings`,
+  `rtk ./scripts/gate.sh`, `rtk git log`. Use surgical reads
+  (`read` with `offset`/`limit`) and never re-read what you hold.
+- **Commit in small, coherent units, and commit when you finish one.** One
+  commit per unit (feature, docs, tracker move), Conventional Commits prefix,
+  capitalized imperative subject, 50 characters or fewer, body wrapped at 72.
+  Commit the feature first, then the tracker move, so the hash exists when the
+  tracker line records it.
+- **Verify before you commit.** Run the specific test or smoke test that
+  covers the change; run `./scripts/gate.sh` once over the union of the
+  session's changes, not per file.
+- **Clean up generated output before you stop** (`make clean`, or
+  `make clean-all` when disk is tight). Never leave `target/` or
+  `examples/*/generated/` in a commit.
 - **Reject bad code, not just failing tests.** No stubs, placeholders,
   TODO-shims, speculative abstractions, duplicated logic, dead code, or
-  invented facts. Push back with evidence when a plan hides risk; fix at the
-  source instead of papering over the symptom.
+  invented facts. Fix at the source instead of papering over the symptom.
 - **Follow existing conventions.** One pattern per concern; match the
   error-code ranges (`E1xxx` parser, `E2xxx` generator/Gauntlet, `E3xxx`
-  context engine and agentic commands), module layout, diagnostic, and
-  naming idioms.
+  context engine and agentic commands), module layout, diagnostic, and naming
+  idioms.
 - **Rust best practices.** Idiomatic ownership over clones; small fallible
   functions; `Result` with structured errors; no panics in library paths; no
   `unsafe` without a soundness comment; no `unwrap`/`expect` outside tests;
   build JSON by hand from `serde_json::Value` (`json!` is clippy-banned).
 - **This repo is public.** No secrets, placeholders, or personal content.
   Provider keys live in the environment only.
-- **Clean up generated output** before long breaks (see Disk hygiene above).
 
 ## First steps in the session
 
-1. `git status` and `git log --oneline -10` to confirm the checkout.
-2. `./scripts/gate.sh` to confirm the baseline is green.
+1. `git status` and `rtk git log --oneline -10` to confirm the checkout.
+2. `rtk ./scripts/gate.sh` to confirm the baseline is green (expect a long
+   first build; the cargo cache was cleaned).
 3. Read `tasks/todo.md` (source of truth) and `docs/ROADMAP.md` phase 4.
-4. Read `prompts/prompt-06-mcp.md` as the template, then author
-   `prompts/prompt-07-ecosystem.md`.
-5. Work the phase-4 checklist in order. Mark tracker items `[~]` while in
-   progress, tick them when done, and move finished lines to
-   `tasks/completed.md` in a follow-up commit with the hash.
-6. Do not pull parking-lot items (end of todo.md) without explicit scope.
+4. Start item 1 (embedded static assets) with a design pass over pillar 03,
+   then decompose it into subagent-sized, file-disjoint tasks.
+5. Mark tracker items `[~]` while in progress, tick them when done, and move
+   finished lines to `tasks/completed.md` in a follow-up commit.
+6. Do not pull parking-lot items (end of `tasks/todo.md`) without explicit
+   scope.
 
 ## Definition of done (every change)
 
@@ -198,6 +196,6 @@ into the phase section of `tasks/todo.md`. Model it on
   `cargo deny check`, the example build and audit, repo self-checks).
 - Pipeline changes are verified end to end: rebuild `examples/basic`, run the
   binary, and `curl` the affected routes.
-- Affected docs are updated.
-- Task tracker lines are moved from todo.md to completed.md.
+- Affected docs are updated (pillar doc, ROADMAP boxes, README).
+- Task tracker lines are moved from `todo.md` to `completed.md`.
 - `make clean` has been run if the session generated large build output.
