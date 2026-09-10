@@ -289,3 +289,15 @@ lines finish; the section closes when the phase does.
   error paths assert non-empty fixes; a broad invariant test in
   `gauntlet/mod.rs` runs a fixture that trips E2043-E2046 and checks
   every output diagnostic (`52f87ed`).
+
+## Repo maintenance
+
+- `scripts/clean.sh` plus `make clean` / `make clean-all` remove the
+  generated crates (`examples/*/generated`, about 140 MB each with their
+  cargo targets) and the Rivet test fixtures in the temp dir; the old
+  `make clean` pointed at a root `generated` path that does not exist
+  (`53d70ca`).
+- `rivet-cli/src/test_support.rs` adds a `ScratchDir` guard that removes
+  each test fixture on drop, on success and on panic, and drops the
+  run-pid from fixture names; before this the `/plan` fixture leaked a
+  143 MB compiled crate per run (`4c638c7`).

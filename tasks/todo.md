@@ -40,6 +40,9 @@ A task is done when all of the following hold:
 - No `unwrap`/`expect` in non-test code (enforced by `clippy.toml`).
 - This is a public repo: no secrets, placeholders, or personal content.
 - Route long-running cargo/git output through `rtk` to save context.
+- Run `make clean` after a session that generated crates; tests clean their
+  own fixtures through the `ScratchDir` guard, so do not add pid-suffixed
+  temp paths.
 
 ## Phase / pillar / prompt map
 
