@@ -572,6 +572,7 @@ impl Emitter<'_> {
 // Free helpers
 // ---------------------------------------------------------------------------
 
+/// The request parameter types of a route, keyed by parameter name.
 fn param_types(route: &RouteDefinition) -> HashMap<String, TypeRef> {
     match &route.request {
         RequestSpec::Json { var, ty } => HashMap::from([(var.clone(), ty.clone())]),
@@ -598,7 +599,7 @@ fn count_idents_in(route: &RouteDefinition) -> HashMap<String, usize> {
 }
 
 /// Sanitize a project name into a valid Cargo package name.
-fn crate_name(name: &str) -> String {
+pub(crate) fn crate_name(name: &str) -> String {
     let base = if name.is_empty() {
         "app".to_string()
     } else {

@@ -57,5 +57,13 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 axum = "0.8"
 tower = { version = "0.5", default-features = false, features = ["util"] }
 
+# HTTP/1 upgrade plumbing for the `rivet dev` HMR tunnel (phase 4, pillar
+# 03): `hyper` names the server-side `OnUpgrade` handle, and `hyper-util`
+# adapts the upgraded connection to the tokio I/O traits that
+# `copy_bidirectional` needs. Both crates are already in the tree through
+# axum.
+hyper = { version = "1.11", default-features = false, features = ["server", "http1"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
+
 # Each later phase adds the crates it needs here. Keep this table limited
 # to dependencies that at least one workspace member actually uses.

@@ -9,6 +9,7 @@
 pub mod add;
 pub mod audit;
 pub mod build;
+pub mod dev;
 pub mod explain;
 pub mod fix;
 pub mod history;

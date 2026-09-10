@@ -94,6 +94,9 @@ commit, and every JSON diagnostic carries a `suggested_fix`. See
 
 **Deliverables**:
 - [x] Plugin system (compile-time composition via traits).
+- [x] Polyglot dev proxy (`rivet dev`) for Vite, Rsbuild, Next.js, and
+  Webpack, HMR tunnel included.
+- [ ] Static assets embedded in the binary (`rust-embed`).
 - [ ] Service discovery (Consul/etcd/Nacos).
 - [ ] Built-in Admin Panel (React/Solid).
 - [ ] Story-to-Jira/Linear sync (`rivet sync`).
@@ -110,6 +113,12 @@ channel (a direct, monomorphized call) or gRPC (the app serves its channel
 on `grpc_port` and calls through it). An integration test builds one
 blueprint in both modes, runs both binaries, and asserts both answer the
 same body.
+
+The dev proxy is met: `rivet dev` detects the frontend from its config
+file, serves the blueprint's routes and `/api/*` from the Rust backend with
+the prefix stripped, sends every other path to the frontend dev server, and
+tunnels the frontend's HMR upgrade. See
+`docs/pillars/03-polyglot-frontend-support.md`.
 
 ---
 

@@ -25,10 +25,11 @@ compile-time plugin system has landed, so `rivet.toml` can compose plugins
 into the generated binary through
 [`rivet-plugin-api`](rivet-plugin-api/), with no registry and no runtime
 lookup, and `[transport] mode` runs the same blueprint in one process
-(a direct call) or over gRPC (the app serves its own channel). `rivet mcp`
-serves the parser, audit, vector, and context-store
-tools to AI agents over the Model Context Protocol, and every JSON
-diagnostic carries a `suggested_fix`.
+(a direct call) or over gRPC (the app serves its own channel). `rivet dev`
+runs the API and a frontend dev server behind one origin and tunnels the
+frontend's HMR socket. `rivet mcp` serves the parser, audit, vector, and
+context-store tools to AI agents over the Model Context Protocol, and every
+JSON diagnostic carries a `suggested_fix`.
 
 ## Try it
 
@@ -51,6 +52,20 @@ curl -X POST localhost:3000/echo \
   -d '{"hello":"world"}'
 # {"echo":{"hello":"world"}}
 ```
+
+To develop an app with a frontend, start the frontend dev server and run
+the proxy beside it. The proxy serves the blueprint's routes and `/api/*`
+from the Rust backend, sends every other path to the frontend, and tunnels
+the frontend's HMR socket:
+
+```bash
+./target/release/rivet dev examples/basic/app.py
+# Detected vite: the backend keeps 2 route(s) and /api/*, port Some(5173) serves the rest
+# rivet dev listening on http://127.0.0.1:3000
+```
+
+See [pillar 3](docs/pillars/03-polyglot-frontend-support.md) for the
+detection table and the routing rules.
 
 The example app is a plain Python file:
 

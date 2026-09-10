@@ -54,6 +54,21 @@ enum Command {
         #[arg(default_value = "app.py")]
         app: PathBuf,
     },
+    /// Serve the Rust backend and the frontend dev server behind one origin
+    /// (phase 4, pillar 03).
+    Dev {
+        /// Path to the app module (defaults to `app.py`).
+        #[arg(default_value = "app.py")]
+        app: PathBuf,
+        /// Port the frontend dev server listens on (defaults to the detected
+        /// framework's port).
+        #[arg(long)]
+        frontend_port: Option<u16>,
+        /// Port the Rust backend listens on (defaults to the project port
+        /// plus one).
+        #[arg(long)]
+        backend_port: Option<u16>,
+    },
     /// Run the Gauntlet and report the phase-1 MQI grade (pillar 06).
     Audit {
         /// Path to the app module (defaults to `app.py`).
@@ -178,6 +193,7 @@ impl Command {
         match self {
             Command::Add { .. } => "add plugin".into(),
             Command::Build { .. } => "build".into(),
+            Command::Dev { .. } => "dev".into(),
             Command::Audit { .. } => "audit".into(),
             Command::History { .. } => "history".into(),
             Command::Explain { .. } => "explain".into(),
@@ -202,6 +218,7 @@ impl Command {
             Command::Build { app } | Command::Audit { app, .. } | Command::History { app } => {
                 app.clone()
             }
+            Command::Dev { app, .. } => app.clone(),
             Command::Explain { app, .. } => app.clone(),
             Command::Plan { app, .. } | Command::Fix { app } | Command::Trace { app, .. } => {
                 app.clone()
@@ -267,6 +284,11 @@ fn main() -> ExitCode {
         },
         Command::Build { app } => commands::build::run_build(&app),
         Command::Audit { app, json } => commands::audit::run_audit(&app, json),
+        Command::Dev {
+            app,
+            frontend_port,
+            backend_port,
+        } => commands::dev::run_dev(&app, frontend_port, backend_port),
         Command::History { app } => commands::history::run_history(&app),
         Command::Explain { symptom, app } => commands::explain::run_explain(&symptom, &app),
         Command::Plan {

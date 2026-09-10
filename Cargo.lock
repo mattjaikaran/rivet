@@ -4649,8 +4649,11 @@ name = "rivet-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum 0.8.9",
  "clap",
  "futures",
+ "hyper",
+ "hyper-util",
  "lancedb",
  "reqwest",
  "rivet-core",

@@ -39,4 +39,10 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 lancedb = { version = "0.38.0", default-features = false, features = ["remote"] }
 time = { workspace = true }
 futures = "0.3"
-tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "io-util"] }
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "io-util", "net", "signal", "time"] }
+# The `rivet dev` proxy and its HMR tunnel: an axum server in front of the
+# backend and the frontend dev server. `axum`, `hyper`, and `hyper-util` are
+# already in the tree for plugins.
+axum = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
