@@ -410,3 +410,62 @@ tracker lines finish; the section closes when the phase does.
   the frontend, an upgrade on the proxy port returns `101` from the
   frontend and round-trips three frames, and the backend process is gone
   after `rivet dev` stops (`44345fd`).
+
+### Embedded static assets
+
+- `[frontend] dist` in `rivet.toml` names the production frontend build,
+  and `rivet build` compiles that directory into the generated crate with
+  `rust-embed`, so a shipped binary serves its frontend from its own
+  memory with no sidecar files. The generator lives in
+  `rivet-cli/src/transpiler/rust/assets.rs` and renders the `mod assets`
+  block, the router's `.fallback(assets::serve)` line, and the
+  compression layer (`7a3646f`).
+- The single-page rule mirrors the frontend dev server's own rewrite: a
+  `GET` or `HEAD` whose path names no file, from a client that accepts
+  `text/html`, receives the embedded `index.html` when `spa = true`.
+  Every other miss keeps its `404`, so an `XHR` to a backend path the
+  blueprint does not serve does not receive HTML under `rivet dev`, whose
+  backend runs the same generated binary (`7a3646f`).
+- A path that percent-decodes outside the folder is refused, each asset
+  carries a strong `ETag` from its SHA-256 hash with
+  `Cache-Control: public, max-age=0, must-revalidate`, `If-None-Match`
+  answers `304` with no body, and `HEAD` reports the file's length. A
+  blueprint route always wins, because the assets mount as the fallback.
+  A `[frontend] dist` that names a missing directory reports `E2004` as a
+  warning, embeds nothing, and still compiles the crate; `Diagnostic` now
+  has a `warning` constructor beside `blocker` (`7a3646f`).
+- The generated router compresses every response with `tower-http`'s
+  `CompressionLayer` and the `compression-br` feature, which supplies the
+  Brotli support pillar 03 specified. Wire compression costs no binary
+  size: the assets stay uncompressed inside the binary, and `rust-embed`'s
+  own `compression` feature — Deflate and Zstd only, and a binary-size
+  trade this phase does not measure — stays off (`7a3646f`).
+- The example project gains a committed fixture build
+  (`examples/basic/dist/`, the `.gitignore` `dist/` rule now excepts it)
+  and the `[frontend]` section that embeds it (`7a3646f`).
+- Recorded the choices in pillar 03 (`rust-embed` with `mime-guess` and
+  `debug-embed`; `tower-http` Brotli) and aligned the phase-4 seed
+  (`prompts/prompt-07-ecosystem.md`) with the shipped keys, which
+  supersede its original `[assets] dir` shape (`7a3646f`).
+
+### Verification: embedded static assets
+
+- 198 workspace tests green, including an integration test that writes a
+  fixture `dist/`, runs `rivet build`, renames the directory, starts the
+  binary, and asserts: `/` and `/assets/main.js` return `200` with
+  `text/html` and `text/javascript`, the body equals the fixture file, a
+  blueprint route still answers, a browser navigation to `/orders/42`
+  returns the index, a missing asset and a non-HTML client both keep
+  their `404`, `/../app.py` never returns `200`, `HEAD` reports the
+  length, `If-None-Match` answers `304`, and `Accept-Encoding: br`
+  returns a `content-encoding: br` body shorter than the file; fmt,
+  clippy (`-D warnings`), `cargo deny check`, and the example build and
+  audit all pass through `./scripts/gate.sh` (`7a3646f`).
+- End to end on `examples/basic` with `dist/` renamed to `dist-renamed`:
+  `GET /ping` answers `{"status":"pong"}`, `GET /` and `GET /orders/42`
+  answer the embedded `index.html`, `GET /assets/main.js` answers with
+  `text/javascript`, `GET /assets/gone.js` and `GET /api/orders` with
+  `Accept: */*` answer `404`, `POST /ping` answers `405` with
+  `Allow: GET, HEAD`, and the index drops from 494 bytes to 276 bytes on
+  the wire under `Accept-Encoding: br` while decoding byte-for-byte
+  identical to the file (`7a3646f`).

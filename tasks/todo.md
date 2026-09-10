@@ -4,7 +4,7 @@ This file is the source of truth for what needs to be done. It follows the
 [roadmap](docs/ROADMAP.md) phases and the original `prompts/` build order, and
 each phase references the pillars it serves.
 
-Last updated: 2026-09-09
+Last updated: 2026-09-10
 
 ## How to use this file
 
@@ -133,9 +133,6 @@ generation and required `suggested_fix` diagnostics.
 Goal: production readiness, per pillars 01, 02, and 03. Seed:
 `prompts/prompt-07-ecosystem.md`.
 
-- [ ] Static assets embedded in the binary (rust-embed) for production.
-  Acceptance: a built binary serves a fixture `dist/index.html` after the
-  `dist/` directory is renamed.
 - [ ] Service discovery (Consul/etcd) and the built-in admin panel.
   Acceptance: registration posts the service and port to a stub registry in
   a test, and `/__rivet/routes` lists the routes the app serves.

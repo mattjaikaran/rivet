@@ -23,7 +23,7 @@ pillars already live in the repo; you build from them, phase by phase.
 - Phase 3 ships first-class AI integration: `rivet mcp` (six tools over stdio
   on `rmcp`), the slash commands `rivet /plan`, `/fix`, `/trace`, and a
   required `suggested_fix` on every JSON diagnostic.
-- Phase 4 is in progress and three of its deliverables have landed:
+- Phase 4 is in progress and four of its deliverables have landed:
   - **Plugin system** (`53242fd`): `rivet-plugin-api` holds the `Plugin`
     trait and a monomorphized `install`; `rivet add plugin` writes the
     `[plugins]` table; `generate_project` adds one dependency and one install
@@ -35,22 +35,31 @@ pillars already live in the repo; you build from them, phase by phase.
     Next.js, or Webpack from the config file, serves the blueprint's routes
     and `/api/*` from the backend (prefix stripped), sends every other path to
     the frontend dev server, and tunnels the frontend's HMR upgrade.
+  - **Embedded static assets** (`7a3646f`): `[frontend] dist` compiles the
+    production build into the generated crate with `rust-embed`; the router
+    mounts it as the fallback, so a blueprint route wins. The single-page rule
+    mirrors the dev server's rewrite (a `GET`/`HEAD` whose path names no file,
+    from a client that accepts `text/html`), so an `XHR` miss keeps its `404`.
+    Every asset carries a strong `ETag`; `If-None-Match` answers `304`. A
+    missing `dist` warns with `E2004` and still builds. The router compresses
+    every response with `tower-http` Brotli.
 - GitHub Actions auto-runs are paused until the app ships (the workflow is
   `workflow_dispatch`-only). `./scripts/gate.sh` is the acceptance bar:
-  fmt, clippy `-D warnings`, **149 tests**, `cargo deny`, the example
+  fmt, clippy `-D warnings`, **198 tests**, `cargo deny`, the example
   build/audit, and the repo self-checks.
-- Tracker coherent: 12 todo items, 76 completed.
-- Recent commits: `735a100` (dev-proxy tracker move), `44345fd` (`rivet dev`),
-  `99e176d` (transport tracker move), `a675668` (transport switch),
-  `b35e929`/`53242fd` (plugin system), `3a690a6` (phase-4 seed prompt).
+- Tracker coherent: 11 todo items, 83 completed.
+- Recent commits: `7a3646f` (embedded assets), `6e0c6e0` (resume prompt),
+  `735a100` (dev-proxy tracker move), `44345fd` (`rivet dev`), `a675668`
+  (transport switch), `53242fd` (plugin system).
 
 ## Disk hygiene (do this)
 
 `rivet build` writes a generated crate with its own cargo `target/` (about
 140 MB per app), and `./scripts/gate.sh` regenerates `examples/basic/generated`.
-The workspace `target/` grows to about 12 GiB. Clean up when you finish a work
-session or before you push:
-
+The cargo cache is warm from the asset session, so `./scripts/gate.sh` takes
+about a minute. After a `make clean-all` the first release build costs about
+7 minutes and the first test build about 4; prefer `target/debug/rivet` while
+you iterate.
 ```bash
 make clean        # examples/*/generated + Rivet test fixtures in the temp dir
 make clean-all    # the above plus `cargo clean` (about 12 GiB)
@@ -76,15 +85,15 @@ Never commit build output. `.gitignore` covers `target/` and
 - `rivet-cli/src/gauntlet/` - the quality rules: `mod.rs` holds the `Rule`
   trait, `Finding`, `run_gauntlet`, and the severity policy; one module per
   rule.
-- `rivet-cli/src/diagnostic.rs` - structured JSON diagnostics.
-  `suggested_fix` is a required `String`; do not make it optional again.
-- `rivet-cli/src/store/` - `.rivet/` SQLite store (history, sessions,
-  fingerprints) plus `vector.rs`, the LanceDB index over blueprints.
 - `rivet-cli/src/commands/` - one module per command (`build`, `audit`,
   `history`, `session`, `explain`, `fix`, `trace`, `plan`, `add`, `dev`).
   Big modules put tests in a sibling `tests.rs` and split submodules before a
   file reaches the 400-line ceiling: `plan/deliver.rs`, `plan/provider.rs`,
   `dev/routing.rs`, `dev/tunnel.rs`.
+- `rivet-cli/src/transpiler/rust.rs` + `rust/` - the generator: `handler.rs`
+  (thin axum handlers over the channel), `service.rs` (transport-free route
+  logic), `channel.rs` (the typed in-process/gRPC channel), `assets.rs` (the
+  embedded frontend build, its router fallback, and the compression layer).
 - `rivet-cli/src/mcp/` - MCP server (`mod.rs` transport + probe test,
   `tools.rs` tool router, `tools/tests.rs` payload tests). Tools are thin
   wrappers; never grow pipeline logic here.
@@ -93,7 +102,8 @@ Never commit build output. `.gitignore` covers `target/` and
   modules, tracker) and the gate. `scripts/clean.sh` is the cleanup entry
   point.
 - `docs/` - roadmap, nine pillars, phase notes. Pillar 03 documents `rivet
-  dev`; pillar 09 documents the MCP tools and slash commands.
+  dev` and the embedded assets; pillar 09 documents the MCP tools and slash
+  commands.
 - `tasks/todo.md` is **the source of truth**; `tasks/completed.md` holds
   finished lines with commit refs.
 
@@ -117,23 +127,34 @@ Never commit build output. `.gitignore` covers `target/` and
   unchanged from phases 1-2.
 - CI auto-runs stay paused until the app ships; local `./scripts/gate.sh` is
   the bar.
+- `[frontend]` owns the production build (`dist`, `spa`), not a separate
+  `[assets]` table: `rivet dev` already owns the frontend, and the phase-4
+  seed's original `[assets] dir` shape is superseded.
+- The embedded single-page fallback stays a *navigation* rule (no file
+  extension, `Accept: text/html`). The generated binary also runs as the
+  `rivet dev` backend, so a blanket `index.html` fallback would answer API
+  typos with HTML.
+- The generated router compresses responses with `tower-http`'s
+  `CompressionLayer` and the Brotli feature. Keep it: pillar 03 promised
+  Brotli, and wire compression costs no binary size.
+- Generated-app tests build a real crate inside a `ScratchDir`
+  (`rivet-cli/src/commands/build/tests.rs`); fixtures the test mutates (a
+  `dist/` it renames) live there too, never in the repo — except the example
+  fixture under `examples/basic/dist/`, which `.gitignore` now excepts.
 
 ## Next up, in order
 
 Finish phase 4, per `docs/ROADMAP.md` and `tasks/todo.md` (work the checklist
 in order; each line carries its acceptance criterion):
 
-1. **Static assets in the binary** (`rust-embed`). Acceptance: a built binary
-   serves a fixture `dist/index.html` after the `dist/` directory is renamed.
-   Pillar 03 owns this: extend `rivet dev`'s project config so `rivet build`
-   embeds `dist/` and the generated server falls back to it.
-2. **Service discovery (Consul/etcd) and the admin panel.** Acceptance:
+1. **Service discovery (Consul/etcd) and the admin panel.** Acceptance:
    registration posts the service and port to a stub registry in a test, and
-   `/__rivet/routes` lists the routes the app serves.
-3. **Story-to-Jira/Linear sync (`rivet sync`).** Acceptance:
+   `/__rivet/routes` lists the routes the app serves. The route list is
+   generator work beside `mod assets`; the registry client is new.
+2. **Story-to-Jira/Linear sync (`rivet sync`).** Acceptance:
    `rivet sync --dry-run` reports the expected story diff from a captured
    tracker payload and writes nothing. Closes pillar 05's loop.
-4. **Phase-4 docs and tracker close.** Finish pillars 01-03, tick the ROADMAP
+3. **Phase-4 docs and tracker close.** Finish pillars 01-03, tick the ROADMAP
    phase-4 boxes, refresh the README, and move every finished line to
    `tasks/completed.md` with its commit hash.
 
@@ -147,7 +168,9 @@ Then phase 5 (WASM and mobile), which starts by authoring
   criteria, and a `local://` spec when the change is large. A read-only
   question about unfamiliar code goes to a `scout` subagent instead of a chain
   of reads. Never let a subagent make a design decision, and never let one run
-  the gate.
+  the gate. If a spawn fails with `No model selected`, that is an environment
+  fault, not a task fault: work the slices inline and keep the same file
+  discipline.
 - **Save context with `rtk`.** Route long output through it:
   `rtk cargo test --workspace`, `rtk cargo clippy -- -D warnings`,
   `rtk ./scripts/gate.sh`, `rtk git log`. Use surgical reads
@@ -180,13 +203,15 @@ Then phase 5 (WASM and mobile), which starts by authoring
 ## First steps in the session
 
 1. `git status` and `rtk git log --oneline -10` to confirm the checkout.
-2. `rtk ./scripts/gate.sh` to confirm the baseline is green (expect a long
-   first build; the cargo cache was cleaned).
+2. `rtk ./scripts/gate.sh` to confirm the baseline is green.
 3. Read `tasks/todo.md` (source of truth) and `docs/ROADMAP.md` phase 4.
-4. Start item 1 (embedded static assets) with a design pass over pillar 03,
-   then decompose it into subagent-sized, file-disjoint tasks.
-5. Mark tracker items `[~]` while in progress, tick them when done, and move
-   finished lines to `tasks/completed.md` in a follow-up commit.
+4. Start item 1 (service discovery and the admin panel): read the generated
+   route table and pillar 02 first, design it, then decompose it into
+   subagent-sized, file-disjoint tasks.
+5. Mark tracker items `[~]` while in progress, then move the finished line to
+   `tasks/completed.md` with its commit hash in a follow-up commit.
+   `check-tracker` rejects any `[x]` left in `todo.md`, so never tick a line
+   in place.
 6. Do not pull parking-lot items (end of `tasks/todo.md`) without explicit
    scope.
 
