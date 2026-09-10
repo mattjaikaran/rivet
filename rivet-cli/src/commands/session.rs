@@ -143,15 +143,14 @@ pub(crate) fn render_context(app_file: &Path) -> Result<String, Diagnostic> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::ScratchDir;
     use std::path::PathBuf;
 
     #[test]
     fn render_context_round_trips_module_summary() {
         // Write a tiny app into a temp dir with a rivet.toml so the config
         // resolves, parse it, and confirm the markdown names the route.
-        let dir = std::env::temp_dir().join(format!("rivet-session-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = ScratchDir::new("session-round-trip");
         let app = dir.join("app.py");
         std::fs::write(
             &app,
@@ -162,7 +161,6 @@ mod tests {
         assert!(markdown.contains("GET /ping"), "{markdown}");
         assert!(markdown.contains("US-001"), "{markdown}");
         assert!(markdown.contains("## Gauntlet config"), "{markdown}");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

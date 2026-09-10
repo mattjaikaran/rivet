@@ -243,27 +243,19 @@ pub fn project_dir_for(app_file: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::ScratchDir;
 
-    /// Open an isolated store under a fresh temp dir; returns the dir path
-    /// so the test can clean it up. The name mixes the process id and a
-    /// per-test counter so parallel tests never share a directory.
-    fn temp_store() -> (PathBuf, Connection) {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let dir = std::env::temp_dir().join(format!(
-            "rivet-store-test-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    /// Open an isolated store under a fresh scratch dir; the guard removes
+    /// the directory when it drops, even if the test panics.
+    fn temp_store(name: &str) -> (ScratchDir, Connection) {
+        let dir = ScratchDir::new(name);
         let conn = open(&dir).expect("store opens on an empty dir");
         (dir, conn)
     }
 
     #[test]
     fn migration_is_idempotent_and_creates_tables() {
-        let (dir, conn) = temp_store();
+        let (_dir, conn) = temp_store("store-migration");
         migrate(&conn).expect("second migrate is a no-op");
         let count: i64 = conn
             .query_row("SELECT count(*) FROM commands", [], |row| row.get(0))
@@ -273,12 +265,11 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, SCHEMA_VERSION);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn recorded_commands_list_newest_first() {
-        let (dir, conn) = temp_store();
+        let (_dir, conn) = temp_store("store-history");
         let first = start_command(&conn, "build app.py").unwrap();
         let second = start_command(&conn, "audit app.py").unwrap();
         finish_command(&conn, first, 0, Duration::from_millis(10)).unwrap();
@@ -294,12 +285,11 @@ mod tests {
         let limited = list_commands(&conn, 1).unwrap();
         assert_eq!(limited.len(), 1);
         assert_eq!(limited[0].command, "audit app.py");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn unfinished_commands_are_hidden_from_history() {
-        let (dir, conn) = temp_store();
+        let (_dir, conn) = temp_store("store-unfinished");
         let id = start_command(&conn, "kill me").unwrap();
         let rows = list_commands(&conn, 10).unwrap();
         assert!(rows.is_empty());
@@ -307,12 +297,11 @@ mod tests {
         let rows = list_commands(&conn, 10).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].exit_status, Some(137));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn sessions_round_trip_and_overwrite() {
-        let (dir, conn) = temp_store();
+        let (_dir, conn) = temp_store("store-sessions");
         save_session(&conn, "debug", "# context").unwrap();
         save_session(&conn, "debug", "# context v2").unwrap();
         save_session(&conn, "other", "# other").unwrap();
@@ -324,7 +313,6 @@ mod tests {
         assert!(load_session(&conn, "missing").unwrap().is_none());
         let all = list_sessions(&conn).unwrap();
         assert_eq!(all.len(), 2);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

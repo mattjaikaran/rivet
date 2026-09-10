@@ -190,8 +190,9 @@ fn rendered_line<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::ScratchDir;
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::process::Command;
 
     /// Commit 1: the ping route only, mirroring examples/basic.
@@ -211,10 +212,8 @@ mod tests {
     );
 
     /// A fresh git fixture under the system temp dir, with a local identity.
-    fn fixture() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("rivet-trace-test-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("create fixture dir");
+    fn fixture() -> ScratchDir {
+        let dir = ScratchDir::new("trace-introducing-commit");
         git(&dir, &["init"]);
         git(&dir, &["config", "user.name", "Rivet Trace Test"]);
         git(&dir, &["config", "user.email", "rivet-trace@example.com"]);
@@ -287,7 +286,5 @@ mod tests {
         );
         assert!(text.contains("Current commit "), "trace text:\n{text}");
         assert!(text.contains("Gauntlet:"), "trace text:\n{text}");
-
-        fs::remove_dir_all(&dir).expect("clean up the fixture dir");
     }
 }

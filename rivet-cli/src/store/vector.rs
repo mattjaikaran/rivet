@@ -249,6 +249,7 @@ pub fn digest(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::ScratchDir;
 
     #[test]
     fn embeddings_are_fixed_width_and_normalized() {
@@ -292,16 +293,7 @@ mod tests {
         // Index two routes into a real LanceDB table in a temp dir, then
         // search for a symptom that only the orders route can answer. The
         // orders chunk must come back ranked first.
-        let dir = std::env::temp_dir().join(format!(
-            "rivet-vector-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = ScratchDir::new("vector-ranked");
 
         let routes = vec![
             RouteSummary {
@@ -330,6 +322,5 @@ mod tests {
             best.contains("POST /orders"),
             "orders route should rank first, got {best:?} from {results:?}"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

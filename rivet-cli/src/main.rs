@@ -25,6 +25,9 @@ mod parser;
 mod store;
 mod transpiler;
 
+#[cfg(test)]
+mod test_support;
+
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::ExitCode;

@@ -56,18 +56,11 @@ pub fn run_stdio() -> Result<(), Diagnostic> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::tools::RivetTools;
+    use crate::test_support::ScratchDir;
     use rmcp::ServiceExt;
     use serde_json::Value;
     use std::path::PathBuf;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-
-    /// A scratch project directory under the system temp dir.
-    pub fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("rivet-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("create scratch dir");
-        dir
-    }
 
     /// A fixture app module with one story-tagged route.
     fn write_fixture(dir: &std::path::Path) -> PathBuf {
@@ -98,7 +91,7 @@ pub(crate) mod tests {
     /// handshake, tool discovery, and a tool call all answer valid data.
     #[tokio::test]
     async fn probe_lists_and_calls_parse_tool() {
-        let dir = scratch("mcp-probe");
+        let dir = ScratchDir::new("mcp-probe");
         let app = write_fixture(&dir);
 
         let (client, server_io) = tokio::io::duplex(1 << 16);

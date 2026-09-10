@@ -305,20 +305,12 @@ pub fn run_fix(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
 mod tests {
     use super::*;
     use crate::parser::python::parse_python_file;
+    use crate::test_support::ScratchDir;
     use std::fs;
-
-    /// A scratch project directory under the system temp dir.
-    fn scratch(name: &str) -> std::path::PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("rivet-fix-test-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("create scratch dir");
-        dir
-    }
 
     #[test]
     fn fix_removes_dead_code_and_runtime_classes_but_keeps_routes() {
-        let dir = scratch("dead");
+        let dir = ScratchDir::new("fix-dead-code");
         let app = dir.join("app.py");
         fs::write(
             &app,
@@ -353,12 +345,11 @@ mod tests {
                 .all(|finding| finding.error_code != "E2044" && finding.error_code != "E2046"),
             "no E2044/E2046 findings may remain after the fix: {findings:?}"
         );
-        fs::remove_dir_all(&dir).expect("clean up scratch dir");
     }
 
     #[test]
     fn healthy_module_reports_nothing_to_fix_and_writes_nothing() {
-        let dir = scratch("healthy");
+        let dir = ScratchDir::new("fix-healthy");
         let app = dir.join("app.py");
         let original = "from rivet import api\n\
              \n\
@@ -370,6 +361,5 @@ mod tests {
 
         let after = fs::read_to_string(&app).expect("read app.py");
         assert_eq!(after, original, "a healthy module must not be rewritten");
-        fs::remove_dir_all(&dir).expect("clean up scratch dir");
     }
 }

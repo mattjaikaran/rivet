@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::ScratchDir;
 
 /// A fixture app module with one story-tagged route.
 fn write_fixture(dir: &std::path::Path) -> std::path::PathBuf {
@@ -13,7 +14,7 @@ fn write_fixture(dir: &std::path::Path) -> std::path::PathBuf {
 
 #[test]
 fn parse_app_returns_blueprint_and_findings() {
-    let dir = crate::mcp::tests::scratch("mcp-parse");
+    let dir = ScratchDir::new("mcp-parse");
     let app = write_fixture(&dir);
 
     let payload = parse_payload(app.to_str().expect("utf8 path")).expect("parse ok");
@@ -45,7 +46,7 @@ fn parse_app_reports_a_missing_file_as_diagnostics() {
 
 #[test]
 fn audit_app_returns_the_grade() {
-    let dir = crate::mcp::tests::scratch("mcp-audit");
+    let dir = ScratchDir::new("mcp-audit");
     let app = write_fixture(&dir);
 
     let text = audit_json(&app).expect("audit runs");
@@ -59,7 +60,7 @@ fn audit_app_returns_the_grade() {
 
 #[test]
 fn session_and_history_read_the_project_store() {
-    let dir = crate::mcp::tests::scratch("mcp-store");
+    let dir = ScratchDir::new("mcp-store");
     let app = write_fixture(&dir);
 
     // Seed the store with one finished invocation, the way main() does.
@@ -88,7 +89,7 @@ fn session_and_history_read_the_project_store() {
 
 #[tokio::test]
 async fn vector_search_ranks_the_fixture_route() {
-    let dir = crate::mcp::tests::scratch("mcp-vector");
+    let dir = ScratchDir::new("mcp-vector");
     let app = write_fixture(&dir);
 
     let payload = vector_search_payload(app.to_str().expect("utf8 path"), "ping status pong")
@@ -106,7 +107,7 @@ async fn vector_search_ranks_the_fixture_route() {
 
 #[tokio::test]
 async fn explain_symptom_reports_route_and_digest() {
-    let dir = crate::mcp::tests::scratch("mcp-explain");
+    let dir = ScratchDir::new("mcp-explain");
     let app = write_fixture(&dir);
 
     let explanation = explain_async("ping status", &app)

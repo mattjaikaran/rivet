@@ -129,20 +129,12 @@ pub fn run_build(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
 mod tests {
     use super::*;
     use crate::config;
+    use crate::test_support::ScratchDir;
     use std::fs;
-
-    /// A scratch project directory under the system temp dir.
-    fn scratch(name: &str) -> std::path::PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("rivet-build-test-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("create scratch dir");
-        dir
-    }
 
     #[test]
     fn gauntlet_blocker_stops_build_without_writing_a_crate() {
-        let dir = scratch("storyless");
+        let dir = ScratchDir::new("build-storyless");
         let app = dir.join("app.py");
         fs::write(
             &app,
@@ -154,7 +146,6 @@ mod tests {
         assert_eq!(diagnostics[0].error_code, "E2045");
         assert!(!diagnostics[0].suggested_fix.is_empty());
         assert!(!dir.join("generated").exists(), "no crate may be written");
-        fs::remove_dir_all(&dir).expect("clean up scratch dir");
     }
 
     #[test]
@@ -162,7 +153,7 @@ mod tests {
         // A helper nothing calls is a warning, not a blocker, so the build
         // gate must not fail on it. Driving run_build past the gate would
         // compile the generated crate, so assert the gate decision instead.
-        let dir = scratch("deadcode");
+        let dir = ScratchDir::new("build-deadcode");
         let app = dir.join("app.py");
         fs::write(
             &app,
@@ -174,6 +165,5 @@ mod tests {
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].severity, Severity::Warning);
         assert_eq!(findings[0].error_code, "E2044");
-        fs::remove_dir_all(&dir).expect("clean up scratch dir");
     }
 }
