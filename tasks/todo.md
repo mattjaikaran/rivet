@@ -130,26 +130,37 @@ generation and required `suggested_fix` diagnostics.
 
 ## Phase 4 - Ecosystem and multi-service
 
-Goal: production readiness, per pillars 01, 02, and 03.
+Goal: production readiness, per pillars 01, 02, and 03. Seed:
+`prompts/prompt-07-ecosystem.md`.
 
 - [ ] Compile-time plugin system composed via traits
-  (`rivet add plugin ...`, zero runtime overhead).
-  Acceptance: a fixture plugin compiles in with no registry lookup and its
-  route answers a request.
-- [ ] Multi-service switch: same internal-channel code runs in-process
+  (`rivet add plugin`, zero runtime overhead).
+  Acceptance: `rivet build` emits one monomorphized `install` call per
+  configured plugin (no `dyn`, no registry); the built example answers
+  `GET /auth/check` from the fixture plugin.
+- [ ] Multi-service switch: the same internal-channel code runs in-process
   (monolith) or over gRPC by config (pillar 02).
-  Acceptance: one blueprint builds and runs both topologies; the integration
-  test exercises both.
-- [ ] `rivet dev` polyglot frontend proxy detecting Vite/Rsbuild/Next.js
-  (pillar 03).
-  Acceptance: with a fixture Vite app, `/api/*` reaches the Rust backend and
-  other paths reach the dev server.
+  Acceptance: the example builds and runs in both transport modes and
+  `curl /ping` returns the same body; a test drives both channel
+  implementations.
+- [ ] `rivet dev` polyglot frontend proxy detecting
+  Vite/Rsbuild/Next.js/Webpack (pillar 03).
+  Acceptance: with a fixture Vite-shaped project, `/api/*` reaches the Rust
+  backend and other paths reach the frontend dev server.
 - [ ] Static assets embedded in the binary (rust-embed) for production.
-  Acceptance: a built binary serves a fixture `dist/` file without a filesystem.
-- [ ] Service discovery (Consul/etcd) and built-in admin panel (React/Solid).
-  Acceptance: a two-service compose stack registers and the panel lists routes.
+  Acceptance: a built binary serves a fixture `dist/index.html` after the
+  `dist/` directory is renamed.
+- [ ] Service discovery (Consul/etcd) and the built-in admin panel.
+  Acceptance: registration posts the service and port to a stub registry in
+  a test, and `/__rivet/routes` lists the routes the app serves.
 - [ ] Story-to-Jira/Linear sync (`rivet sync`), closing pillar 05's loop.
-  Acceptance: a dry run against a mock API reports the expected story diff.
+  Acceptance: `rivet sync --dry-run` reports the expected story diff from a
+  captured tracker payload and writes nothing.
+- [ ] Phase-4 docs and tracker: finish pillars 01-03, tick the ROADMAP
+  boxes, refresh the README, and move finished lines.
+  Acceptance: the pillar docs describe what shipped, the ROADMAP phase-4
+  boxes are ticked, and every finished line sits in `tasks/completed.md`
+  with its commit hash.
 
 ---
 
