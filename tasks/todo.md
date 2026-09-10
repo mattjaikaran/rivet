@@ -6,6 +6,20 @@ each phase references the pillars it serves.
 
 Last updated: 2026-09-10
 
+## Scope: finish the Python front end first
+
+Rivet ingests a Python/TypeScript DSL (`docs/ARCHITECTURE.md`). Only the
+Python front end exists today. Finish every Python-side item before you
+start TypeScript work.
+
+- In scope: the Python DSL front end, the rest of phase 4, and the phase-5
+  work that exports a Python-authored app (WASM, the Kotlin/Swift bindings,
+  the `rust_native_features` flags).
+- Deferred: a TypeScript DSL front end, and the UniFFI TypeScript (React
+  Native) binding in phase 5. Do not start either without explicit scope.
+- The phase-4 admin panel is not TypeScript work: it ships as one static
+  file, with no React or Solid build step.
+
 ## How to use this file
 
 - Keep `tasks/todo.md` authoritative for outstanding work.
@@ -52,7 +66,7 @@ A task is done when all of the following hold:
 | 1 - The Gauntlet | weeks 3-4 | 05, 06, 07 | `prompts/prompt-04-gauntlet.md` (done) |
 | 2 - Context engine | weeks 5-6 | 04 | `prompts/prompt-05-context.md` (done) |
 | 3 - MCP & agentic CLI | weeks 7-8 | 09 | `prompts/prompt-06-mcp.md` (done) |
-| 4 - Ecosystem & multi-service | weeks 9-10 | 01, 02, 03 | `prompts/prompt-07-ecosystem.md` (to author) |
+| 4 - Ecosystem & multi-service | weeks 9-10 | 01, 02, 03 | `prompts/prompt-07-ecosystem.md` (done) |
 | 5 - WASM & mobile | weeks 11-12 | 08 | `prompts/prompt-08-wasm-mobile.md` (to author) |
 
 ---
@@ -155,7 +169,9 @@ Goal: edge and native distribution, per
 
 - [ ] `rivet build --target wasm` compiling to `wasm32-wasi`.
   Acceptance: a generated app runs under Wasmtime and answers the ping route.
-- [ ] UniFFI bindings for Kotlin, Swift, and TypeScript from the core.
+- [ ] UniFFI bindings for Kotlin and Swift from the core. The TypeScript
+  (React Native) binding stays deferred until the Python front end is done
+  (see the scope section).
   Acceptance: each generated binding compiles against the fixture core.
 - [ ] `rivet mobile init --platforms ios,android` producing SDKs that compile
   and pass tests.
@@ -176,6 +192,10 @@ Each needs its acceptance drafted when pulled.
 - GraphQL federation.
 - Distributed tracing UI.
 - Edge deployment tooling (Cloudflare Workers, Fly.io).
+- A TypeScript DSL front end. `docs/ARCHITECTURE.md` and
+  `prompts/prompt-01-ir.md` name it as a co-equal parser over the same IR,
+  so the Python front end comes first. Do not shape the IR for it without
+  explicit scope.
 - Additional language front ends (Java, Go, C#).
 - Performance benchmarks (`criterion`) and mutation testing that require the
   generated-code test story from phase 1.3.

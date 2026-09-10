@@ -10,6 +10,34 @@ Rust repository at `~/dev/rivet` (branch `main`). Mission: turn a Python DSL
 into a compiled, memory-safe Rust API server. The philosophy, roadmap, and
 pillars already live in the repo; you build from them, phase by phase.
 
+## Scope: finish the Python front end first
+
+Rivet is a polyglot transpiler (`docs/ARCHITECTURE.md`). It ingests a
+Python/TypeScript DSL and emits Rust. **Only the Python front end exists
+today.** Complete all Python-side work before you start any TypeScript work.
+
+In scope now:
+
+- The Python DSL front end and everything that completes it.
+- The rest of phase 4, and the phase-5 work that exports a Python-authored
+  app: the WASM target, the native (Kotlin/Swift) bindings, and the
+  `rust_native_features` flags.
+
+Deferred until the Python work is done:
+
+- A **TypeScript DSL front end**. `docs/ARCHITECTURE.md` and
+  `prompts/prompt-01-ir.md` name it as a co-equal parser over the same IR.
+  Do not start it, and do not shape the IR for it, without explicit scope.
+- The **UniFFI TypeScript (React Native) binding** in phase 5. Build the
+  Kotlin and Swift bindings; leave the TypeScript one.
+
+Note: the phase-4 admin panel is **not** TypeScript work. The phase-4 seed
+already decided the panel ships as one static file, with no React or Solid
+build step (`prompts/prompt-07-ecosystem.md`). Keep it that way.
+
+If a request would pull TypeScript work into the critical path, say so and
+finish the Python-side item first.
+
 ## Where the project stands
 
 - Phases 0-3 are complete and pushed. `rivet-core` defines the serializable
@@ -41,33 +69,32 @@ pillars already live in the repo; you build from them, phase by phase.
     mirrors the dev server's rewrite (a `GET`/`HEAD` whose path names no file,
     from a client that accepts `text/html`), so an `XHR` miss keeps its `404`.
     Every asset carries a strong `ETag`; `If-None-Match` answers `304`. A
-    missing `dist` warns with `E2004` and still builds. The router compresses
-    every response with `tower-http` Brotli.
+    missing `dist` warns with `E2004` and still builds. `tower-http` Brotli
+    compresses every response.
 - GitHub Actions auto-runs are paused until the app ships (the workflow is
   `workflow_dispatch`-only). `./scripts/gate.sh` is the acceptance bar:
   fmt, clippy `-D warnings`, **198 tests**, `cargo deny`, the example
   build/audit, and the repo self-checks.
-- Tracker coherent: 11 todo items, 83 completed.
-- Recent commits: `7a3646f` (embedded assets), `6e0c6e0` (resume prompt),
-  `735a100` (dev-proxy tracker move), `44345fd` (`rivet dev`), `a675668`
+- Tracker coherent: 11 todo items, 84 completed.
+- Recent commits: `484cd78` (asset tracker move), `7a3646f` (embedded
+  assets), `6e0c6e0` (resume prompt), `44345fd` (`rivet dev`), `a675668`
   (transport switch), `53242fd` (plugin system).
 
 ## Disk hygiene (do this)
 
 `rivet build` writes a generated crate with its own cargo `target/` (about
 140 MB per app), and `./scripts/gate.sh` regenerates `examples/basic/generated`.
-The cargo cache is warm from the asset session, so `./scripts/gate.sh` takes
-about a minute. After a `make clean-all` the first release build costs about
-7 minutes and the first test build about 4; prefer `target/debug/rivet` while
-you iterate.
+The workspace `target/` grows to about 12 GiB. Clean up when you finish a work
+session or before you push:
+
 ```bash
 make clean        # examples/*/generated + Rivet test fixtures in the temp dir
 make clean-all    # the above plus `cargo clean` (about 12 GiB)
 ```
 
-The last session ended with `make clean-all`, so `target/` is gone: the first
-release build takes about 7 minutes, and the first test build about 4. Budget
-for it, and prefer `target/debug/rivet` while you iterate.
+The cargo cache is warm, so `./scripts/gate.sh` takes about a minute. After a
+`make clean-all` the first release build costs about 7 minutes and the first
+test build about 4; prefer `target/debug/rivet` while you iterate.
 
 Tests clean up after themselves: `rivet-cli/src/test_support.rs` defines a
 `ScratchDir` guard that removes each fixture on drop (success and panic). Do
@@ -75,6 +102,8 @@ not reintroduce pid-suffixed temp paths or hand-rolled `remove_dir_all`.
 
 Never commit build output. `.gitignore` covers `target/` and
 `examples/*/generated/`; verify with `git status --short` before every commit.
+The example fixture build under `examples/basic/dist/` is committed on
+purpose: the asset test renames it.
 
 ## Repo map
 
@@ -85,6 +114,11 @@ Never commit build output. `.gitignore` covers `target/` and
 - `rivet-cli/src/gauntlet/` - the quality rules: `mod.rs` holds the `Rule`
   trait, `Finding`, `run_gauntlet`, and the severity policy; one module per
   rule.
+- `rivet-cli/src/diagnostic.rs` - structured JSON diagnostics.
+  `suggested_fix` is a required `String`; do not make it optional again.
+  `blocker` and `warning` are the two constructors.
+- `rivet-cli/src/store/` - `.rivet/` SQLite store (history, sessions,
+  fingerprints) plus `vector.rs`, the LanceDB index over blueprints.
 - `rivet-cli/src/commands/` - one module per command (`build`, `audit`,
   `history`, `session`, `explain`, `fix`, `trace`, `plan`, `add`, `dev`).
   Big modules put tests in a sibling `tests.rs` and split submodules before a
@@ -109,6 +143,7 @@ Never commit build output. `.gitignore` covers `target/` and
 
 ## Decisions already made (do not relitigate)
 
+- **Python front end first; no TypeScript work yet.** See the scope section.
 - MCP SDK: `rmcp` 3.x, features `server` + `macros` + `transport-io`. Tool
   parameter schemas are hand-written JSON because the schemars derive expands
   to banned `unwrap` calls.
@@ -122,11 +157,6 @@ Never commit build output. `.gitignore` covers `target/` and
   the request goes upstream. Do not add an `/api` mount to the generator.
 - The dev proxy tunnels upgrades over a raw connection (hyper `on_upgrade` +
   `copy_bidirectional`); an HTTP client cannot carry a websocket handshake.
-- Rule severities, the complexity metric, duplicate fingerprinting, dead-code
-  liveness, the type-strictness contract, and the MQI grade scale are
-  unchanged from phases 1-2.
-- CI auto-runs stay paused until the app ships; local `./scripts/gate.sh` is
-  the bar.
 - `[frontend]` owns the production build (`dist`, `spa`), not a separate
   `[assets]` table: `rivet dev` already owns the frontend, and the phase-4
   seed's original `[assets] dir` shape is superseded.
@@ -137,29 +167,39 @@ Never commit build output. `.gitignore` covers `target/` and
 - The generated router compresses responses with `tower-http`'s
   `CompressionLayer` and the Brotli feature. Keep it: pillar 03 promised
   Brotli, and wire compression costs no binary size.
-- Generated-app tests build a real crate inside a `ScratchDir`
-  (`rivet-cli/src/commands/build/tests.rs`); fixtures the test mutates (a
-  `dist/` it renames) live there too, never in the repo — except the example
-  fixture under `examples/basic/dist/`, which `.gitignore` now excepts.
+- The admin panel ships as one static file; do not add a React or Solid
+  build.
+- Rule severities, the complexity metric, duplicate fingerprinting, dead-code
+  liveness, the type-strictness contract, and the MQI grade scale are
+  unchanged from phases 1-2.
+- CI auto-runs stay paused until the app ships; local `./scripts/gate.sh` is
+  the bar.
 
 ## Next up, in order
 
-Finish phase 4, per `docs/ROADMAP.md` and `tasks/todo.md` (work the checklist
-in order; each line carries its acceptance criterion):
+Finish phase 4, then the Python-side part of phase 5, per `docs/ROADMAP.md`
+and `tasks/todo.md`. Work the checklist in order; each line carries its
+acceptance criterion.
 
 1. **Service discovery (Consul/etcd) and the admin panel.** Acceptance:
    registration posts the service and port to a stub registry in a test, and
    `/__rivet/routes` lists the routes the app serves. The route list is
-   generator work beside `mod assets`; the registry client is new.
+   generator work beside `mod assets`; the registry client is new. Read
+   `prompts/prompt-07-ecosystem.md` for the `[discovery]` shape and the
+   single-file panel decision.
 2. **Story-to-Jira/Linear sync (`rivet sync`).** Acceptance:
    `rivet sync --dry-run` reports the expected story diff from a captured
    tracker payload and writes nothing. Closes pillar 05's loop.
 3. **Phase-4 docs and tracker close.** Finish pillars 01-03, tick the ROADMAP
    phase-4 boxes, refresh the README, and move every finished line to
    `tasks/completed.md` with its commit hash.
-
-Then phase 5 (WASM and mobile), which starts by authoring
-`prompts/prompt-08-wasm-mobile.md`.
+4. **Author `prompts/prompt-08-wasm-mobile.md`**, then draft its checklist
+   into the phase-5 section of `tasks/todo.md`. Phase 5 starts by authoring
+   its seed, the way every phase before it did.
+5. **Phase 5, Python side only:** `rivet build --target wasm` under Wasmtime,
+   the UniFFI bindings for Kotlin and Swift, `rivet mobile init --platforms
+   ios,android`, and the four `rust_native_features` flags. Leave the
+   TypeScript binding alone.
 
 ## How to work (house rules)
 
@@ -213,7 +253,7 @@ Then phase 5 (WASM and mobile), which starts by authoring
    `check-tracker` rejects any `[x]` left in `todo.md`, so never tick a line
    in place.
 6. Do not pull parking-lot items (end of `tasks/todo.md`) without explicit
-   scope.
+   scope. A TypeScript front end is one of them; leave it.
 
 ## Definition of done (every change)
 

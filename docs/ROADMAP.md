@@ -133,6 +133,11 @@ tunnels the frontend's HMR upgrade. See
 
 **Success Metric**: `rivet mobile init --platforms ios,android` generates SDKs that compile and pass tests.
 
+**Scope note**: this project finishes the Python front end before it starts
+any TypeScript work. The TypeScript (React Native) binding stays deferred
+until the Python-side phases are done; the Kotlin and Swift bindings do not
+wait. See the scope section in `tasks/todo.md`.
+
 ---
 
 ## Post-v1 (Future)
@@ -141,4 +146,5 @@ tunnels the frontend's HMR upgrade. See
 - GraphQL federation.
 - Distributed tracing UI.
 - Edge deployment (Cloudflare Workers, Fly.io).
-- More language parsers (Java, Go, C#).
+- More language parsers (Java, Go, C#), and a TypeScript DSL front end over
+  the same IR once the Python front end is complete.
