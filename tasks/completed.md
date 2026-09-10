@@ -329,7 +329,7 @@ tracker lines finish; the section closes when the phase does.
   `GET /auth/check`, and compares the presented bearer token in constant
   time. The example project composes it (`53242fd`).
 
-### Verification
+### Verification: plugin system
 
 - 119 CLI tests plus 11 plugin tests and 1 doctest green; fmt, clippy
   (`-D warnings`), and `cargo deny check` clean; the gate passes end to end.
@@ -338,3 +338,33 @@ tracker lines finish; the section closes when the phase does.
   install call; the running binary answers `GET /ping` as before and
   `GET /auth/check` with `authenticated: false` without the header and
   `true` with the configured token (`53242fd`).
+
+### Multi-service transport
+
+- Split the generated crate into a transport-free service layer (one async
+  function per route over plain Rust types) and an internal channel: a
+  typed trait with `InProcess`, which monomorphizes to a direct call, and
+  `Grpc`, which sends the same payload over a channel the app serves. The
+  axum handler is now a thin wrapper over the channel and maps a channel
+  failure to `502` (`a675668`).
+- `[transport] mode = "in_process" | "grpc"` selects the topology at
+  generation time, so the monolith carries no transport code, no `dyn`, and
+  no gRPC dependency; `grpc_port` sets the channel port (`a675668`).
+- Wrote the gRPC service by hand on `tonic::codec`, `tonic::server::Grpc`,
+  and `tonic::client::Grpc`, with one JSON message per call: a generated app
+  builds with only rustc and cargo, so the generated crate needs neither
+  `protoc`, `tonic-build`, nor `prost`. Recorded in pillar 02, including the
+  tonic 0.14 `router` feature note (`a675668`).
+- `rivet trace` now reports the service function that holds the route logic
+  and the channel-qualified registration line (`a675668`).
+
+### Verification: multi-service transport
+
+- 124 CLI tests green, including a two-topology integration test that builds
+  one blueprint in `in_process` mode and again in `grpc` mode, runs both
+  binaries, probes `GET /ping` and `POST /echo`, and asserts both modes
+  answer the same body; fmt, clippy (`-D warnings`), `cargo deny check`, and
+  the example build and audit all pass (`a675668`).
+- The gRPC run binds its channel port while answering, so the HTTP responses
+  in that run prove the channel round trip rather than a direct call
+  (`a675668`).

@@ -133,12 +133,7 @@ generation and required `suggested_fix` diagnostics.
 Goal: production readiness, per pillars 01, 02, and 03. Seed:
 `prompts/prompt-07-ecosystem.md`.
 
-- [~] Multi-service switch: the same internal-channel code runs in-process
-  (monolith) or over gRPC by config (pillar 02).
-  Acceptance: the example builds and runs in both transport modes and
-  `curl /ping` returns the same body; a test drives both channel
-  implementations.
-- [ ] `rivet dev` polyglot frontend proxy detecting
+- [~] `rivet dev` polyglot frontend proxy detecting
   Vite/Rsbuild/Next.js/Webpack (pillar 03).
   Acceptance: with a fixture Vite-shaped project, `/api/*` reaches the Rust
   backend and other paths reach the frontend dev server.
