@@ -10,6 +10,9 @@
 //! (see [`store`]): `rivet history` lists what ran, `rivet session` saves and
 //! resumes the context around it, and `rivet explain` traces a symptom to its
 //! introducing commit.
+//!
+//! Agents type slash commands (`rivet /plan "..."`); main() strips the
+//! leading `/` before clap parses so the subcommand names stay plain.
 
 #![allow(clippy::result_large_err)] // Diagnostics are self-contained JSON payloads
 
@@ -68,6 +71,36 @@ enum Command {
         #[arg(default_value = "app.py")]
         app: PathBuf,
     },
+    /// Plan a user story into a working branch with passing tests,
+    /// backed by an LLM provider or a prepared module (phase 3).
+    Plan {
+        /// The user story, for example "add referral codes US-42".
+        story: String,
+        /// Path to the app module (defaults to `app.py`).
+        #[arg(default_value = "app.py")]
+        app: PathBuf,
+        /// Apply this prepared replacement module instead of calling the
+        /// provider (deterministic path used by CI and tests).
+        #[arg(long)]
+        from: Option<PathBuf>,
+        /// Push and open a pull request with `gh` after the plan commits.
+        #[arg(long)]
+        push: bool,
+    },
+    /// Auto-fix what the Gauntlet can deterministically repair (phase 3).
+    Fix {
+        /// Path to the app module (defaults to `app.py`).
+        #[arg(default_value = "app.py")]
+        app: PathBuf,
+    },
+    /// Trace a symptom through the module, the generated code, and git.
+    Trace {
+        /// The symptom to trace, for example "orders endpoint 500".
+        symptom: String,
+        /// Path to the app module (defaults to `app.py`).
+        #[arg(default_value = "app.py")]
+        app: PathBuf,
+    },
     /// Serve the Model Context Protocol (MCP) server over stdio so AI
     /// agents can call Rivet tools (phase 3, pillar 09).
     Mcp,
@@ -116,6 +149,9 @@ impl Command {
             Command::Audit { .. } => "audit".into(),
             Command::History { .. } => "history".into(),
             Command::Explain { .. } => "explain".into(),
+            Command::Plan { .. } => "plan".into(),
+            Command::Fix { .. } => "fix".into(),
+            Command::Trace { .. } => "trace".into(),
             Command::Mcp => "mcp".into(),
             Command::Session { action, .. } => match action {
                 SessionAction::Save { .. } => "session save".into(),
@@ -132,6 +168,9 @@ impl Command {
                 app.clone()
             }
             Command::Explain { app, .. } => app.clone(),
+            Command::Plan { app, .. } | Command::Fix { app } | Command::Trace { app, .. } => {
+                app.clone()
+            }
             Command::Mcp => PathBuf::new(),
             Command::Session { action } => match action {
                 SessionAction::Save { app, .. }
@@ -143,7 +182,21 @@ impl Command {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    // Agents type slash commands: `rivet /plan "..."`. Strip the leading
+    // "/" from the subcommand token so clap sees `plan`, `fix`, `trace`.
+    let args: Vec<String> = std::env::args().collect();
+    let normalized: Vec<String> = args
+        .iter()
+        .enumerate()
+        .map(|(index, arg)| {
+            if index == 1 && arg.starts_with('/') {
+                arg.trim_start_matches('/').to_string()
+            } else {
+                arg.clone()
+            }
+        })
+        .collect();
+    let cli = Cli::parse_from(normalized);
     let label = cli.command.label();
     let app = cli.command.app_path();
     let project_dir = store::project_dir_for(&app);
@@ -166,6 +219,14 @@ fn main() -> ExitCode {
         Command::Audit { app, json } => commands::audit::run_audit(&app, json),
         Command::History { app } => commands::history::run_history(&app),
         Command::Explain { symptom, app } => commands::explain::run_explain(&symptom, &app),
+        Command::Plan {
+            story,
+            app,
+            from,
+            push,
+        } => commands::plan::run_plan(&story, &app, from.as_deref(), push),
+        Command::Fix { app } => commands::fix::run_fix(&app),
+        Command::Trace { symptom, app } => commands::trace::run_trace(&symptom, &app),
         Command::Mcp => mcp::run_stdio().map_err(|diagnostic| vec![diagnostic]),
         Command::Session { action } => match action {
             SessionAction::Save { name, app } => commands::session::run_session_save(&app, &name),

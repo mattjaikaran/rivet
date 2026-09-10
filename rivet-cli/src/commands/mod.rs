@@ -9,5 +9,8 @@
 pub mod audit;
 pub mod build;
 pub mod explain;
+pub mod fix;
 pub mod history;
+pub mod plan;
 pub mod session;
+pub mod trace;

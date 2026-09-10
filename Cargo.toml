@@ -41,5 +41,9 @@ tree-sitter-python = "0.25"
 # service, and the stdio transport the `rivet mcp` command serves on.
 rmcp = { version = "3.2", default-features = false, features = ["server", "macros", "transport-io"] }
 
+# HTTP for the /plan provider call (phase 3, pillar 09): rustls, no
+# native TLS, so the build stays portable. Already in the tree via lancedb.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
 # Each later phase adds the crates it needs here. Keep this table limited
 # to dependencies that at least one workspace member actually uses.
