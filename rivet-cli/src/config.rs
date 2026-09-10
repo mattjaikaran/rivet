@@ -165,6 +165,17 @@ impl Default for Frontend {
     }
 }
 
+/// The `[admin]` section: the built-in route-table panel (phase 4).
+///
+/// `enabled = true` mounts `GET /__rivet/routes` and `GET /__rivet/` on the
+/// generated app. A project with no `[admin]` section serves neither.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct Admin {
+    /// Serve the route table and the panel.
+    pub enabled: bool,
+}
+
 /// The parsed `rivet.toml`.
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(default)]
@@ -181,6 +192,8 @@ pub struct RivetConfig {
     pub transport: Transport,
     /// The production frontend build the binary embeds.
     pub frontend: Frontend,
+    /// The built-in route-table panel.
+    pub admin: Admin,
 }
 
 impl RivetConfig {
@@ -335,5 +348,17 @@ version = "0.3"
         let config: RivetConfig = toml::from_str(raw).expect("parse");
         assert_eq!(config.frontend.dist.as_deref(), Some("frontend/build"));
         assert!(config.frontend.spa, "spa defaults to true");
+    }
+
+    #[test]
+    fn the_admin_panel_is_off_by_default() {
+        let config = RivetConfig::default();
+        assert!(!config.admin.enabled);
+    }
+
+    #[test]
+    fn the_admin_section_enables_the_panel() {
+        let config: RivetConfig = toml::from_str("[admin]\nenabled = true\n").expect("parse");
+        assert!(config.admin.enabled);
     }
 }

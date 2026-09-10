@@ -98,7 +98,7 @@ commit, and every JSON diagnostic carries a `suggested_fix`. See
   Webpack, HMR tunnel included.
 - [x] Static assets embedded in the binary (`rust-embed`).
 - [ ] Service discovery (Consul/etcd/Nacos).
-- [ ] Built-in Admin Panel (React/Solid).
+- [x] Built-in admin panel: one embedded HTML file, no build step.
 - [ ] Story-to-Jira/Linear sync (`rivet sync`).
 - [x] Multi-service architecture (monolith → microservices via config).
 
@@ -118,6 +118,11 @@ The dev proxy is met: `rivet dev` detects the frontend from its config
 file, serves the blueprint's routes and `/api/*` from the Rust backend with
 the prefix stripped, sends every other path to the frontend dev server, and
 tunnels the frontend's HMR upgrade. See
+`docs/pillars/03-polyglot-frontend-support.md`.
+
+The admin panel is met: `[admin] enabled = true` compiles the blueprint's
+route table into the generated binary, `GET /__rivet/routes` answers it as
+JSON, and `GET /__rivet/` answers a single-file panel that renders it. See
 `docs/pillars/03-polyglot-frontend-support.md`.
 
 ---

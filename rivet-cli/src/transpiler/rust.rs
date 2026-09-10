@@ -17,6 +17,7 @@ use rivet_core::ir::{
 use std::collections::HashMap;
 use std::path::Path;
 
+mod admin;
 mod assets;
 mod channel;
 mod handler;
@@ -64,8 +65,9 @@ pub fn generate_project(
     let assets = assets::resolve(config, project_dir);
     let wiring = assets::render(&assets, config.frontend.spa);
     let router = codegen.render_router(blueprint, channel_type);
+    let admin = admin::render(blueprint, config.admin.enabled);
     let parts = MainParts {
-        routing: used_router_fns(blueprint).join(", "),
+        routing: used_router_fns(blueprint, config.admin.enabled).join(", "),
         host: host.clone(),
         port,
         plugins: render_plugin_installs(&plugins),
@@ -73,6 +75,7 @@ pub fn generate_project(
         channel_state: channel_state.to_string(),
         assets_fallback: wiring.fallback,
         assets_layer: wiring.compression,
+        admin_routes: admin.routes,
     };
     let blocks = MainBlocks {
         structs: &structs_block,
@@ -81,6 +84,7 @@ pub fn generate_project(
         handlers: &handlers,
         router: &router,
         assets: &wiring.module,
+        admin: &admin.module,
     };
     let main_rs = assemble(&blocks, &parts)?;
     let cargo_toml = render_manifest(&package_name, &plugins, mode, !wiring.module.is_empty());

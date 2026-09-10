@@ -17,3 +17,8 @@ path = "plugins/auth-token"
 # Rsbuild output.
 [frontend]
 dist = "dist"
+
+# Phase 4: the built-in route-table panel. `rivet build` compiles the panel
+# into the binary and mounts it under `/__rivet/`.
+[admin]
+enabled = true

@@ -125,3 +125,33 @@ The generated router compresses every response with `tower-http`'s
 wire costs no binary size, so the embedded assets stay uncompressed in the
 binary; `rust-embed`'s own `compression` feature would trade binary size
 instead, and this phase does not measure that trade.
+
+## The admin panel
+
+`[admin] enabled = true` mounts two read-only endpoints on the generated
+app:
+
+```toml
+[admin]
+enabled = true
+```
+
+| Request | Response |
+| :--- | :--- |
+| `GET /__rivet/routes` | The route table as JSON: `method`, `path`, `handler`, and the route's story IDs |
+| `GET /__rivet/` | A single-file HTML panel that renders that table |
+
+`rivet build` renders the table from the blueprint, so the endpoint answers
+one static string the compiler put in the binary: no serialization and no
+state. Both paths carry the `__rivet` prefix, so a blueprint route cannot
+collide with them, and neither response is cached.
+
+The panel is one embedded HTML file with no dependencies: it fetches the
+table and renders it. Rivet has no Node toolchain in its build, so the
+project ships the panel as one static file instead of promising a React or
+Solid build step — there is nothing to install and nothing to bundle.
+
+The panel is a developer convenience on a running service, not an
+authentication boundary: a project that does not want it exposed leaves
+`enabled` false, and a project that serves it in public puts it behind a
+plugin or a reverse proxy.

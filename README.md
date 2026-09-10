@@ -29,9 +29,10 @@ lookup, and `[transport] mode` runs the same blueprint in one process
 runs the API and a frontend dev server behind one origin and tunnels the
 frontend's HMR socket, and `[frontend] dist` compiles the production
 frontend build into the binary, so a shipped app serves its assets from
-its own memory. `rivet mcp` serves the parser, audit, vector, and
-context-store tools to AI agents over the Model Context Protocol, and every
-JSON diagnostic carries a `suggested_fix`.
+its own memory. `[admin] enabled = true` compiles a route-table panel into
+that binary at `/__rivet/`. `rivet mcp` serves the parser, audit, vector,
+and context-store tools to AI agents over the Model Context Protocol, and
+every JSON diagnostic carries a `suggested_fix`.
 
 ## Try it
 
