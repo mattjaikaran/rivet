@@ -126,44 +126,4 @@ pub fn run_build(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config;
-    use crate::test_support::ScratchDir;
-    use std::fs;
-
-    #[test]
-    fn gauntlet_blocker_stops_build_without_writing_a_crate() {
-        let dir = ScratchDir::new("build-storyless");
-        let app = dir.join("app.py");
-        fs::write(
-            &app,
-            "from rivet import api\n\n@api.get(\"/ping\")\ndef ping() -> dict:\n    return {\"status\": \"pong\"}\n",
-        )
-        .expect("write app.py");
-        let diagnostics = run_build(&app).expect_err("storyless route must fail");
-        assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].error_code, "E2045");
-        assert!(!diagnostics[0].suggested_fix.is_empty());
-        assert!(!dir.join("generated").exists(), "no crate may be written");
-    }
-
-    #[test]
-    fn dead_code_warns_through_the_gate_with_default_config() {
-        // A helper nothing calls is a warning, not a blocker, so the build
-        // gate must not fail on it. Driving run_build past the gate would
-        // compile the generated crate, so assert the gate decision instead.
-        let dir = ScratchDir::new("build-deadcode");
-        let app = dir.join("app.py");
-        fs::write(
-            &app,
-            "from rivet import api\n\ndef stale(value: int) -> int:\n    return value\n\n@api.get(\"/ping\", stories=[\"US-1\"])\ndef ping() -> dict:\n    return {\"status\": \"pong\"}\n",
-        )
-        .expect("write app.py");
-        let module = parse_python_file(&app).expect("module parses");
-        let findings = gauntlet::run_gauntlet(&module, &config::RivetConfig::default().gauntlet);
-        assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].severity, Severity::Warning);
-        assert_eq!(findings[0].error_code, "E2044");
-    }
-}
+mod tests;

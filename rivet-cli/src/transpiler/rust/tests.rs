@@ -1,7 +1,7 @@
 use super::*;
-use crate::config::PluginConfig;
+use crate::config::{PluginConfig, Transport, TransportMode};
 use crate::test_support::ScratchDir;
-use rivet_core::ir::HttpMethod;
+use rivet_core::ir::{HttpMethod, ResponseSpec};
 use std::fs;
 
 fn ping_blueprint() -> ServiceBlueprint {
@@ -12,7 +12,7 @@ fn ping_blueprint() -> ServiceBlueprint {
             method: HttpMethod::Get,
             path: "/ping".to_string(),
             handler_name: "ping".to_string(),
-            stories: vec![],
+            stories: vec!["US-001".to_string()],
             middlewares: vec![],
             request: RequestSpec::None,
             response: ResponseSpec::Json(TypeRef::Json),
@@ -25,37 +25,8 @@ fn ping_blueprint() -> ServiceBlueprint {
     }
 }
 
-#[test]
-fn crate_name_is_sanitized() {
-    assert_eq!(crate_name("my-api"), "my-api");
-    assert_eq!(crate_name("My Cool API!"), "my-cool-api");
-    assert_eq!(crate_name(""), "app");
-    assert_eq!(crate_name("9lives"), "app-9lives");
-}
-
-#[test]
-fn renders_ping_route() {
-    let config = RivetConfig::default();
-    let project = generate_project(&ping_blueprint(), &config, Path::new(".")).expect("generate");
-    assert!(project.main_rs.contains(".route(\"/ping\", get(ping))"));
-    assert!(
-        project
-            .main_rs
-            .contains("async fn ping() -> Json<serde_json::Value>"),
-        "ping main_rs:\n{}",
-        project.main_rs
-    );
-    assert!(
-        project
-            .main_rs
-            .contains("json_obj(vec![(\"status\", serde_json::Value::from(\"pong\"))])")
-    );
-    assert!(project.cargo_toml.contains("name = \"app\""));
-}
-
-#[test]
-fn renders_dto_response() {
-    let blueprint = ServiceBlueprint {
+fn dto_blueprint() -> ServiceBlueprint {
+    ServiceBlueprint {
         name: "app".to_string(),
         structs: vec![StructDefinition {
             name: "OrderResponse".to_string(),
@@ -80,18 +51,158 @@ fn renders_dto_response() {
             }],
         }],
         dependencies: vec![],
-    };
-    let config = RivetConfig::default();
-    let project = generate_project(&blueprint, &config, Path::new(".")).expect("generate");
+    }
+}
+
+fn grpc_config() -> RivetConfig {
+    RivetConfig {
+        transport: Transport {
+            mode: TransportMode::Grpc,
+            grpc_port: 51000,
+        },
+        ..RivetConfig::default()
+    }
+}
+
+#[test]
+fn crate_name_is_sanitized() {
+    assert_eq!(crate_name("my-api"), "my-api");
+    assert_eq!(crate_name("My Cool API!"), "my-cool-api");
+    assert_eq!(crate_name(""), "app");
+    assert_eq!(crate_name("9lives"), "app-9lives");
+}
+
+#[test]
+fn renders_the_service_layer_the_channel_and_the_router() {
+    let project = generate_project(&ping_blueprint(), &RivetConfig::default(), Path::new("."))
+        .expect("generate");
+
+    // The route logic lives in the transport-free service layer.
+    assert!(
+        project.main_rs.contains("mod service {"),
+        "main_rs:\n{}",
+        project.main_rs
+    );
+    assert!(
+        project
+            .main_rs
+            .contains("pub async fn ping() -> serde_json::Value {"),
+        "main_rs:\n{}",
+        project.main_rs
+    );
+    assert!(
+        project
+            .main_rs
+            .contains("json_obj(vec![(\"status\", serde_json::Value::from(\"pong\"))])"),
+        "main_rs:\n{}",
+        project.main_rs
+    );
+
+    // The channel is one typed method per route, and the handler calls it.
+    assert!(project.main_rs.contains("pub trait Channel {"));
+    assert!(
+        project
+            .main_rs
+            .contains("fn ping(&self) -> impl std::future::Future<Output = Result<serde_json::Value, String>> + Send;")
+    );
+    assert!(
+        project
+            .main_rs
+            .contains("async fn ping<C: channel::Channel>(State(channel): State<C>)")
+    );
+
+    // The router registers the concrete transport the config selected.
+    assert!(
+        project
+            .main_rs
+            .contains(".route(\"/ping\", get(ping::<channel::InProcess>))"),
+        "main_rs:\n{}",
+        project.main_rs
+    );
+    assert!(project.main_rs.contains(".with_state(channel::InProcess);"));
+    assert!(project.cargo_toml.contains("name = \"app\""));
+}
+
+#[test]
+fn in_process_mode_generates_no_grpc_code() {
+    let project = generate_project(&ping_blueprint(), &RivetConfig::default(), Path::new("."))
+        .expect("generate");
+    assert!(
+        !project.main_rs.contains("tonic"),
+        "the monolith must carry no transport code"
+    );
+    assert!(!project.main_rs.contains("Grpc"));
+    assert!(!project.cargo_toml.contains("tonic"));
+    assert!(!project.cargo_toml.contains("tokio-stream"));
+}
+
+#[test]
+fn grpc_mode_generates_the_channel_client_and_server() {
+    let project =
+        generate_project(&ping_blueprint(), &grpc_config(), Path::new(".")).expect("generate");
+
+    assert!(project.main_rs.contains("pub struct Grpc {"));
+    assert!(
+        project
+            .main_rs
+            .contains("pub async fn connect(endpoint: String)")
+    );
+    assert!(
+        project
+            .main_rs
+            .contains("tonic::codec::Codec for JsonCodec")
+    );
+    assert!(
+        project
+            .main_rs
+            .contains("const NAME: &'static str = \"rivet.Channel\";")
+    );
+    assert!(
+        project
+            .main_rs
+            .contains("pub async fn serve(listener: tokio::net::TcpListener)")
+    );
+    assert!(project.main_rs.contains("channel::Grpc::connect"));
+    assert!(project.main_rs.contains(".with_state(channel);"));
+    assert!(!project.main_rs.contains("dyn channel::Channel"));
+
+    // The generated manifest gains the transport's crates and no build step.
+    assert!(project.cargo_toml.contains("tonic = { version = \"0.12\""));
+    assert!(
+        project
+            .cargo_toml
+            .contains("tokio-stream = { version = \"0.1\", features = [\"net\"] }")
+    );
+    assert!(!project.cargo_toml.contains("prost ="));
+    assert!(!project.cargo_toml.contains("tonic-build"));
+}
+
+#[test]
+fn renders_a_dto_response_through_the_service_layer() {
+    let project = generate_project(&dto_blueprint(), &RivetConfig::default(), Path::new("."))
+        .expect("generate");
+
     assert!(project.main_rs.contains("pub struct OrderResponse"));
     assert!(
         project
             .main_rs
-            .contains("async fn create_order() -> Json<OrderResponse>"),
+            .contains("pub async fn create_order() -> OrderResponse {"),
         "dto main_rs:\n{}",
         project.main_rs
     );
     assert!(project.main_rs.contains("status: \"ok\""));
+    assert!(
+        project
+            .main_rs
+            .contains("fn create_order(&self) -> impl std::future::Future<Output = Result<OrderResponse, String>> + Send;")
+    );
+    assert!(
+        project
+            .main_rs
+            .contains("Result<Json<OrderResponse>, (axum::http::StatusCode, String)>"),
+        "dto main_rs:\n{}",
+        project.main_rs
+    );
 }
 
 #[test]

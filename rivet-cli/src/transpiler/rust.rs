@@ -1,20 +1,25 @@
-//! Rust code generation: render DTO structs, axum handlers, the router, and
-//! a buildable `Cargo.toml`.
+//! Rust code generation: the DTO structs, the transport-free service layer,
+//! the internal channel, the axum handlers, the router, and a buildable
+//! `Cargo.toml`.
 //!
 //! The parser guarantees the blueprint stays inside the supported subset (one
 //! JSON request parameter; a single return of literals, request parameters,
 //! or DTO construction). The generator therefore does not re-validate
 //! semantics; it renders the IR to Rust syntax.
 
-use crate::config::RivetConfig;
+use crate::config::{RivetConfig, TransportMode};
 use crate::diagnostic::Diagnostic;
 use crate::plugin::{self, ResolvedPlugin};
 use rivet_core::ir::{
-    Expr, FieldDefinition, RequestSpec, ResponseSpec, RouteDefinition, ServiceBlueprint,
-    StructDefinition, TypeRef,
+    Expr, FieldDefinition, RequestSpec, RouteDefinition, ServiceBlueprint, StructDefinition,
+    TypeRef,
 };
 use std::collections::HashMap;
 use std::path::Path;
+
+mod channel;
+mod handler;
+mod service;
 
 /// A complete, ready-to-write generated crate.
 pub struct GeneratedProject {
@@ -32,29 +37,61 @@ pub fn generate_project(
 ) -> Result<GeneratedProject, Diagnostic> {
     let package_name = crate_name(&config.project.name);
     let plugins = plugin::resolve(config, project_dir)?;
+    let mode = config.transport.mode;
     let codegen = Codegen {
         structs: &blueprint.structs,
     };
     let host = &config.environments.development.host;
     let port = config.environments.development.port;
 
+    let (channel_type, channel_state) = match mode {
+        TransportMode::InProcess => ("channel::InProcess", "channel::InProcess"),
+        // The router needs the type; `main` passes the connected value.
+        TransportMode::Grpc => ("channel::Grpc", "channel"),
+    };
     let structs_block = codegen.render_structs()?;
-    let handlers = codegen.render_handlers(blueprint)?;
-    let router = codegen.render_router(blueprint);
+    let service_block = service::render_service_module(&codegen, blueprint)?;
+    let channel_block = channel::render_channel_module(&codegen, blueprint, mode)?;
+    let handlers = handler::render_handlers(&codegen, blueprint)?;
+    let router = codegen.render_router(blueprint, channel_type);
     let parts = MainParts {
         routing: used_router_fns(blueprint).join(", "),
         host: host.clone(),
         port,
         plugins: render_plugin_installs(&plugins),
+        channel_setup: render_channel_setup(config),
+        channel_state: channel_state.to_string(),
     };
-    let main_rs = assemble(&structs_block, &handlers, &router, &parts)?;
-    let cargo_toml = render_manifest(&package_name, &plugins);
+    let blocks = MainBlocks {
+        structs: &structs_block,
+        service: &service_block,
+        channel: &channel_block,
+        handlers: &handlers,
+        router: &router,
+    };
+    let main_rs = assemble(&blocks, &parts)?;
+    let cargo_toml = render_manifest(&package_name, &plugins, mode);
 
     Ok(GeneratedProject {
         package_name,
         main_rs,
         cargo_toml,
     })
+}
+
+/// The setup `main` needs before it builds the router.
+///
+/// In `grpc` mode the app serves its own channel and connects to it, so the
+/// handlers reach the service layer over the wire. In `in_process` mode
+/// there is nothing to set up.
+fn render_channel_setup(config: &RivetConfig) -> String {
+    if config.transport.mode == TransportMode::InProcess {
+        return String::new();
+    }
+    let grpc_port = config.transport.grpc_port;
+    format!(
+        "    // grpc mode: serve this blueprint's channel, then call through it.\n    let channel_addr = format!(\"{{host}}:{grpc_port}\");\n    let channel_listener = tokio::net::TcpListener::bind(&channel_addr)\n        .await\n        .expect(\"failed to bind the service channel\");\n    tokio::spawn(async move {{\n        if let Err(err) = channel::serve(channel_listener).await {{\n            eprintln!(\"{{err}}\");\n        }}\n    }});\n    let channel = match channel::Grpc::connect(format!(\"http://{{channel_addr}}\")).await {{\n        Ok(channel) => channel,\n        Err(err) => {{\n            eprintln!(\"{{err}}\");\n            std::process::exit(1);\n        }}\n    }};\n\n"
+    )
 }
 
 /// One monomorphized install call per plugin, in plugin-name order.
@@ -79,8 +116,18 @@ fn render_plugin_installs(plugins: &[ResolvedPlugin]) -> String {
     format!("\n{}\n", installs.join("\n"))
 }
 
-/// The generated manifest: the axum stack plus one dependency per plugin.
-fn render_manifest(package_name: &str, plugins: &[ResolvedPlugin]) -> String {
+/// The generated manifest: the axum stack, the transport's dependencies, and
+/// one dependency per plugin.
+///
+/// The gRPC transport pulls `tonic` without `prost` or generated code, so the
+/// crate builds on a machine with only rustc and cargo.
+fn render_manifest(package_name: &str, plugins: &[ResolvedPlugin], mode: TransportMode) -> String {
+    let transport_section = match mode {
+        TransportMode::InProcess => String::new(),
+        TransportMode::Grpc => String::from(
+            "\n# grpc transport: hand-written tonic service, no protoc and no prost.\ntonic = { version = \"0.12\", default-features = false, features = [\"transport\"] }\ntokio-stream = { version = \"0.1\", features = [\"net\"] }\ntower = \"0.4\"\nhttp = \"1\"\nhttp-body = \"1\"\nbytes = \"1\"\n",
+        ),
+    };
     let mut dependencies = String::new();
     for plugin in plugins {
         dependencies.push_str(&plugin.dependency);
@@ -106,7 +153,7 @@ serde = {{ version = "1", features = ["derive"] }}
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = {{ version = "0.3", features = ["env-filter"] }}
-{plugin_section}
+{transport_section}{plugin_section}
 [profile.release]
 strip = true
 "#
@@ -189,94 +236,14 @@ impl<'a> Codegen<'a> {
         })
     }
 
-    // -- Handlers -----------------------------------------------------------
-
-    fn render_handlers(&self, blueprint: &ServiceBlueprint) -> Result<String, Diagnostic> {
-        let mut out = String::new();
-        for route in &blueprint.routes {
-            out.push_str(&self.render_handler(route)?);
-            out.push('\n');
-        }
-        Ok(out)
-    }
-
-    fn render_handler(&self, route: &RouteDefinition) -> Result<String, Diagnostic> {
-        let params = param_types(route);
-        let counts = count_idents_in(route);
-        let emitter = Emitter {
-            codegen: self,
-            params: &params,
-            counts: &counts,
-        };
-
-        let request = match &route.request {
-            RequestSpec::None => String::new(),
-            RequestSpec::Json { var, ty } => {
-                let rust = self.rust_type(ty, false)?;
-                format!("Json({var}): Json<{rust}>, ")
-            }
-        };
-
-        let (return_ty, body) = match &route.response {
-            ResponseSpec::None => (String::new(), String::new()),
-            ResponseSpec::Json(TypeRef::Named(name)) => {
-                let struct_def = self.find_struct(name)?;
-                let value = match route.returns.first() {
-                    Some(expr) => emitter.render_named(expr, struct_def)?,
-                    None => {
-                        return Err(Diagnostic::blocker(
-                            "E2002",
-                            format!("handler must return a `{name}` value"),
-                            format!("make the handler `return` a `{name}` construction, or return a request parameter of type `{name}`"),
-                        )
-                        .located("<generated>", 1));
-                    }
-                };
-                (format!("Json<{name}>"), format!("    Json({value})\n"))
-            }
-            ResponseSpec::Json(_) => {
-                // dict and primitives serialize through serde_json::Value.
-                let value = match route.returns.first() {
-                    Some(expr) => emitter.render_value(expr)?,
-                    None => "serde_json::Value::Null".to_string(), // Python: `return` without value
-                };
-                (
-                    "Json<serde_json::Value>".to_string(),
-                    format!("    Json({value})\n"),
-                )
-            }
-        };
-
-        let story_comment = if route.stories.is_empty() {
-            String::new()
-        } else {
-            format!(" // stories: {}", route.stories.join(", "))
-        };
-
-        let signature = if request.is_empty() {
-            format!("async fn {}()", route.handler_name)
-        } else {
-            format!("async fn {}({request})", route.handler_name)
-        };
-        let return_clause = if return_ty.is_empty() {
-            String::new()
-        } else {
-            format!(" -> {return_ty}")
-        };
-
-        Ok(format!(
-            "{signature}{return_clause} {{{story_comment}\n{body}}}\n",
-            story_comment = story_comment,
-            body = body,
-        ))
-    }
-
-    fn render_router(&self, blueprint: &ServiceBlueprint) -> String {
+    /// Register every route with the concrete channel the config selected,
+    /// so the compiler monomorphizes each handler for that transport.
+    fn render_router(&self, blueprint: &ServiceBlueprint, channel_type: &str) -> String {
         let mut lines = Vec::new();
         for route in &blueprint.routes {
             let router_fn = route.method.axum_router_fn();
             lines.push(format!(
-                "        .route({}, {router_fn}({}))",
+                "        .route({}, {router_fn}({}::<{channel_type}>))",
                 rust_str(&route.path),
                 route.handler_name
             ));
@@ -296,6 +263,15 @@ impl<'a> Codegen<'a> {
     }
 }
 
+/// The rendered blocks of `main.rs`, in the order the file emits them.
+struct MainBlocks<'a> {
+    structs: &'a str,
+    service: &'a str,
+    channel: &'a str,
+    handlers: &'a str,
+    router: &'a str,
+}
+
 /// Bundled main-file inputs so `assemble` stays under the argument-count
 /// threshold.
 struct MainParts {
@@ -305,6 +281,11 @@ struct MainParts {
     /// The plugin install calls, already framed with blank lines, or empty
     /// when the project configures no plugins.
     plugins: String,
+    /// The statements that start the service channel, or empty in
+    /// `in_process` mode.
+    channel_setup: String,
+    /// The expression the router takes as state.
+    channel_state: String,
 }
 
 /// The axum routing functions the blueprint actually uses, in first-use
@@ -321,12 +302,7 @@ fn used_router_fns(blueprint: &ServiceBlueprint) -> Vec<&'static str> {
 }
 
 /// Assemble the final `main.rs` from its parts.
-fn assemble(
-    structs: &str,
-    handlers: &str,
-    router: &str,
-    parts: &MainParts,
-) -> Result<String, Diagnostic> {
+fn assemble(blocks: &MainBlocks<'_>, parts: &MainParts) -> Result<String, Diagnostic> {
     // The runtime helpers are always emitted and annotated so unused ones do
     // not warn in the generated crate.
     let helpers = "\
@@ -346,21 +322,30 @@ fn json_number(value: f64) -> serde_json::Value {
         .expect(\"finite float literal\")
 }
 
+/// Map a channel failure to `502` with the reason.
+#[allow(dead_code)]
+fn channel_error(detail: String) -> (axum::http::StatusCode, String) {
+    tracing::error!(error = %detail, \"service channel call failed\");
+    (axum::http::StatusCode::BAD_GATEWAY, detail)
+}
+
 ";
     Ok(format!(
         r#"// Generated by rivet {version}. Do not edit; run `rivet build` again.
-use axum::{{extract::Json, routing::{{{routing}}}, Router}};
+use axum::{{extract::{{Json, State}}, routing::{{{routing}}}, Router}};
 
-{structs}{helpers}{handlers}
+{structs}{helpers}{service}{channel}{handlers}
 #[tokio::main]
 async fn main() {{
     tracing_subscriber::fmt::init();
 
-    let app = Router::new()
-{router};
-{plugins}    let host = std::env::var("HOST").unwrap_or_else(|_| "{host}".to_string());
+    let host = std::env::var("HOST").unwrap_or_else(|_| "{host}".to_string());
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or({port});
-    let addr = format!("{{host}}:{{port}}");
+
+{channel_setup}    let app = Router::new()
+{router}
+        .with_state({channel_state});
+{plugins}    let addr = format!("{{host}}:{{port}}");
     let listener = tokio::net::TcpListener::bind(&addr).await.expect("failed to bind address");
     println!("rivet app listening on http://{{addr}}");
     axum::serve(listener, app).await.expect("server error");
@@ -368,11 +353,15 @@ async fn main() {{
 "#,
         version = env!("CARGO_PKG_VERSION"),
         routing = parts.routing,
-        structs = structs,
+        structs = blocks.structs,
         helpers = helpers,
-        handlers = handlers,
-        router = router,
+        service = blocks.service,
+        channel = blocks.channel,
+        handlers = blocks.handlers,
+        router = blocks.router,
         plugins = parts.plugins,
+        channel_setup = parts.channel_setup,
+        channel_state = parts.channel_state,
         host = parts.host,
         port = parts.port,
     ))

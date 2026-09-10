@@ -11,7 +11,7 @@
 //!
 //! 1. the DSL declaration that defines it (the parse tree), for the source
 //!    line;
-//! 2. the axum registration and handler function that
+//! 2. the axum registration and the service function that
 //!    [`generate_project`] would render — generated in memory and scanned,
 //!    never compiled, so the trace needs no cargo run;
 //! 3. the git commit that first added the handler's name to the module,
@@ -103,14 +103,16 @@ fn build_trace(symptom: &str, app_file: &Path) -> Result<String, Vec<Diagnostic>
     // Render what the transpiler would generate, without compiling.
     let generated = generate_project(&module.blueprint, &config, &project_dir)
         .map_err(|diagnostic| vec![diagnostic])?;
-    let handler_needle = format!("fn {handler}(");
+    let service_needle = format!("fn {handler}(");
     let registration = rendered_line(
         &generated.main_rs,
         "axum registration for the route",
         |line| line.trim_start().starts_with(".route(") && line.contains(route.path.as_str()),
     )?;
-    let handler_fn = rendered_line(&generated.main_rs, "handler definition", |line| {
-        line.contains(handler_needle.as_str())
+    // The route's logic now lives in the transport-free service layer, which
+    // the axum handler and the channel both call.
+    let service_fn = rendered_line(&generated.main_rs, "service function", |line| {
+        line.contains(service_needle.as_str())
     })?;
 
     let source_line = module
@@ -131,7 +133,7 @@ fn build_trace(symptom: &str, app_file: &Path) -> Result<String, Vec<Diagnostic>
     ));
     out.push_str(&format!("  {source_line}\n"));
     out.push_str(&format!("Generated: {registration}\n"));
-    out.push_str(&format!("Handler: {handler_fn}\n"));
+    out.push_str(&format!("Service: {service_fn}\n"));
     match &explanation.introducer {
         Some(introducer) => out.push_str(&format!("Introduced by commit: {introducer}\n")),
         None => out.push_str(
@@ -274,14 +276,14 @@ mod tests {
             text.contains(&format!("Introduced by commit: {commit2}")),
             "trace text:\n{text}"
         );
-        // The generated handler definition line, as rust.rs renders a
-        // `-> dict` handler: async fn orders() -> Json<serde_json::Value>.
+        // The generated service function, as the generator renders a
+        // `-> dict` route: async fn orders() -> serde_json::Value.
         assert!(
-            text.contains("async fn orders() -> Json<serde_json::Value>"),
+            text.contains("async fn orders() -> serde_json::Value {"),
             "trace text:\n{text}"
         );
         assert!(
-            text.contains(".route(\"/orders\", get(orders))"),
+            text.contains(".route(\"/orders\", get(orders::<channel::InProcess>))"),
             "trace text:\n{text}"
         );
         assert!(text.contains("Current commit "), "trace text:\n{text}");

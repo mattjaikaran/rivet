@@ -24,7 +24,9 @@ blocked on the generated-code test story). Phase 4 is in progress: the
 compile-time plugin system has landed, so `rivet.toml` can compose plugins
 into the generated binary through
 [`rivet-plugin-api`](rivet-plugin-api/), with no registry and no runtime
-lookup. `rivet mcp` serves the parser, audit, vector, and context-store
+lookup, and `[transport] mode` runs the same blueprint in one process
+(a direct call) or over gRPC (the app serves its own channel). `rivet mcp`
+serves the parser, audit, vector, and context-store
 tools to AI agents over the Model Context Protocol, and every JSON
 diagnostic carries a `suggested_fix`.
 

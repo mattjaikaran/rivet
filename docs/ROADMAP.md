@@ -97,13 +97,19 @@ commit, and every JSON diagnostic carries a `suggested_fix`. See
 - [ ] Service discovery (Consul/etcd/Nacos).
 - [ ] Built-in Admin Panel (React/Solid).
 - [ ] Story-to-Jira/Linear sync (`rivet sync`).
-- [ ] Multi-service architecture (monolith → microservices via config).
+- [x] Multi-service architecture (monolith → microservices via config).
 
 **Success Metric**: `rivet add plugin auth-token --path
 plugins/auth-token` composes the plugin into the generated binary with one
 monomorphized install call and no runtime lookup. Met: the example project
 composes `auth-token`, the generated manifest depends on the plugin crate,
 and `GET /auth/check` answers from the compiled plugin.
+
+The transport switch is met: `[transport] mode` selects the in-process
+channel (a direct, monomorphized call) or gRPC (the app serves its channel
+on `grpc_port` and calls through it). An integration test builds one
+blueprint in both modes, runs both binaries, and asserts both answer the
+same body.
 
 ---
 

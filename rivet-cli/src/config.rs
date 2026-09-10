@@ -104,6 +104,40 @@ impl PluginConfig {
     }
 }
 
+/// The `[transport]` section: how the generated app reaches its own service
+/// layer (pillar 02).
+///
+/// `in_process` compiles a direct, monomorphized call into the binary — the
+/// monolith. `grpc` compiles a call over a gRPC channel and makes the binary
+/// serve that channel on `grpc_port` too, so a second process running the
+/// same blueprint can be the service.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(default)]
+pub struct Transport {
+    pub mode: TransportMode,
+    /// The port the service channel serves on when `mode = "grpc"`.
+    pub grpc_port: u16,
+}
+
+impl Default for Transport {
+    fn default() -> Self {
+        Self {
+            mode: TransportMode::InProcess,
+            grpc_port: 50051,
+        }
+    }
+}
+
+/// The topology the generated app runs in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TransportMode {
+    /// One process: route logic is a direct call.
+    InProcess,
+    /// The app calls its own logic over gRPC and serves the channel.
+    Grpc,
+}
+
 /// The parsed `rivet.toml`.
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(default)]
@@ -116,6 +150,8 @@ pub struct RivetConfig {
     /// Plugins composed into the generated app at compile time, keyed by
     /// plugin name. An empty table means the app has no plugins.
     pub plugins: BTreeMap<String, PluginConfig>,
+    /// The transport the generated app uses to reach its service layer.
+    pub transport: Transport,
 }
 
 impl RivetConfig {
@@ -228,5 +264,27 @@ version = "0.3"
     fn plugin_section_is_empty_by_default() {
         let config: RivetConfig = toml::from_str("[project]\nname = \"orders\"\n").expect("parse");
         assert!(config.plugins.is_empty());
+    }
+
+    #[test]
+    fn transport_defaults_to_in_process() {
+        let config = RivetConfig::default();
+        assert_eq!(config.transport.mode, TransportMode::InProcess);
+        assert_eq!(config.transport.grpc_port, 50051);
+    }
+
+    #[test]
+    fn transport_section_selects_grpc_and_its_port() {
+        let raw = "[transport]\nmode = \"grpc\"\ngrpc_port = 7000\n";
+        let config: RivetConfig = toml::from_str(raw).expect("parse");
+        assert_eq!(config.transport.mode, TransportMode::Grpc);
+        assert_eq!(config.transport.grpc_port, 7000);
+    }
+
+    #[test]
+    fn an_unknown_transport_mode_fails_the_parse() {
+        let raw = "[transport]\nmode = \"sidecar\"\n";
+        let config: Result<RivetConfig, _> = toml::from_str(raw);
+        assert!(config.is_err());
     }
 }
