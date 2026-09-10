@@ -14,12 +14,14 @@
 //! `format!` string: the panel is mostly braces, and the tokens keep it
 //! readable as Rust.
 
+use crate::diagnostic::Diagnostic;
 use rivet_core::ir::ServiceBlueprint;
 use serde_json::Value;
 
 /// The generated admin wiring for `main.rs`.
 ///
 /// Every field is empty when the project does not enable the panel.
+#[derive(Debug)]
 pub(super) struct Wiring {
     /// The `mod admin` block.
     pub(super) module: String,
@@ -29,21 +31,39 @@ pub(super) struct Wiring {
 
 /// Render the generated admin wiring, or empty wiring when `enabled` is
 /// false.
-pub(super) fn render(blueprint: &ServiceBlueprint, enabled: bool) -> Wiring {
+///
+/// Returns an [`E2006`](Diagnostic::blocker) diagnostic when the blueprint
+/// declares one of the panel paths, because axum panics on an overlapping
+/// route and the build must reject that instead.
+pub(super) fn render(blueprint: &ServiceBlueprint, enabled: bool) -> Result<Wiring, Diagnostic> {
     if !enabled {
-        return Wiring {
+        return Ok(Wiring {
             module: String::new(),
             routes: String::new(),
-        };
+        });
     }
-    Wiring {
+    if let Some(collision) = PANEL_PATHS
+        .iter()
+        .find(|panel| blueprint.routes.iter().any(|route| route.path == **panel))
+    {
+        return Err(Diagnostic::blocker(
+            "E2006",
+            format!("the blueprint declares `{collision}`, which the admin panel already serves"),
+            "rename the route so it does not begin with `/__rivet`, or set `[admin] enabled = false` in `rivet.toml`, then rerun the command",
+        )
+        .located("rivet.toml", 1));
+    }
+    Ok(Wiring {
         module: MODULE.replace("@@ROUTES@@", &super::rust_str(&route_table(blueprint))),
         routes: ROUTES.to_string(),
-    }
+    })
 }
 
-/// The router lines that mount the panel. The panel paths carry the
-/// `__rivet` prefix, so a blueprint route cannot collide with them.
+/// The paths the panel owns. The `__rivet` prefix keeps them out of a
+/// project's own route space.
+const PANEL_PATHS: &[&str] = &["/__rivet/routes", "/__rivet/"];
+
+/// The router lines that mount the panel.
 const ROUTES: &str = "\n        .route(\"/__rivet/routes\", get(admin::routes))\n        .route(\"/__rivet/\", get(admin::panel))";
 
 /// The blueprint's route table as a JSON array: method, path, handler, and
@@ -186,7 +206,7 @@ mod tests {
 
     #[test]
     fn disabled_renders_nothing() {
-        let wiring = render(&blueprint(), false);
+        let wiring = render(&blueprint(), false).expect("render");
         assert!(wiring.module.is_empty(), "no module without the opt-in");
         assert!(wiring.routes.is_empty(), "no routes without the opt-in");
     }
@@ -203,12 +223,27 @@ mod tests {
             "{json}"
         );
 
-        let wiring = render(&blueprint, true);
+        let wiring = render(&blueprint, true).expect("render");
         assert!(
             wiring.module.contains(&super::super::rust_str(&json)),
             "the module carries the table as a string literal"
         );
         assert!(wiring.routes.contains("/__rivet/routes"));
         assert!(wiring.routes.contains("/__rivet/"));
+    }
+
+    #[test]
+    fn a_route_on_a_panel_path_is_rejected() {
+        let mut blueprint = blueprint();
+        blueprint.routes[0].path = "/__rivet/routes".to_string();
+        let error = render(&blueprint, true).expect_err("the panel path is taken");
+        assert_eq!(error.error_code, "E2006");
+        assert!(error.message.contains("/__rivet/routes"));
+        assert!(!error.suggested_fix.is_empty());
+
+        assert!(
+            render(&blueprint, false).is_ok(),
+            "a project without the panel keeps its route"
+        );
     }
 }

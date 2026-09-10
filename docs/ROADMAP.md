@@ -97,7 +97,7 @@ commit, and every JSON diagnostic carries a `suggested_fix`. See
 - [x] Polyglot dev proxy (`rivet dev`) for Vite, Rsbuild, Next.js, and
   Webpack, HMR tunnel included.
 - [x] Static assets embedded in the binary (`rust-embed`).
-- [ ] Service discovery (Consul/etcd/Nacos).
+- [x] Service discovery (Consul and etcd).
 - [x] Built-in admin panel: one embedded HTML file, no build step.
 - [ ] Story-to-Jira/Linear sync (`rivet sync`).
 - [x] Multi-service architecture (monolith → microservices via config).
@@ -124,6 +124,13 @@ The admin panel is met: `[admin] enabled = true` compiles the blueprint's
 route table into the generated binary, `GET /__rivet/routes` answers it as
 JSON, and `GET /__rivet/` answers a single-file panel that renders it. See
 `docs/pillars/03-polyglot-frontend-support.md`.
+
+Service discovery is met: `[discovery]` registers the generated app with
+the Consul agent or etcd at startup, deregisters it on a graceful shutdown,
+and never lets a registry outage stop the app. An integration test runs the
+registration against a stub registry and asserts the payload names the
+service and its port, then sends SIGINT and asserts the deregistration.
+See `docs/pillars/02-multi-service-architecture.md`.
 
 ---
 

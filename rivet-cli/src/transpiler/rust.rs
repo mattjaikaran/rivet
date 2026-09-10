@@ -20,6 +20,7 @@ use std::path::Path;
 mod admin;
 mod assets;
 mod channel;
+mod discovery;
 mod handler;
 mod main_file;
 mod service;
@@ -65,7 +66,8 @@ pub fn generate_project(
     let assets = assets::resolve(config, project_dir);
     let wiring = assets::render(&assets, config.frontend.spa);
     let router = codegen.render_router(blueprint, channel_type);
-    let admin = admin::render(blueprint, config.admin.enabled);
+    let admin = admin::render(blueprint, config.admin.enabled)?;
+    let discovery = discovery::render(config)?;
     let parts = MainParts {
         routing: used_router_fns(blueprint, config.admin.enabled).join(", "),
         host: host.clone(),
@@ -76,6 +78,8 @@ pub fn generate_project(
         assets_fallback: wiring.fallback,
         assets_layer: wiring.compression,
         admin_routes: admin.routes,
+        discovery_register: discovery.register,
+        discovery_serve: discovery.serve,
     };
     let blocks = MainBlocks {
         structs: &structs_block,
@@ -85,9 +89,16 @@ pub fn generate_project(
         router: &router,
         assets: &wiring.module,
         admin: &admin.module,
+        discovery: &discovery.module,
     };
     let main_rs = assemble(&blocks, &parts)?;
-    let cargo_toml = render_manifest(&package_name, &plugins, mode, !wiring.module.is_empty());
+    let cargo_toml = render_manifest(
+        &package_name,
+        &plugins,
+        mode,
+        !wiring.module.is_empty(),
+        config.discovery.backend.is_some(),
+    );
 
     Ok(GeneratedProject {
         package_name,

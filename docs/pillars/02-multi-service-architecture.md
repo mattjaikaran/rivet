@@ -103,8 +103,59 @@ in-process transport pays nothing for it. The generated manifest pins
 On tonic 0.14 the `router` feature must be added, because the `transport`
 feature no longer implies it.
 
+## Service discovery
+
+`[discovery]` makes the generated app join a service registry, so another
+process can find the service it runs:
+
+```toml
+[discovery]
+backend = "consul"         # or "etcd"
+url = "http://127.0.0.1:8500"   # optional; the backend's local port
+service_name = "orders-api"     # optional; the project name
+service_port = 8080             # optional; the development port
+```
+
+A project with no `[discovery]` section registers nowhere and starts as it
+always did.
+
+The app registers once at startup, before it serves, and removes itself on
+SIGINT. The shutdown is graceful: `main` serves the axum app with
+`with_graceful_shutdown`, so an in-flight request finishes before the
+process leaves the registry.
+
+| Backend | Registration | Deregistration |
+| :--- | :--- | :--- |
+| Consul | `PUT /v1/agent/service/register` with the service `ID`, `Name`, and `Port` | `PUT /v1/agent/service/deregister/<name>` |
+| etcd | `POST /v3/lease/grant`, then `POST /v3/kv/put` of `/rivet/services/<name>` on that lease | `POST /v3/lease/revoke` |
+
+The etcd lease carries a 60-second TTL, and a keeper task re-grants the
+lease every 20 seconds. etcd has no single-request lease refresh, so the
+keeper grants a new lease, moves the key onto it, and releases the old one:
+the key is never absent while the app runs, and a process that dies without
+deregistering leaves a lease that expires on its own.
+
+The client is a small hand-written HTTP/1.1 client in the generated crate:
+one connection per request, plain `http://` only. Registering happens once,
+so an HTTP stack would cost more than it saves, and a generated app must
+build on a machine with only rustc and cargo. An `https://` registry needs
+a TLS terminator in front of it.
+
+Registration never stops the app:
+
+- A registry that refuses the connection, refuses the request, or does not
+  answer within five seconds prints a warning, and the app serves anyway.
+  Every request carries that deadline, connect included, so a registry that
+  accepts a connection and never answers cannot hold startup.
+- `rivet build` rejects a service name that cannot go into a registry path
+  or key — an empty name, a name longer than 128 characters, or one that
+  holds a character outside letters, digits, dot, dash, and underscore —
+  with `E2005` and a fix.
+
 ## Scope
 
 The channel carries unary JSON calls. Streaming, TLS between services,
-retries, and load balancing are not implemented. Service discovery, which
-finds the other process, is the next item in this phase.
+retries, and load balancing are not implemented. The registry client
+registers and deregisters one service; health checks that a registry polls
+(Consul's own `check` block, for example) are the registry's job, not the
+generated app's.
