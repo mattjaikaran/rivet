@@ -6,6 +6,7 @@
 //! (`history`, `session`) read and write the per-project store in
 //! [`crate::store`].
 
+pub mod add;
 pub mod audit;
 pub mod build;
 pub mod explain;

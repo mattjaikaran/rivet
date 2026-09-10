@@ -20,10 +20,13 @@ and phase 3 ships `rivet mcp` plus the agentic slash commands `/plan`,
 
 Pre-alpha. The [roadmap](docs/ROADMAP.md) tracks the five v1 phases;
 phases 0-3 are closed (phase 1 minus the mutation tester, which stays
-blocked on the generated-code test story). `rivet mcp` serves the
-parser, audit, vector, and context-store tools to AI agents over the
-Model Context Protocol, and every JSON diagnostic carries a
-`suggested_fix`.
+blocked on the generated-code test story). Phase 4 is in progress: the
+compile-time plugin system has landed, so `rivet.toml` can compose plugins
+into the generated binary through
+[`rivet-plugin-api`](rivet-plugin-api/), with no registry and no runtime
+lookup. `rivet mcp` serves the parser, audit, vector, and context-store
+tools to AI agents over the Model Context Protocol, and every JSON
+diagnostic carries a `suggested_fix`.
 
 ## Try it
 
@@ -90,7 +93,9 @@ goal of later phases; see [`docs/ROADMAP.md`](docs/ROADMAP.md).
 | :--- | :--- |
 | `constraint-tools/` | Deterministic self-checks that gate the Rivet tree (file length, rule modules, tracker) |
 | `rivet-core/` | The IR and shared types for the pipeline |
+| `rivet-plugin-api/` | The compile-time plugin contract: the `Plugin` trait and the monomorphized `install` |
 | `rivet-cli/` | The `rivet` CLI: parser, generator, build command |
+| `examples/basic/plugins/` | The reference plugin (`auth-token`), composed by the example app |
 | `examples/basic/` | The smoke-test app used by phase 0 |
 | `scripts/` | The `gate.sh` orchestrator running every repo gate |
 | `docs/` | Architecture, roadmap, and the nine pillars |

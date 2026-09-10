@@ -101,8 +101,8 @@ fn build_trace(symptom: &str, app_file: &Path) -> Result<String, Vec<Diagnostic>
         })?;
 
     // Render what the transpiler would generate, without compiling.
-    let generated =
-        generate_project(&module.blueprint, &config).map_err(|diagnostic| vec![diagnostic])?;
+    let generated = generate_project(&module.blueprint, &config, &project_dir)
+        .map_err(|diagnostic| vec![diagnostic])?;
     let handler_needle = format!("fn {handler}(");
     let registration = rendered_line(
         &generated.main_rs,

@@ -1,5 +1,8 @@
 use super::*;
+use crate::config::PluginConfig;
+use crate::test_support::ScratchDir;
 use rivet_core::ir::HttpMethod;
+use std::fs;
 
 fn ping_blueprint() -> ServiceBlueprint {
     ServiceBlueprint {
@@ -33,7 +36,7 @@ fn crate_name_is_sanitized() {
 #[test]
 fn renders_ping_route() {
     let config = RivetConfig::default();
-    let project = generate_project(&ping_blueprint(), &config).expect("generate");
+    let project = generate_project(&ping_blueprint(), &config, Path::new(".")).expect("generate");
     assert!(project.main_rs.contains(".route(\"/ping\", get(ping))"));
     assert!(
         project
@@ -79,7 +82,7 @@ fn renders_dto_response() {
         dependencies: vec![],
     };
     let config = RivetConfig::default();
-    let project = generate_project(&blueprint, &config).expect("generate");
+    let project = generate_project(&blueprint, &config, Path::new(".")).expect("generate");
     assert!(project.main_rs.contains("pub struct OrderResponse"));
     assert!(
         project
@@ -89,4 +92,59 @@ fn renders_dto_response() {
         project.main_rs
     );
     assert!(project.main_rs.contains("status: \"ok\""));
+}
+
+#[test]
+fn configured_plugins_generate_one_dependency_and_one_install_call() {
+    let dir = ScratchDir::new("generate-plugin");
+    fs::create_dir_all(dir.join("plugins/auth-token")).expect("create plugin dir");
+    fs::write(dir.join("plugins/auth-token/Cargo.toml"), "[package]\n").expect("write manifest");
+    let mut config = RivetConfig::default();
+    config.plugins.insert(
+        "auth-token".to_string(),
+        PluginConfig {
+            crate_name: None,
+            path: Some("plugins/auth-token".to_string()),
+            version: None,
+        },
+    );
+
+    let project = generate_project(&ping_blueprint(), &config, &dir).expect("generate");
+
+    assert!(
+        project
+            .cargo_toml
+            .contains("rivet-plugin-auth-token = { path = \"../plugins/auth-token\" }"),
+        "cargo_toml:\n{}",
+        project.cargo_toml
+    );
+    assert!(
+        project.main_rs.contains(
+            "    // Plugin: auth-token\n    let app = rivet_plugin_auth_token::install(app);"
+        ),
+        "main_rs:\n{}",
+        project.main_rs
+    );
+    assert_eq!(
+        project.main_rs.matches("::install(app)").count(),
+        1,
+        "one monomorphized call per plugin"
+    );
+    assert!(
+        !project.main_rs.contains("dyn "),
+        "the generated app must not use trait objects"
+    );
+}
+
+#[test]
+fn a_project_without_plugins_generates_no_plugin_wiring() {
+    let project = generate_project(&ping_blueprint(), &RivetConfig::default(), Path::new("."))
+        .expect("generate");
+    assert!(
+        !project.main_rs.contains("install(app)"),
+        "{}",
+        project.main_rs
+    );
+    assert!(!project.cargo_toml.contains("Plugins, composed"));
+    assert!(project.main_rs.contains("    let app = Router::new()"));
 }

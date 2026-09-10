@@ -1,0 +1,14 @@
+[package]
+name = "rivet-plugin-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Compile-time plugin contract for Rivet servers: the Plugin trait and the generic install primitive"
+readme = "../README.md"
+
+[dependencies]
+axum = { workspace = true }
+tracing = { workspace = true }

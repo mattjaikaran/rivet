@@ -4,6 +4,9 @@ members = [
     "constraint-tools",
     "rivet-core",
     "rivet-cli",
+    "rivet-plugin-api",
+    # The example plugin is a member so its tests run with the workspace.
+    "examples/basic/plugins/auth-token",
 ]
 
 [workspace.package]
@@ -20,6 +23,9 @@ readme = "README.md"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.1"
+# Comment-preserving `rivet.toml` edits (phase 4): `rivet add plugin`
+# rewrites one table and leaves every other line as it was.
+toml_edit = "0.22"
 
 # CLI and error handling
 clap = { version = "4.5", features = ["derive", "env"] }
@@ -44,6 +50,12 @@ rmcp = { version = "3.2", default-features = false, features = ["server", "macro
 # HTTP for the /plan provider call (phase 3, pillar 09): rustls, no
 # native TLS, so the build stays portable. Already in the tree via lancedb.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# HTTP layer for plugins (phase 4): the plugin API passes `axum::Router`
+# values between crates, and plugin tests drive their routes through
+# `tower`'s `ServiceExt::oneshot`, which needs the `util` feature.
+axum = "0.8"
+tower = { version = "0.5", default-features = false, features = ["util"] }
 
 # Each later phase adds the crates it needs here. Keep this table limited
 # to dependencies that at least one workspace member actually uses.

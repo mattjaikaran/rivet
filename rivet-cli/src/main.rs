@@ -22,6 +22,7 @@ mod diagnostic;
 mod gauntlet;
 mod mcp;
 mod parser;
+mod plugin;
 mod store;
 mod transpiler;
 
@@ -42,6 +43,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Record a project dependency in `rivet.toml` (phase 4).
+    Add {
+        #[command(subcommand)]
+        action: AddAction,
+    },
     /// Parse the app entry point and compile the generated Rust crate.
     Build {
         /// Path to the app module (defaults to `app.py`).
@@ -115,6 +121,28 @@ enum Command {
 }
 
 #[derive(Debug, Subcommand)]
+enum AddAction {
+    /// Add or update a plugin entry. The generated app composes the plugin
+    /// at compile time (phase 4, pillar 01).
+    Plugin {
+        /// Plugin name, for example `auth-token`.
+        name: String,
+        /// Directory of the plugin crate, relative to the project.
+        #[arg(long)]
+        path: Option<String>,
+        /// Plugin crate name; defaults to `rivet-plugin-<name>`.
+        #[arg(long = "crate")]
+        crate_name: Option<String>,
+        /// Registry version, used when `--path` is absent.
+        #[arg(long)]
+        version: Option<String>,
+        /// Path to the app module (defaults to `app.py`).
+        #[arg(default_value = "app.py")]
+        app: PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum SessionAction {
     /// Save the current module context as a named session.
     Save {
@@ -148,6 +176,7 @@ impl Command {
     /// `session save`.
     fn label(&self) -> String {
         match self {
+            Command::Add { .. } => "add plugin".into(),
             Command::Build { .. } => "build".into(),
             Command::Audit { .. } => "audit".into(),
             Command::History { .. } => "history".into(),
@@ -167,6 +196,9 @@ impl Command {
     /// The app path that anchors the project store.
     fn app_path(&self) -> PathBuf {
         match self {
+            Command::Add { action } => match action {
+                AddAction::Plugin { app, .. } => app.clone(),
+            },
             Command::Build { app } | Command::Audit { app, .. } | Command::History { app } => {
                 app.clone()
             }
@@ -218,6 +250,21 @@ fn main() -> ExitCode {
     let started = std::time::Instant::now();
 
     let result = match cli.command {
+        Command::Add { action } => match action {
+            AddAction::Plugin {
+                name,
+                path,
+                crate_name,
+                version,
+                app,
+            } => commands::add::run_add_plugin(
+                &app,
+                &name,
+                path.as_deref(),
+                crate_name.as_deref(),
+                version.as_deref(),
+            ),
+        },
         Command::Build { app } => commands::build::run_build(&app),
         Command::Audit { app, json } => commands::audit::run_audit(&app, json),
         Command::History { app } => commands::history::run_history(&app),

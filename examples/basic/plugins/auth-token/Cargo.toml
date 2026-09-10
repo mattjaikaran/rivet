@@ -1,0 +1,24 @@
+[package]
+name = "rivet-plugin-auth-token"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Bearer-token plugin for Rivet servers: answers GET /auth/check from the RIVET_AUTH_TOKEN environment variable"
+readme = "../../../../README.md"
+
+[dependencies]
+rivet-plugin-api = { path = "../../../../rivet-plugin-api" }
+
+axum = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# The route tests call `GET /auth/check` through `tower`'s
+# `ServiceExt::oneshot` on a real runtime. No test sets an environment
+# variable: each one passes its own `AuthConfig` value to the router.
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tower = { workspace = true, features = ["util"] }

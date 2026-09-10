@@ -64,9 +64,20 @@ pub trait Plugin: Send + Sync + 'static {
 pub fn install<P: Plugin>(router: axum::Router, plugin: P) -> axum::Router;
 ```
 
-`install` is generic, so the generated call site monomorphizes: the compiler
-resolves the plugin at build time and inlines it. A plugin crate exports a
-unit type `Plugin` that implements the trait; that is the whole convention.
+`install` is generic, so a call site monomorphizes: the compiler resolves
+the plugin at build time and inlines it. A plugin crate exports a unit type
+`Plugin` that implements the trait, plus a free `install` entry point that
+routes through `rivet_plugin_api::install`:
+
+```rust
+pub fn install(router: axum::Router) -> axum::Router {
+    rivet_plugin_api::install(router, Plugin)
+}
+```
+
+The generated app calls the plugin's own entry point
+(`let app = <crate>::install(app);`), so the generated crate depends on the
+plugin alone, and the plugin crate is the one place that names the trait.
 
 Declare plugins in `rivet.toml`:
 
@@ -78,16 +89,17 @@ version = "0.1"                    # used when `path` is absent
 ```
 
 Add `rivet add plugin <name> [--path <dir>] [--crate <crate>]
-[--version <v>] [--app <app.py>]`. The command is idempotent: adding a
-plugin that is already configured updates that entry and leaves the rest of
-the file alone. Record the invocation in the store like every other command.
+[--version <v>] [app.py]`, with the app path positional like every other
+command. The command is idempotent: adding a plugin that is already
+configured updates that entry and leaves the rest of the file alone, and a
+project with no `rivet.toml` gains one written entry and no empty parent
+table. Record the invocation in the store like every other command.
 
 `generate_project` then:
 
 - adds one dependency per plugin to the generated `Cargo.toml` (`path` for
   a local plugin, `crate = version` otherwise);
-- emits `let app = rivet_plugin_api::install(app, <crate>::Plugin);` once
-  per plugin, in file order, before the server starts;
+- emits one `install` call per plugin into `main.rs`, in name order;
 - keeps the generated `main.rs` free of `dyn`, `Box<dyn Plugin>`, and any
   plugin-name string comparison.
 
@@ -98,10 +110,11 @@ and compares the request's bearer token against the configured one with a
 constant-time comparison. It must not weaken or gate any existing route.
 
 - Acceptance: `rivet build` on the example writes a crate whose manifest
-  depends on the plugin and whose `main.rs` calls `rivet_plugin_api::install`
-  once, with no `dyn` and no registry; the built binary answers
+  depends on the plugin by path and whose `main.rs` calls the plugin's
+  `install` once, with no `dyn` and no registry; the built binary answers
   `GET /auth/check` with `authenticated: false` when no header is sent and
-  `true` when the configured token is sent.
+  `true` when the configured token is sent, and the app's own routes still
+  answer.
 
 ### 2. Multi-service switch: in-process or gRPC by config
 

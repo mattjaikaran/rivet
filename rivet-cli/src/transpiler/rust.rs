@@ -8,11 +8,13 @@
 
 use crate::config::RivetConfig;
 use crate::diagnostic::Diagnostic;
+use crate::plugin::{self, ResolvedPlugin};
 use rivet_core::ir::{
     Expr, FieldDefinition, RequestSpec, ResponseSpec, RouteDefinition, ServiceBlueprint,
     StructDefinition, TypeRef,
 };
 use std::collections::HashMap;
+use std::path::Path;
 
 /// A complete, ready-to-write generated crate.
 pub struct GeneratedProject {
@@ -21,12 +23,15 @@ pub struct GeneratedProject {
     pub cargo_toml: String,
 }
 
-/// Render the whole crate from a blueprint and project configuration.
+/// Render the whole crate from a blueprint, the project configuration, and
+/// the project directory that anchors plugin paths.
 pub fn generate_project(
     blueprint: &ServiceBlueprint,
     config: &RivetConfig,
+    project_dir: &Path,
 ) -> Result<GeneratedProject, Diagnostic> {
     let package_name = crate_name(&config.project.name);
+    let plugins = plugin::resolve(config, project_dir)?;
     let codegen = Codegen {
         structs: &blueprint.structs,
     };
@@ -40,10 +45,53 @@ pub fn generate_project(
         routing: used_router_fns(blueprint).join(", "),
         host: host.clone(),
         port,
+        plugins: render_plugin_installs(&plugins),
     };
     let main_rs = assemble(&structs_block, &handlers, &router, &parts)?;
+    let cargo_toml = render_manifest(&package_name, &plugins);
 
-    let cargo_toml = format!(
+    Ok(GeneratedProject {
+        package_name,
+        main_rs,
+        cargo_toml,
+    })
+}
+
+/// One monomorphized install call per plugin, in plugin-name order.
+///
+/// The call names the plugin crate directly, so the compiler resolves the
+/// plugin and inlines it. There is no trait object, no name table, and no
+/// lookup at run time.
+fn render_plugin_installs(plugins: &[ResolvedPlugin]) -> String {
+    let installs: Vec<String> = plugins
+        .iter()
+        .map(|plugin| {
+            format!(
+                "    // Plugin: {name}\n    let app = {crate_ident}::install(app);",
+                name = plugin.name,
+                crate_ident = plugin.crate_ident(),
+            )
+        })
+        .collect();
+    if installs.is_empty() {
+        return String::new();
+    }
+    format!("\n{}\n", installs.join("\n"))
+}
+
+/// The generated manifest: the axum stack plus one dependency per plugin.
+fn render_manifest(package_name: &str, plugins: &[ResolvedPlugin]) -> String {
+    let mut dependencies = String::new();
+    for plugin in plugins {
+        dependencies.push_str(&plugin.dependency);
+        dependencies.push('\n');
+    }
+    let plugin_section = if plugins.is_empty() {
+        String::new()
+    } else {
+        format!("\n# Plugins, composed at compile time by `rivet build`.\n{dependencies}")
+    };
+    format!(
         r#"[workspace]
 
 [package]
@@ -58,17 +106,11 @@ serde = {{ version = "1", features = ["derive"] }}
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = {{ version = "0.3", features = ["env-filter"] }}
-
+{plugin_section}
 [profile.release]
 strip = true
 "#
-    );
-
-    Ok(GeneratedProject {
-        package_name,
-        main_rs,
-        cargo_toml,
-    })
+    )
 }
 
 /// Stateless render context. DTO structs are already closed over nested
@@ -260,6 +302,9 @@ struct MainParts {
     routing: String,
     host: String,
     port: u16,
+    /// The plugin install calls, already framed with blank lines, or empty
+    /// when the project configures no plugins.
+    plugins: String,
 }
 
 /// The axum routing functions the blueprint actually uses, in first-use
@@ -313,7 +358,7 @@ async fn main() {{
 
     let app = Router::new()
 {router};
-    let host = std::env::var("HOST").unwrap_or_else(|_| "{host}".to_string());
+{plugins}    let host = std::env::var("HOST").unwrap_or_else(|_| "{host}".to_string());
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or({port});
     let addr = format!("{{host}}:{{port}}");
     let listener = tokio::net::TcpListener::bind(&addr).await.expect("failed to bind address");
@@ -327,6 +372,7 @@ async fn main() {{
         helpers = helpers,
         handlers = handlers,
         router = router,
+        plugins = parts.plugins,
         host = parts.host,
         port = parts.port,
     ))

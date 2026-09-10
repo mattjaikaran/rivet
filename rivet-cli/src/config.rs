@@ -6,6 +6,7 @@
 //! rules in [`crate::gauntlet`].
 
 use crate::diagnostic::Severity;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 /// The `[gauntlet]` section: thresholds and per-rule outcomes.
@@ -77,6 +78,32 @@ pub struct Environments {
     pub development: Development,
 }
 
+/// One plugin declaration from `[plugins.<name>]`.
+///
+/// The table key is the plugin name (`auth-token`). The crate name defaults
+/// to `rivet-plugin-<name>`, and the plugin resolves either from a local
+/// `path` or from a registry `version`.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct PluginConfig {
+    /// The plugin crate name; defaults to `rivet-plugin-<name>`.
+    #[serde(rename = "crate")]
+    pub crate_name: Option<String>,
+    /// The plugin crate directory, relative to the project directory.
+    pub path: Option<String>,
+    /// The registry version, used when `path` is absent.
+    pub version: Option<String>,
+}
+
+impl PluginConfig {
+    /// The crate that implements this plugin.
+    pub fn crate_name(&self, plugin: &str) -> String {
+        self.crate_name
+            .clone()
+            .unwrap_or_else(|| format!("rivet-plugin-{plugin}"))
+    }
+}
+
 /// The parsed `rivet.toml`.
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(default)]
@@ -86,6 +113,9 @@ pub struct RivetConfig {
     /// Compile-time quality-rule settings. Defaults apply when the section
     /// is absent.
     pub gauntlet: GauntletConfig,
+    /// Plugins composed into the generated app at compile time, keyed by
+    /// plugin name. An empty table means the app has no plugins.
+    pub plugins: BTreeMap<String, PluginConfig>,
 }
 
 impl RivetConfig {
@@ -170,5 +200,33 @@ dead_code = "sometimes"
 "#;
         let config: Result<RivetConfig, _> = toml::from_str(raw);
         assert!(config.is_err());
+    }
+
+    #[test]
+    fn plugin_section_parses_path_crate_and_version() {
+        let raw = r#"
+[plugins.auth-token]
+path = "plugins/auth-token"
+
+[plugins.audit-log]
+crate = "rivet-plugin-custom"
+version = "0.3"
+"#;
+        let config: RivetConfig = toml::from_str(raw).expect("parse");
+        let auth = config.plugins.get("auth-token").expect("auth-token entry");
+        assert_eq!(auth.path.as_deref(), Some("plugins/auth-token"));
+        assert!(auth.version.is_none());
+        assert_eq!(auth.crate_name("auth-token"), "rivet-plugin-auth-token");
+
+        let audit = config.plugins.get("audit-log").expect("audit-log entry");
+        assert_eq!(audit.version.as_deref(), Some("0.3"));
+        assert!(audit.path.is_none());
+        assert_eq!(audit.crate_name("audit-log"), "rivet-plugin-custom");
+    }
+
+    #[test]
+    fn plugin_section_is_empty_by_default() {
+        let config: RivetConfig = toml::from_str("[project]\nname = \"orders\"\n").expect("parse");
+        assert!(config.plugins.is_empty());
     }
 }

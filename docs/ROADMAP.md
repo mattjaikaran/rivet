@@ -93,13 +93,17 @@ commit, and every JSON diagnostic carries a `suggested_fix`. See
 **Goal**: Production readiness.
 
 **Deliverables**:
-- [ ] Plugin system (compile-time composition via traits).
+- [x] Plugin system (compile-time composition via traits).
 - [ ] Service discovery (Consul/etcd/Nacos).
 - [ ] Built-in Admin Panel (React/Solid).
 - [ ] Story-to-Jira/Linear sync (`rivet sync`).
 - [ ] Multi-service architecture (monolith → microservices via config).
 
-**Success Metric**: `rivet add plugin auth-oauth2` compiles the plugin in without runtime overhead.
+**Success Metric**: `rivet add plugin auth-token --path
+plugins/auth-token` composes the plugin into the generated binary with one
+monomorphized install call and no runtime lookup. Met: the example project
+composes `auth-token`, the generated manifest depends on the plugin crate,
+and `GET /auth/check` answers from the compiled plugin.
 
 ---
 

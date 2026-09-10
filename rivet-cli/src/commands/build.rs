@@ -59,8 +59,8 @@ pub fn run_build(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
         return Err(blockers);
     }
 
-    let generated =
-        generate_project(&module.blueprint, &config).map_err(|diagnostic| vec![diagnostic])?;
+    let generated = generate_project(&module.blueprint, &config, &project_dir)
+        .map_err(|diagnostic| vec![diagnostic])?;
 
     let out_dir = project_dir.join("generated");
     std::fs::create_dir_all(out_dir.join("src")).map_err(|err| {

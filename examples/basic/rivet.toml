@@ -5,3 +5,9 @@ description = "Basic Rivet application (ping + echo)"
 
 [environments]
 development = { host = "127.0.0.1", port = 3000, log_level = "debug" }
+
+# Phase 4: compose the auth-token plugin into the generated app at compile
+# time. `rivet add plugin auth-token --path plugins/auth-token` writes this
+# entry; `rivet build` then adds the dependency and the install call.
+[plugins.auth-token]
+path = "plugins/auth-token"

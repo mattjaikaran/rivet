@@ -1,10 +1,10 @@
 //! File-ceiling constraint checker for Rust sources in this workspace.
 //!
 //! Every `.rs` file under a workspace member source tree must stay within a
-//! documented line ceiling. This binary walks `constraint-tools/src`,
-//! `rivet-cli/src`, and `rivet-core/src` below an optional root directory,
-//! counts the lines of each `.rs` file (skipping any `target` directory),
-//! and reports every file above its ceiling.
+//! documented line ceiling. This binary walks every tree named in
+//! [`MEMBER_SRC_TREES`] below an optional root directory, counts the lines of
+//! each `.rs` file (skipping any `target` directory), and reports every file
+//! above its ceiling.
 //!
 //! Ceiling policy, resolved in this order:
 //!
@@ -37,7 +37,13 @@ const GAUNTLET_CEILING: usize = 300;
 const GAUNTLET_PREFIX: &str = "rivet-cli/src/gauntlet/";
 
 /// Member source trees that this checker scans below the root.
-const MEMBER_SRC_TREES: &[&str] = &["constraint-tools/src", "rivet-cli/src", "rivet-core/src"];
+const MEMBER_SRC_TREES: &[&str] = &[
+    "constraint-tools/src",
+    "rivet-cli/src",
+    "rivet-core/src",
+    "rivet-plugin-api/src",
+    "examples/basic/plugins/auth-token/src",
+];
 
 /// Legacy files frozen at today's measured line counts. Each entry is a
 /// ratchet: the file may not grow until it is split below the default.
