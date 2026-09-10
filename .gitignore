@@ -45,8 +45,10 @@ coverage/
 # Build artifacts, except the example's committed frontend build: the
 # phase-4 asset test renames that directory and proves the binary still
 # serves it from memory (pillar 03).
+# A frontend's production output. Do not ignore a bare `build/`: that
+# pattern also matches `rivet-cli/src/commands/build/`, which holds tracked
+# source.
 dist/
-build/
 node_modules/
 !examples/basic/dist/
 !examples/basic/dist/**
