@@ -1,4 +1,4 @@
-.PHONY: help build dev test docker-up docker-down clean gate self-check
+.PHONY: help build dev test docker-up docker-down clean clean-all gate self-check
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
@@ -27,6 +27,8 @@ docker-up: ## Start Docker dependencies
 docker-down: ## Stop Docker dependencies
 	docker compose down
 
-clean: ## Clean build artifacts and generated output
-	cargo clean
-	rm -rf generated
+clean: ## Remove generated crates and test fixtures (keeps the cargo cache)
+	./scripts/clean.sh
+
+clean-all: ## Remove generated output and the workspace cargo build cache
+	./scripts/clean.sh --all

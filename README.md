@@ -61,6 +61,15 @@ def echo(request: dict) -> dict:
     return {"echo": request}
 ```
 
+Each `rivet build` writes a crate with its own cargo `target/` (about
+140 MB). Remove the generated crates and the test fixtures when you do
+not need them:
+
+```bash
+make clean        # generated crates and test fixtures
+make clean-all    # the above plus the workspace cargo cache
+```
+
 ## What phase 0 transpiles
 
 - `@api.get|post|put|delete|patch|options|head(path, stories=[...])` routes
