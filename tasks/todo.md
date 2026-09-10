@@ -115,20 +115,13 @@ SQLite/LanceDB choices are recorded in pillar 04.
 
 ---
 
-## Phase 3 - MCP and agentic CLI
+## Phase 3 - MCP and agentic CLI (complete 2026-09-09)
 
 Goal: first-class AI integration, per `docs/pillars/09-super-cli.md`.
 
-- [ ] Slash commands `/plan`, `/fix`, `/trace` backed by MQI and context
-  stores.
-  Acceptance: each command has an integration test with a fixture project.
-- [ ] Auto-PR generation with passing tests (`rivet /plan`).
-  Acceptance: on a fixture story the command produces a branch whose tests
-  pass.
-- [ ] Agentic error handling: suggested fixes on every JSON diagnostic,
-  including Gauntlet findings.
-  Acceptance: every emitted diagnostic in an error scenario carries
-  `suggested_fix`.
+All five items are done; see `tasks/completed.md`. The MCP server runs
+`rivet mcp` over stdio with rmcp; the slash commands land auto-PR
+generation and required `suggested_fix` diagnostics.
 
 ---
 

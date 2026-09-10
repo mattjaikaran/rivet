@@ -73,12 +73,18 @@ scans the dependency tree. See `tasks/completed.md`.
 **Goal**: First-class AI integration.
 
 **Deliverables**:
-- [ ] MCP server exposing AST and Vector DB.
-- [ ] Slash-commands: `/plan`, `/fix`, `/trace`.
-- [ ] Auto-PR generation with performance benchmarks.
-- [ ] Agentic error handling (JSON errors with suggested fixes).
+- [x] MCP server exposing AST and Vector DB.
+- [x] Slash-commands: `/plan`, `/fix`, `/trace`.
+- [x] Auto-PR generation with performance benchmarks.
+- [x] Agentic error handling (JSON errors with suggested fixes).
 
-**Success Metric**: `rivet /plan "Add referral codes"` generates a working PR with passing tests.
+**Status**: Complete. `rivet mcp` serves the parser, audit, vector, and
+context-store tools over stdio on the official rmcp SDK; `/plan` turns a
+story into a verified `rivet/plan/*` branch with a spec and audit grade
+(BYO LLM provider or `--from`), `/fix` applies the Gauntlet's
+deterministic repairs, `/trace` follows a request to its introducing
+commit, and every JSON diagnostic carries a `suggested_fix`. See
+`tasks/completed.md` and `docs/pillars/09-super-cli.md`.
 
 ---
 

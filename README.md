@@ -4,21 +4,26 @@
 DSL and the Rivet CLI transpiles it into a fast, memory-safe Rust server built
 on [axum](https://github.com/tokio-rs/axum).
 
-The project is in early development. The phase-0 spike is working end to
-end, and phase 1 (the Gauntlet) is closed except the mutation tester:
-`rivet build` parses a Python module, runs the quality rules between parse
-and generate, and compiles a runnable Rust binary; `rivet audit` reports
-the MQI grade. The long-term design lives in
+The project is in early development. The [phase-0
+spike](docs/phase-0-spike.md) works end to end; phase 1 (the Gauntlet)
+is closed except the mutation tester. `rivet build` parses a Python
+module, runs the quality rules between parse and generate, and compiles
+a runnable Rust binary; `rivet audit` reports the MQI grade; the
+[context engine](docs/pillars/04-persistent-context-engine.md) records
+history, sessions, and a blueprint vector index behind `rivet explain`;
+and phase 3 ships `rivet mcp` plus the agentic slash commands `/plan`,
+`/fix`, and `/trace`. The long-term design lives in
 [`docs/`](docs/ARCHITECTURE.md) and the roadmap in
 [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Status
 
-Pre-alpha. One milestone is complete: the [phase-0
-spike](docs/phase-0-spike.md) — a working transpilation pipeline for a
-documented subset of the DSL. Phase 1 (the [Gauntlet](docs/pillars/07-the-gauntlet.md))
-adds compile-time quality rules and the [MQI
-audit](docs/pillars/06-matt-quality-index.md) on top.
+Pre-alpha. The [roadmap](docs/ROADMAP.md) tracks the five v1 phases;
+phases 0-3 are closed (phase 1 minus the mutation tester, which stays
+blocked on the generated-code test story). `rivet mcp` serves the
+parser, audit, vector, and context-store tools to AI agents over the
+Model Context Protocol, and every JSON diagnostic carries a
+`suggested_fix`.
 
 ## Try it
 

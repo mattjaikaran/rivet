@@ -40,4 +40,8 @@ allow = [
     "ISC",
     "MPL-2.0",
     "Zlib",
+    # webpki-roots 1.x (pulled by reqwest's rustls backend for /plan)
+    # licenses its bundled roots under CDLA-Permissive-2.0, an OSI-approved
+    # permissive license for the certificate data the crate ships.
+    "CDLA-Permissive-2.0",
 ]

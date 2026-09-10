@@ -250,3 +250,42 @@ lines finish; the section closes when the phase does.
   runtime wrapper (`explain_data`) so the MCP server can await the vector
   store without nesting tokio runtimes, and shared `route_summaries`
   between the command and the tools (`5642450`).
+
+### 1.3 Slash commands
+
+- `rivet /plan`, `/fix`, and `/trace` dispatch through clap subcommands;
+  main strips a leading `/` from the subcommand token so agents can type
+  the slash form exactly. Each command records in the store and returns
+  structured diagnostics (`59ffc8a`).
+- `/trace "<symptom>"` follows a symptom from the matched DSL route
+  (phase-2 vector index) through the axum code `generate_project` would
+  render (registration line and handler signature) to the introducing
+  commit via git pickaxe. Integration test on a two-commit git fixture
+  (`59ffc8a`).
+- `/fix` re-runs the Gauntlet and applies only deterministic, safe
+  repairs by source span: E2044 dead helpers and DTOs, and E2046 runtime
+  classes, foreign functions, and stray statements. It converges in up to
+  five parse/re-check rounds and never deletes a route. Integration test
+  on a fixture with a dead helper and a runtime class (`59ffc8a`).
+
+### 1.4 Auto-PR generation
+
+- `/plan "<story>"` creates branch `rivet/plan/<slug>`, writes the module
+  and a SPEC.md, converges against parse + Gauntlet + a real `rivet
+  build`, commits, and prints a PR body with the audit grade; `--push`
+  opens the PR through `gh`. Code comes from an OpenAI-compatible
+  provider (`RIVET_PLAN_BASE_URL`, `RIVET_PLAN_API_KEY`,
+  `RIVET_PLAN_MODEL`) or a prepared module via `--from` — the
+  deterministic path the gate exercises. Offline unit tests cover prompt
+  assembly and response parsing; the integration test proves a fixture
+  story lands on a branch whose crate compiles (`59ffc8a`).
+
+### 1.5 Agentic diagnostics
+
+- `suggested_fix` is now a required `String` on `Diagnostic` and
+  `Finding`; every construction site carries a remediation written from
+  its error code's meaning, and the JSON payload always emits the field
+  (`52f87ed`). Parser error paths, every Gauntlet rule, and the store
+  error paths assert non-empty fixes; a broad invariant test in
+  `gauntlet/mod.rs` runs a fixture that trips E2043-E2046 and checks
+  every output diagnostic (`52f87ed`).
