@@ -368,3 +368,45 @@ tracker lines finish; the section closes when the phase does.
 - The gRPC run binds its channel port while answering, so the HTTP responses
   in that run prove the channel round trip rather than a direct call
   (`a675668`).
+
+### Polyglot dev proxy
+
+- `rivet dev [app.py]` detects the frontend from its config file (Vite,
+  Rsbuild, Next.js, Webpack) and serves one origin on the project's
+  configured port: the blueprint's own routes and `/api/*` reach the
+  generated backend, every other path reaches the frontend dev server, and
+  a project with no frontend config sends every path to the backend
+  (`44345fd`).
+- The generated backend mounts the blueprint's paths and nothing else, so
+  the proxy strips the `/api` prefix on the way upstream; a path the
+  blueprint declares wins over the prefix and keeps its own path, so a
+  route named `/api/orders` still resolves (`44345fd`).
+- The proxy tunnels the frontend's HMR upgrade: it replays the request head
+  on a raw connection, relays the `101`, and copies bytes in both
+  directions with `copy_bidirectional`. A refused upgrade relays the
+  frontend's own answer, and a frontend that never answers returns `502`
+  with the reason. Handshake and upstream calls carry a 30-second deadline
+  (`44345fd`).
+- `rivet dev` binds the public port before it spawns the backend, so a bind
+  failure cannot orphan the backend, and it stops the backend on exit or
+  Ctrl-C. A frontend port that equals the proxy port is `E3018`
+  (`44345fd`).
+- Split the command into `dev/routing.rs` (the upstream decision and the
+  prefix rewrite) and `dev/tunnel.rs` (the upgrade tunnel), each with a
+  `tests.rs` sibling, so no file approaches the 400-line ceiling
+  (`44345fd`).
+
+### Verification: polyglot dev proxy
+
+- 149 CLI tests green, including tunnel tests that drive the proxy with a
+  raw socket: one relays a `101` and round-trips frames both ways, one
+  asserts the rewritten path in the replayed request line, one relays a
+  refused upgrade, and one reports `502` when the frontend port is dead;
+  fmt, clippy (`-D warnings`), `cargo deny check`, and the example build
+  and audit all pass through `./scripts/gate.sh` (`44345fd`).
+- End to end on a Vite-shaped fixture with the example blueprint: `/ping`
+  and `POST /echo` answer from the backend, `/api/ping` answers from the
+  backend with the prefix stripped, `/` and `/assets/app.js` answer from
+  the frontend, an upgrade on the proxy port returns `101` from the
+  frontend and round-trips three frames, and the backend process is gone
+  after `rivet dev` stops (`44345fd`).

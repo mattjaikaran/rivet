@@ -133,10 +133,6 @@ generation and required `suggested_fix` diagnostics.
 Goal: production readiness, per pillars 01, 02, and 03. Seed:
 `prompts/prompt-07-ecosystem.md`.
 
-- [~] `rivet dev` polyglot frontend proxy detecting
-  Vite/Rsbuild/Next.js/Webpack (pillar 03).
-  Acceptance: with a fixture Vite-shaped project, `/api/*` reaches the Rust
-  backend and other paths reach the frontend dev server.
 - [ ] Static assets embedded in the binary (rust-embed) for production.
   Acceptance: a built binary serves a fixture `dist/index.html` after the
   `dist/` directory is renamed.
