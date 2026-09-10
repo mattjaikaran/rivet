@@ -27,7 +27,9 @@ into the generated binary through
 lookup, and `[transport] mode` runs the same blueprint in one process
 (a direct call) or over gRPC (the app serves its own channel). `rivet dev`
 runs the API and a frontend dev server behind one origin and tunnels the
-frontend's HMR socket. `rivet mcp` serves the parser, audit, vector, and
+frontend's HMR socket, and `[frontend] dist` compiles the production
+frontend build into the binary, so a shipped app serves its assets from
+its own memory. `rivet mcp` serves the parser, audit, vector, and
 context-store tools to AI agents over the Model Context Protocol, and every
 JSON diagnostic carries a `suggested_fix`.
 
@@ -64,8 +66,20 @@ the frontend's HMR socket:
 # rivet dev listening on http://127.0.0.1:3000
 ```
 
+For production, point `rivet.toml` at the built frontend and the binary
+carries it:
+
+```bash
+./target/release/rivet build examples/basic/app.py
+# Embedding static assets from examples/basic/dist
+# Binary: examples/basic/generated/target/release/basic
+
+./examples/basic/generated/target/release/basic
+curl localhost:3000/          # the embedded index.html
+```
+
 See [pillar 3](docs/pillars/03-polyglot-frontend-support.md) for the
-detection table and the routing rules.
+detection table, the routing rules, and the embedded-asset rules.
 
 The example app is a plain Python file:
 
@@ -90,7 +104,7 @@ make clean        # generated crates and test fixtures
 make clean-all    # the above plus the workspace cargo cache
 ```
 
-## What phase 0 transpiles
+## What Rivet transpiles
 
 - `@api.get|post|put|delete|patch|options|head(path, stories=[...])` routes
 - handler signatures with type hints: one optional JSON-body parameter

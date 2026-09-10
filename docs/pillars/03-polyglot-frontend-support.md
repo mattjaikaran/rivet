@@ -1,7 +1,7 @@
 # 3. Polyglot Frontend Support
 
 Rivet serves the API and the frontend from one origin. `rivet dev` runs the
-development topology; a later phase embeds the production build.
+development topology, and the production build is embedded in the binary.
 
 ## Development: `rivet dev`
 
@@ -65,6 +65,63 @@ relays its own answer, with the proxy's body length replacing the
 
 ## Production: embedded assets
 
-A later phase embeds the `dist/` folder into the Rust binary with
-`rust-embed` and Brotli compression, so the binary serves static assets
-from memory with no sidecar files.
+The built binary carries the frontend inside it, with no sidecar files.
+Point `rivet.toml` at the production build and `rivet build` compiles that
+directory into the crate it generates:
+
+```toml
+[frontend]
+dist = "dist"   # the production build directory
+spa = true      # serve index.html for a client-side route
+```
+
+```bash
+rivet build app.py
+# Parsed 2 routes and wrote the crate to generated
+# Embedding static assets from dist
+# Binary: generated/target/release/my-api
+```
+
+The keys live in the `[frontend]` section rather than a separate `[assets]`
+table: `rivet dev` already owns the frontend concept, and this pillar owns
+both halves of it — the dev server behind the proxy, and the production
+build inside the binary.
+
+The embedded directory is sealed: a request path that resolves outside it
+returns `404`, and a request path with no matching asset returns `404` too,
+unless the single-page rule accepts it. Renaming `dist/` after the build
+changes nothing, because the binary reads the assets from its own memory.
+
+### What each asset request returns
+
+| Request | Response |
+| :--- | :--- |
+| A path an embedded file matches | The file, with its guessed content type |
+| `/` or a directory path | That directory's own `index.html` |
+| A path that names no file, from a client that accepts `text/html` | The embedded `index.html`, when `spa = true` |
+| Anything else | `404` |
+
+The single-page rule matches the frontend dev server's own rewrite: the
+request is a `GET` or `HEAD`, the path's last segment holds no `.`, and the
+`Accept` header names `text/html`. A browser navigation therefore reaches
+the client-side router, while an `XHR` to a path the API does not serve
+keeps its `404` instead of receiving an HTML page. This matters under
+`rivet dev`, whose backend runs the same generated binary.
+
+Every asset response carries an `ETag` computed from the file's SHA-256
+hash, and `Cache-Control: public, max-age=0, must-revalidate`. A request
+that returns the `ETag` in `If-None-Match` receives `304` and no body. A
+`HEAD` receives the file's length and no body.
+
+A blueprint route always wins: the assets mount as the router's fallback,
+so `/ping` reaches the handler even when an asset path would match it. When
+`dist` names a directory that does not exist, `rivet build` reports
+`E2004` as a warning, embeds nothing, and still compiles the crate. A
+project with no `[frontend]` section embeds nothing.
+
+The generated router compresses every response with `tower-http`'s
+`CompressionLayer`, with the Brotli feature enabled: a client that sends
+`Accept-Encoding: br` receives the asset compressed. Compression on the
+wire costs no binary size, so the embedded assets stay uncompressed in the
+binary; `rust-embed`'s own `compression` feature would trade binary size
+instead, and this phase does not measure that trade.

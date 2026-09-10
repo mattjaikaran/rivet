@@ -175,15 +175,20 @@ returns 502 with a diagnostic, never a hang.
 
 ### 4. Static assets embedded in the binary
 
-`[assets] dir = "dist"` in `rivet.toml` embeds a built frontend into the
-generated binary with `rust-embed`. The generated app serves those files at
-every path that is not a route, so production needs no filesystem beside
-the binary. Content type comes from the file extension; a missing file
-falls through to 404, and an absent `dir` leaves the app route-only with no
-generated asset code.
+`[frontend] dist = "dist"` in `rivet.toml` embeds a built frontend into the
+generated binary with `rust-embed`, and `spa = true` (the default) serves
+the embedded `index.html` when a browser navigation matches no asset. The
+router mounts the assets as its fallback, so a route always wins and
+production needs no filesystem beside the binary. Content type comes from
+the file extension, every asset carries an `ETag` from its SHA-256 hash,
+and a missing asset returns `404`; an absent `dist` leaves the app
+route-only with no generated asset code. The generated router compresses
+every response with `tower-http`'s `CompressionLayer` (Brotli).
 
 - Acceptance: a built binary serves a fixture `dist/index.html` after the
   `dist/` directory is renamed; the served body and content type match.
+  A missing asset and a non-HTML client keep their `404`, and a client that
+  sends `Accept-Encoding: br` receives a compressed body.
 
 ### 5. Service discovery and the admin panel
 
@@ -250,7 +255,8 @@ Acceptance Criteria
   modes, and a test exercises both channel implementations.
 - `rivet dev` proxies `/api/*` to the backend and other paths to the
   frontend, with the framework detected from its config file.
-- A built binary serves an embedded asset with no `dist/` directory on disk.
+- A built binary serves an embedded asset with no `dist/` directory on
+  disk, and compresses it on the wire.
 - Discovery registration posts the service and port to the registry API, and
   `/__rivet/routes` lists the route table the app serves.
 - `rivet sync --dry-run` reports the story diff against a captured tracker

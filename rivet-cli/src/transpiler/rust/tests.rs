@@ -259,3 +259,88 @@ fn a_project_without_plugins_generates_no_plugin_wiring() {
     assert!(!project.cargo_toml.contains("Plugins, composed"));
     assert!(project.main_rs.contains("    let app = Router::new()"));
 }
+
+#[test]
+fn a_configured_frontend_build_is_embedded_and_served_as_the_fallback() {
+    let dir = ScratchDir::new("generate-assets");
+    fs::create_dir_all(dir.join("dist")).expect("create dist");
+    let mut config = RivetConfig::default();
+    config.frontend.dist = Some("dist".to_string());
+
+    let project = generate_project(&ping_blueprint(), &config, &dir).expect("generate");
+
+    assert!(
+        project.main_rs.contains("#[folder = \"../dist\"]"),
+        "main_rs:\n{}",
+        project.main_rs
+    );
+    assert!(
+        project.main_rs.contains("mod assets {"),
+        "{}",
+        project.main_rs
+    );
+    assert!(project.main_rs.contains(".fallback(assets::serve)"));
+    assert!(
+        project
+            .main_rs
+            .contains("if wants_index(&method, &uri, &headers)"),
+        "the default config serves one page for every navigation"
+    );
+    assert!(
+        project.cargo_toml.contains("rust-embed = "),
+        "cargo_toml:\n{}",
+        project.cargo_toml
+    );
+    assert!(project.cargo_toml.contains("percent-encoding = \"2\""));
+    assert!(
+        project
+            .main_rs
+            .contains("app.layer(tower_http::compression::CompressionLayer::new())"),
+        "every response is compressed: {}",
+        project.main_rs
+    );
+    assert!(project.cargo_toml.contains("tower-http = "));
+    assert_eq!(
+        project.assets,
+        AssetEmbedding::Embedded {
+            dir: dir.join("dist"),
+            folder: "../dist".to_string(),
+        }
+    );
+}
+
+#[test]
+fn a_project_without_a_frontend_build_has_no_asset_wiring() {
+    let project = generate_project(&ping_blueprint(), &RivetConfig::default(), Path::new("."))
+        .expect("generate");
+
+    assert_eq!(project.assets, AssetEmbedding::None);
+    assert!(
+        !project.main_rs.contains("mod assets"),
+        "{}",
+        project.main_rs
+    );
+    assert!(!project.main_rs.contains("fallback"));
+    assert!(!project.cargo_toml.contains("rust-embed"));
+}
+
+#[test]
+fn a_configured_but_missing_frontend_build_is_not_embedded() {
+    let dir = ScratchDir::new("generate-assets-missing");
+    let mut config = RivetConfig::default();
+    config.frontend.dist = Some("dist".to_string());
+
+    let project = generate_project(&ping_blueprint(), &config, &dir).expect("generate");
+
+    assert_eq!(project.assets, AssetEmbedding::Missing(dir.join("dist")));
+    assert!(
+        !project.main_rs.contains("mod assets"),
+        "{}",
+        project.main_rs
+    );
+    assert!(
+        !project.cargo_toml.contains("rust-embed"),
+        "{}",
+        project.cargo_toml
+    );
+}

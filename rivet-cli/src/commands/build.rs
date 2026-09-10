@@ -10,7 +10,7 @@ use crate::config::RivetConfig;
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::gauntlet;
 use crate::parser::python::parse_python_file;
-use crate::transpiler::rust::generate_project;
+use crate::transpiler::rust::{AssetEmbedding, generate_project};
 use std::path::Path;
 
 pub fn run_build(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
@@ -62,6 +62,19 @@ pub fn run_build(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
     let generated = generate_project(&module.blueprint, &config, &project_dir)
         .map_err(|diagnostic| vec![diagnostic])?;
 
+    if let AssetEmbedding::Missing(dir) = &generated.assets {
+        let warning = Diagnostic::warning(
+            "E2004",
+            format!(
+                "the frontend build directory {} does not exist, so the binary serves no assets",
+                dir.display()
+            ),
+            "build the frontend into that directory, or point `[frontend] dist` at the directory that holds it, then rerun `rivet build`",
+        );
+        eprintln!("{}", warning.to_json());
+        eprintln!("{}", warning.summary());
+    }
+
     let out_dir = project_dir.join("generated");
     std::fs::create_dir_all(out_dir.join("src")).map_err(|err| {
         vec![Diagnostic::blocker(
@@ -92,6 +105,9 @@ pub fn run_build(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
         if route_count == 1 { "" } else { "s" },
         out_dir.display()
     );
+    if let AssetEmbedding::Embedded { dir, .. } = &generated.assets {
+        println!("Embedding static assets from {}", dir.display());
+    }
 
     let status = std::process::Command::new("cargo")
         .arg("build")

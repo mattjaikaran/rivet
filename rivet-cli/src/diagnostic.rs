@@ -78,6 +78,13 @@ impl Diagnostic {
         Self::new(error_code, Severity::Blocker, message, fix)
     }
 
+    /// Create a warning with a stable error code and a concrete
+    /// remediation an agent can apply. A warning reports and the command
+    /// continues.
+    pub fn warning(error_code: &str, message: impl Into<String>, fix: impl Into<String>) -> Self {
+        Self::new(error_code, Severity::Warning, message, fix)
+    }
+
     fn new(
         error_code: &str,
         severity: Severity,
@@ -187,15 +194,11 @@ mod tests {
 
     #[test]
     fn warning_severity_serializes_in_the_payload() {
-        let diagnostic = Diagnostic::blocker(
+        let diagnostic = Diagnostic::warning(
             "E2044",
             "helper is never called",
             "remove the unused helper or reference it from a route",
         );
-        let diagnostic = Diagnostic {
-            severity: Severity::Warning,
-            ..diagnostic
-        };
         let json: Value = serde_json::from_str(&diagnostic.to_json()).expect("payload must parse");
         assert_eq!(json["severity"], "warning");
         assert_eq!(json["error_code"], "E2044");

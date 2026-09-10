@@ -103,6 +103,16 @@ duplicate_code = "blocker"  # outcome for E2043 (warn or block)
 dead_code = "warning"       # outcome for E2044 (warn or block)
 ```
 
+Point `[frontend] dist` at the production frontend build to compile it into
+the generated binary (pillar 03). A missing directory is a warning
+(`E2004`), not a failure, so the API still builds before the frontend does:
+
+```toml
+[frontend]
+dist = "dist"   # compile this directory into the binary
+spa = true      # serve index.html for a client-side route
+```
+
 ## Security & compliance
 - RBAC enforced at compile time (zero runtime overhead).
 - CVE scanning via cargo-deny runs in CI and locally with `cargo deny

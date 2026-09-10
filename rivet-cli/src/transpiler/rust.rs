@@ -17,15 +17,21 @@ use rivet_core::ir::{
 use std::collections::HashMap;
 use std::path::Path;
 
+mod assets;
 mod channel;
 mod handler;
 mod service;
 
-/// A complete, ready-to-write generated crate.
+pub use assets::AssetEmbedding;
+
+/// A complete, ready-to-write generated crate, with what became of the
+/// project's static assets.
 pub struct GeneratedProject {
     pub package_name: String,
     pub main_rs: String,
     pub cargo_toml: String,
+    /// The static assets compiled into the binary.
+    pub assets: AssetEmbedding,
 }
 
 /// Render the whole crate from a blueprint, the project configuration, and
@@ -53,6 +59,8 @@ pub fn generate_project(
     let service_block = service::render_service_module(&codegen, blueprint)?;
     let channel_block = channel::render_channel_module(&codegen, blueprint, mode)?;
     let handlers = handler::render_handlers(&codegen, blueprint)?;
+    let assets = assets::resolve(config, project_dir);
+    let wiring = assets::render(&assets, config.frontend.spa);
     let router = codegen.render_router(blueprint, channel_type);
     let parts = MainParts {
         routing: used_router_fns(blueprint).join(", "),
@@ -61,6 +69,8 @@ pub fn generate_project(
         plugins: render_plugin_installs(&plugins),
         channel_setup: render_channel_setup(config),
         channel_state: channel_state.to_string(),
+        assets_fallback: wiring.fallback,
+        assets_layer: wiring.compression,
     };
     let blocks = MainBlocks {
         structs: &structs_block,
@@ -68,14 +78,16 @@ pub fn generate_project(
         channel: &channel_block,
         handlers: &handlers,
         router: &router,
+        assets: &wiring.module,
     };
     let main_rs = assemble(&blocks, &parts)?;
-    let cargo_toml = render_manifest(&package_name, &plugins, mode);
+    let cargo_toml = render_manifest(&package_name, &plugins, mode, !wiring.module.is_empty());
 
     Ok(GeneratedProject {
         package_name,
         main_rs,
         cargo_toml,
+        assets,
     })
 }
 
@@ -116,17 +128,29 @@ fn render_plugin_installs(plugins: &[ResolvedPlugin]) -> String {
     format!("\n{}\n", installs.join("\n"))
 }
 
-/// The generated manifest: the axum stack, the transport's dependencies, and
-/// one dependency per plugin.
+/// The generated manifest: the axum stack, the transport's dependencies, the
+/// embedded-asset stack, and one dependency per plugin.
 ///
 /// The gRPC transport pulls `tonic` without `prost` or generated code, so the
 /// crate builds on a machine with only rustc and cargo.
-fn render_manifest(package_name: &str, plugins: &[ResolvedPlugin], mode: TransportMode) -> String {
+fn render_manifest(
+    package_name: &str,
+    plugins: &[ResolvedPlugin],
+    mode: TransportMode,
+    assets: bool,
+) -> String {
     let transport_section = match mode {
         TransportMode::InProcess => String::new(),
         TransportMode::Grpc => String::from(
             "\n# grpc transport: hand-written tonic service, no protoc and no prost.\ntonic = { version = \"0.12\", default-features = false, features = [\"transport\"] }\ntokio-stream = { version = \"0.1\", features = [\"net\"] }\ntower = \"0.4\"\nhttp = \"1\"\nhttp-body = \"1\"\nbytes = \"1\"\n",
         ),
+    };
+    let assets_section = if assets {
+        String::from(
+            "\n# The embedded frontend build (pillar 03): `debug-embed` keeps the assets in debug binaries too, so no build reads them from disk, and `compression-br` compresses every response on the wire.\nrust-embed = { version = \"8\", features = [\"mime-guess\", \"debug-embed\"] }\ntower-http = { version = \"0.6\", features = [\"compression-br\"] }\npercent-encoding = \"2\"\n",
+        )
+    } else {
+        String::new()
     };
     let mut dependencies = String::new();
     for plugin in plugins {
@@ -153,7 +177,7 @@ serde = {{ version = "1", features = ["derive"] }}
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = {{ version = "0.3", features = ["env-filter"] }}
-{transport_section}{plugin_section}
+{transport_section}{assets_section}{plugin_section}
 [profile.release]
 strip = true
 "#
@@ -270,6 +294,8 @@ struct MainBlocks<'a> {
     channel: &'a str,
     handlers: &'a str,
     router: &'a str,
+    /// The `mod assets` block, or empty when the app embeds no assets.
+    assets: &'a str,
 }
 
 /// Bundled main-file inputs so `assemble` stays under the argument-count
@@ -286,6 +312,12 @@ struct MainParts {
     channel_setup: String,
     /// The expression the router takes as state.
     channel_state: String,
+    /// The router's asset-fallback line, or empty when the app embeds no
+    /// assets.
+    assets_fallback: String,
+    /// The compression layer applied after the plugins install, or empty
+    /// when the app embeds no assets.
+    assets_layer: String,
 }
 
 /// The axum routing functions the blueprint actually uses, in first-use
@@ -334,7 +366,7 @@ fn channel_error(detail: String) -> (axum::http::StatusCode, String) {
         r#"// Generated by rivet {version}. Do not edit; run `rivet build` again.
 use axum::{{extract::{{Json, State}}, routing::{{{routing}}}, Router}};
 
-{structs}{helpers}{service}{channel}{handlers}
+{structs}{helpers}{service}{channel}{handlers}{assets}
 #[tokio::main]
 async fn main() {{
     tracing_subscriber::fmt::init();
@@ -343,9 +375,9 @@ async fn main() {{
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or({port});
 
 {channel_setup}    let app = Router::new()
-{router}
+{router}{assets_fallback}
         .with_state({channel_state});
-{plugins}    let addr = format!("{{host}}:{{port}}");
+{plugins}{assets_layer}    let addr = format!("{{host}}:{{port}}");
     let listener = tokio::net::TcpListener::bind(&addr).await.expect("failed to bind address");
     println!("rivet app listening on http://{{addr}}");
     axum::serve(listener, app).await.expect("server error");
@@ -359,6 +391,9 @@ async fn main() {{
         channel = blocks.channel,
         handlers = blocks.handlers,
         router = blocks.router,
+        assets = blocks.assets,
+        assets_fallback = parts.assets_fallback,
+        assets_layer = parts.assets_layer,
         plugins = parts.plugins,
         channel_setup = parts.channel_setup,
         channel_state = parts.channel_state,

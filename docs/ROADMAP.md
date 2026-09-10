@@ -96,7 +96,7 @@ commit, and every JSON diagnostic carries a `suggested_fix`. See
 - [x] Plugin system (compile-time composition via traits).
 - [x] Polyglot dev proxy (`rivet dev`) for Vite, Rsbuild, Next.js, and
   Webpack, HMR tunnel included.
-- [ ] Static assets embedded in the binary (`rust-embed`).
+- [x] Static assets embedded in the binary (`rust-embed`).
 - [ ] Service discovery (Consul/etcd/Nacos).
 - [ ] Built-in Admin Panel (React/Solid).
 - [ ] Story-to-Jira/Linear sync (`rivet sync`).
@@ -108,11 +108,11 @@ monomorphized install call and no runtime lookup. Met: the example project
 composes `auth-token`, the generated manifest depends on the plugin crate,
 and `GET /auth/check` answers from the compiled plugin.
 
-The transport switch is met: `[transport] mode` selects the in-process
-channel (a direct, monomorphized call) or gRPC (the app serves its channel
-on `grpc_port` and calls through it). An integration test builds one
-blueprint in both modes, runs both binaries, and asserts both answer the
-same body.
+The static assets are met: `[frontend] dist` compiles the production build
+into the generated crate with `rust-embed`, the router mounts the embedded
+directory as its fallback, and an integration test builds the fixture,
+renames `dist/`, and proves the binary still serves `index.html` and its
+assets. See `docs/pillars/03-polyglot-frontend-support.md`.
 
 The dev proxy is met: `rivet dev` detects the frontend from its config
 file, serves the blueprint's routes and `/api/*` from the Rust backend with

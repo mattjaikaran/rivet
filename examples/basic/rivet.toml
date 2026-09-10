@@ -11,3 +11,9 @@ development = { host = "127.0.0.1", port = 3000, log_level = "debug" }
 # entry; `rivet build` then adds the dependency and the install call.
 [plugins.auth-token]
 path = "plugins/auth-token"
+
+# Phase 4: the production frontend build `rivet build` compiles into the
+# binary (pillar 03). The fixture under `dist/` stands in for a real Vite or
+# Rsbuild output.
+[frontend]
+dist = "dist"

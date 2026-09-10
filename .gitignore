@@ -42,7 +42,11 @@ logs/
 *.lcov
 coverage/
 
-# Build artifacts
+# Build artifacts, except the example's committed frontend build: the
+# phase-4 asset test renames that directory and proves the binary still
+# serves it from memory (pillar 03).
 dist/
 build/
 node_modules/
+!examples/basic/dist/
+!examples/basic/dist/**

@@ -138,6 +138,33 @@ pub enum TransportMode {
     Grpc,
 }
 
+/// The `[frontend]` section: the production build `rivet build` embeds.
+///
+/// `rivet dev` proxies to a frontend dev server; the built binary has no
+/// sidecar files, so `rivet build` compiles the directory `dist` names into
+/// the binary and serves it from the router's fallback (pillar 03). A
+/// project with no `[frontend]` section embeds nothing.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(default)]
+pub struct Frontend {
+    /// The production build directory, relative to the project directory.
+    /// Absent means the binary embeds no assets.
+    pub dist: Option<String>,
+    /// Answer a path that matches no asset with `index.html`, so a
+    /// client-side router owns the path. A directory path resolves to its
+    /// own `index.html` first.
+    pub spa: bool,
+}
+
+impl Default for Frontend {
+    fn default() -> Self {
+        Self {
+            dist: None,
+            spa: true,
+        }
+    }
+}
+
 /// The parsed `rivet.toml`.
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(default)]
@@ -152,6 +179,8 @@ pub struct RivetConfig {
     pub plugins: BTreeMap<String, PluginConfig>,
     /// The transport the generated app uses to reach its service layer.
     pub transport: Transport,
+    /// The production frontend build the binary embeds.
+    pub frontend: Frontend,
 }
 
 impl RivetConfig {
@@ -286,5 +315,25 @@ version = "0.3"
         let raw = "[transport]\nmode = \"sidecar\"\n";
         let config: Result<RivetConfig, _> = toml::from_str(raw);
         assert!(config.is_err());
+    }
+
+    #[test]
+    fn frontend_defaults_to_no_dist_and_client_side_routing() {
+        let config = RivetConfig::default();
+        assert!(config.frontend.dist.is_none());
+        assert!(config.frontend.spa);
+    }
+
+    #[test]
+    fn frontend_section_parses_the_dist_directory_and_the_spa_flag() {
+        let raw = "[frontend]\ndist = \"dist\"\nspa = false\n";
+        let config: RivetConfig = toml::from_str(raw).expect("parse");
+        assert_eq!(config.frontend.dist.as_deref(), Some("dist"));
+        assert!(!config.frontend.spa);
+
+        let raw = "[frontend]\ndist = \"frontend/build\"\n";
+        let config: RivetConfig = toml::from_str(raw).expect("parse");
+        assert_eq!(config.frontend.dist.as_deref(), Some("frontend/build"));
+        assert!(config.frontend.spa, "spa defaults to true");
     }
 }
