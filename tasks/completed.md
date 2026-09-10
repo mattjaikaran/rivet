@@ -301,3 +301,40 @@ lines finish; the section closes when the phase does.
   each test fixture on drop, on success and on panic, and drops the
   run-pid from fixture names; before this the `/plan` fixture leaked a
   143 MB compiled crate per run (`4c638c7`).
+
+## Phase 4 - Ecosystem and multi-service
+
+Served by `prompts/prompt-07-ecosystem.md`. Entries land here as their
+tracker lines finish; the section closes when the phase does.
+
+### Plugin system
+
+- Added the `rivet-plugin-api` workspace crate: the `Plugin` trait plus a
+  generic `install` composition primitive, so every call site monomorphizes
+  and the built binary carries a direct call instead of a registry lookup.
+  `install` logs the plugin name once, at startup (`53242fd`).
+- `rivet.toml` grows a `[plugins]` table (`crate`, `path`, `version`), and
+  `rivet add plugin` records an entry while keeping every other line of the
+  file byte for byte, comments included. A parent table the command creates
+  is marked implicit, so a file gains no empty `[plugins]` header; the edit
+  validates through the same resolver the build uses and writes nothing when
+  it rejects (`E3016` for an unresolvable plugin, `E3017` for a file it
+  cannot parse) (`53242fd`).
+- `generate_project` resolves every plugin before it writes, adds one
+  dependency per plugin to the generated manifest, and emits one install
+  call per plugin into `main.rs` in name order — no `dyn`, no name table
+  (`53242fd`).
+- Shipped the reference plugin `examples/basic/plugins/auth-token` as a
+  workspace member: it reads `RIVET_AUTH_TOKEN` once at install time, serves
+  `GET /auth/check`, and compares the presented bearer token in constant
+  time. The example project composes it (`53242fd`).
+
+### Verification
+
+- 119 CLI tests plus 11 plugin tests and 1 doctest green; fmt, clippy
+  (`-D warnings`), and `cargo deny check` clean; the gate passes end to end.
+- End to end: `rivet build examples/basic/app.py` writes a manifest that
+  depends on `rivet-plugin-auth-token` by path and a `main.rs` with one
+  install call; the running binary answers `GET /ping` as before and
+  `GET /auth/check` with `authenticated: false` without the header and
+  `true` with the configured token (`53242fd`).

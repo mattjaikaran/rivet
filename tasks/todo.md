@@ -133,12 +133,7 @@ generation and required `suggested_fix` diagnostics.
 Goal: production readiness, per pillars 01, 02, and 03. Seed:
 `prompts/prompt-07-ecosystem.md`.
 
-- [ ] Compile-time plugin system composed via traits
-  (`rivet add plugin`, zero runtime overhead).
-  Acceptance: `rivet build` emits one monomorphized `install` call per
-  configured plugin (no `dyn`, no registry); the built example answers
-  `GET /auth/check` from the fixture plugin.
-- [ ] Multi-service switch: the same internal-channel code runs in-process
+- [~] Multi-service switch: the same internal-channel code runs in-process
   (monolith) or over gRPC by config (pillar 02).
   Acceptance: the example builds and runs in both transport modes and
   `curl /ping` returns the same body; a test drives both channel
