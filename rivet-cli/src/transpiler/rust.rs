@@ -134,8 +134,9 @@ impl<'a> Codegen<'a> {
                 return Err(Diagnostic::blocker(
                     "E2003",
                     format!("fixed-size arrays (List[T, {size}]) are not generated yet; const generics arrive with the zero-copy phase"),
+                    "use a plain `List[T]` without a size until the zero-copy phase generates fixed-size arrays",
                 )
-                .located("<generated>", 1, None::<String>));
+                .located("<generated>", 1));
             }
             TypeRef::Named(name) => name.clone(),
         };
@@ -184,8 +185,9 @@ impl<'a> Codegen<'a> {
                         return Err(Diagnostic::blocker(
                             "E2002",
                             format!("handler must return a `{name}` value"),
+                            format!("make the handler `return` a `{name}` construction, or return a request parameter of type `{name}`"),
                         )
-                        .located("<generated>", 1, None::<String>));
+                        .located("<generated>", 1));
                     }
                 };
                 (format!("Json<{name}>"), format!("    Json({value})\n"))
@@ -245,8 +247,9 @@ impl<'a> Codegen<'a> {
             Diagnostic::blocker(
                 "E2002",
                 format!("DTO `{name}` is not part of the blueprint"),
+                format!("declare the `{name}` class in the app module, or point the route's response type at a DTO that exists, then rerun the command"),
             )
-            .located("<generated>", 1, None::<String>)
+            .located("<generated>", 1)
         })
     }
 }
@@ -345,8 +348,12 @@ impl Emitter<'_> {
                     "handler must return a `{}` construction or a parameter of that type",
                     struct_def.name
                 ),
+                format!(
+                    "return the `{}` DTO as a construction, or return a request parameter of type `{}`",
+                    struct_def.name, struct_def.name
+                ),
             )
-            .located("<generated>", 1, None::<String>)),
+            .located("<generated>", 1)),
         }
     }
 
@@ -368,8 +375,12 @@ impl Emitter<'_> {
                             "missing required field `{}` for `{}`",
                             field.name, struct_def.name
                         ),
+                        format!(
+                            "add the missing `{}=...` argument to the `{}` construction in the handler body",
+                            field.name, struct_def.name
+                        ),
                     )
-                    .located("<generated>", 1, None::<String>));
+                    .located("<generated>", 1));
                 }
             };
             fields.push_str(&format!("        {}: {value},\n", field.name));
@@ -482,14 +493,16 @@ impl Emitter<'_> {
                 None => Err(Diagnostic::blocker(
                     "E2002",
                     format!("`{var}` is not a parameter of this handler"),
+                    format!("make `{var}` a request parameter of the handler, or replace the reference with a literal"),
                 )
-                .located("<generated>", 1, None::<String>)),
+                .located("<generated>", 1)),
             },
             Expr::Construct { .. } => Err(Diagnostic::blocker(
                 "E2002",
                 "DTO construction nested inside a JSON value is not supported yet",
+                "return the DTO construction as the handler's declared response type instead of nesting it inside the JSON value",
             )
-            .located("<generated>", 1, None::<String>)),
+            .located("<generated>", 1)),
         }
     }
 
@@ -511,8 +524,12 @@ impl Emitter<'_> {
                 expr_kind(expr),
                 type_label(ty)
             ),
+            format!(
+                "return a value of the field's declared type `{}` (a literal, a request parameter of that type, or a DTO construction)",
+                type_label(ty)
+            ),
         )
-        .located("<generated>", 1, None::<String>)
+        .located("<generated>", 1)
     }
 }
 

@@ -40,6 +40,7 @@ pub fn run_session_resume(app_file: &Path, name: &str) -> Result<(), Vec<Diagnos
         None => Err(vec![Diagnostic::blocker(
             "E3010",
             format!("no session named {name:?} in {}", project_dir.display()),
+            "save the context first with `rivet session save <name>` in this project, or list the available names with `rivet session list`",
         )]),
     }
 }
@@ -67,8 +68,13 @@ pub fn run_session_list(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
 /// the module produced. Human and agent resume from this file.
 pub(crate) fn render_context(app_file: &Path) -> Result<String, Diagnostic> {
     let project_dir = store::project_dir_for(app_file);
-    let config =
-        RivetConfig::load(&project_dir).map_err(|message| Diagnostic::blocker("E1008", message))?;
+    let config = RivetConfig::load(&project_dir).map_err(|message| {
+        Diagnostic::blocker(
+            "E1008",
+            message,
+            "correct the invalid `rivet.toml` value the message names (or fix the file's permissions), then rerun the command",
+        )
+    })?;
     let module = parse_python_file(app_file)?;
     let findings = gauntlet::run_gauntlet(&module, &config.gauntlet);
 

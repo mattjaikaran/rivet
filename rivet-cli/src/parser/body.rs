@@ -22,11 +22,12 @@ pub(crate) fn parse_handler_body(
     file: &str,
 ) -> Result<Vec<Expr>, Diagnostic> {
     let body = function.child_by_field_name("body").ok_or_else(|| {
-        Diagnostic::blocker("E1006", "handler without a body").located(
-            file,
-            line_of(function),
-            None::<String>,
+        Diagnostic::blocker(
+            "E1006",
+            "handler without a body",
+            "give the handler a body containing a single `return` statement",
         )
+        .located(file, line_of(function))
     })?;
 
     let mut returns = Vec::new();
@@ -41,12 +42,9 @@ pub(crate) fn parse_handler_body(
                     return Err(Diagnostic::blocker(
                         "E1006",
                         "multiple return statements are not supported yet; phase 0 handlers return once",
+                        "use a single return at the end of the handler",
                     )
-                    .located(
-                        file,
-                        statement_line,
-                        Some("use a single return at the end of the handler"),
-                    ));
+                    .located(file, statement_line));
                 }
                 let children = statement.named_children_all();
                 let value = match children.first() {
@@ -55,12 +53,9 @@ pub(crate) fn parse_handler_body(
                             return Err(Diagnostic::blocker(
                                 "E1007",
                                 "a return statement must hold a single expression",
+                                "return one expression; wrap multiple values in a list or dict, e.g. `return {\"a\": a, \"b\": b}`",
                             )
-                            .located(
-                                file,
-                                statement_line,
-                                None::<String>,
-                            ));
+                            .located(file, statement_line));
                         }
                         expr::translate(expression, source)
                             .map_err(|diag| attach(diag, file, statement_line))?
@@ -73,12 +68,9 @@ pub(crate) fn parse_handler_body(
                 return Err(Diagnostic::blocker(
                     "E1006",
                     format!("`{other}` statements are not supported in handler bodies yet"),
+                    "phase 0 handlers contain a single return of literals, request parameters, or a DTO constructor",
                 )
-                .located(
-                    file,
-                    statement_line,
-                    Some("phase 0 handlers contain a single return of literals, request parameters, or a DTO constructor"),
-                ));
+                .located(file, statement_line));
             }
         }
     }

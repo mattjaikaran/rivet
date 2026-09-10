@@ -192,6 +192,10 @@ def ping() -> dict:
         let messages: Vec<&str> = diagnostics.iter().map(|d| d.message.as_str()).collect();
         assert!(messages.iter().any(|m| m.contains("unused")));
         assert!(messages.iter().any(|m| m.contains("Ghost")));
+        assert!(
+            diagnostics.iter().all(|d| !d.suggested_fix.is_empty()),
+            "every E2044 finding must carry a non-empty fix"
+        );
     }
 
     #[test]

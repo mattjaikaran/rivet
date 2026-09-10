@@ -23,16 +23,32 @@ pub fn run_stdio() -> Result<(), Diagnostic> {
         .enable_all()
         .build()
         .map_err(|err| {
-            Diagnostic::blocker("E3011", format!("failed to start the MCP runtime: {err}"))
+            Diagnostic::blocker(
+                "E3011",
+                format!("failed to start the MCP runtime: {err}"),
+                "the MCP runtime failed to start; rerun `rivet mcp` and report the error if it persists",
+            )
         })?;
     runtime.block_on(async {
         let peer = tools::RivetTools
             .serve(rmcp::transport::stdio())
             .await
-            .map_err(|err| Diagnostic::blocker("E3011", format!("MCP serve error: {err}")))?;
+            .map_err(|err| {
+                Diagnostic::blocker(
+                    "E3011",
+                    format!("MCP serve error: {err}"),
+                    "the MCP transport ended in error; restart `rivet mcp` and reconnect the client, and report the error if it persists",
+                )
+            })?;
         peer.waiting()
             .await
-            .map_err(|err| Diagnostic::blocker("E3011", format!("MCP serve error: {err}")))?;
+            .map_err(|err| {
+                Diagnostic::blocker(
+                    "E3011",
+                    format!("MCP serve error: {err}"),
+                    "the MCP transport ended in error; restart `rivet mcp` and reconnect the client, and report the error if it persists",
+                )
+            })?;
         Ok(())
     })
 }

@@ -67,17 +67,23 @@ pub struct Diagnostic {
     pub file: Option<String>,
     pub line: Option<usize>,
     pub column: Option<usize>,
-    pub suggested_fix: Option<String>,
+    pub suggested_fix: String,
     pub ast_path: Option<String>,
 }
 
 impl Diagnostic {
-    /// Create a blocker with a stable error code.
-    pub fn blocker(error_code: &str, message: impl Into<String>) -> Self {
-        Self::new(error_code, Severity::Blocker, message)
+    /// Create a blocker with a stable error code and a concrete
+    /// remediation an agent can apply.
+    pub fn blocker(error_code: &str, message: impl Into<String>, fix: impl Into<String>) -> Self {
+        Self::new(error_code, Severity::Blocker, message, fix)
     }
 
-    fn new(error_code: &str, severity: Severity, message: impl Into<String>) -> Self {
+    fn new(
+        error_code: &str,
+        severity: Severity,
+        message: impl Into<String>,
+        fix: impl Into<String>,
+    ) -> Self {
         Self {
             error_code: error_code.to_string(),
             severity,
@@ -85,21 +91,16 @@ impl Diagnostic {
             file: None,
             line: None,
             column: None,
-            suggested_fix: None,
+            suggested_fix: fix.into(),
             ast_path: None,
         }
     }
 
-    /// Attach source location and a suggested fix.
-    pub fn located(
-        mut self,
-        file: impl Into<String>,
-        line: usize,
-        fix: Option<impl Into<String>>,
-    ) -> Self {
+    /// Attach a source location. The fix is set at construction so no
+    /// diagnostic can reach an agent without a remediation.
+    pub fn located(mut self, file: impl Into<String>, line: usize) -> Self {
         self.file = Some(file.into());
         self.line = Some(line);
-        self.suggested_fix = fix.map(Into::into);
         self
     }
 
@@ -144,9 +145,10 @@ impl Diagnostic {
         if let Some(column) = self.column {
             object.insert("column".into(), Value::from(column));
         }
-        if let Some(fix) = &self.suggested_fix {
-            object.insert("suggested_fix".into(), Value::String(fix.clone()));
-        }
+        object.insert(
+            "suggested_fix".into(),
+            Value::String(self.suggested_fix.clone()),
+        );
         if let Some(path) = &self.ast_path {
             object.insert("ast_path".into(), Value::String(path.clone()));
         }
@@ -172,11 +174,9 @@ mod tests {
 
     #[test]
     fn json_payload_is_parseable_and_complete() {
-        let diagnostic = Diagnostic::blocker("E1001", "missing type hint").located(
-            "app.py",
-            12,
-            Some("add a return type annotation"),
-        );
+        let diagnostic =
+            Diagnostic::blocker("E1001", "missing type hint", "add a return type annotation")
+                .located("app.py", 12);
         let json: Value = serde_json::from_str(&diagnostic.to_json()).expect("payload must parse");
         assert_eq!(json["error_code"], "E1001");
         assert_eq!(json["severity"], "blocker");
@@ -187,19 +187,22 @@ mod tests {
 
     #[test]
     fn warning_severity_serializes_in_the_payload() {
+        let diagnostic = Diagnostic::blocker(
+            "E2044",
+            "helper is never called",
+            "remove the unused helper or reference it from a route",
+        );
         let diagnostic = Diagnostic {
-            error_code: "E2044".to_string(),
             severity: Severity::Warning,
-            message: "helper is never called".to_string(),
-            file: None,
-            line: None,
-            column: None,
-            suggested_fix: None,
-            ast_path: None,
+            ..diagnostic
         };
         let json: Value = serde_json::from_str(&diagnostic.to_json()).expect("payload must parse");
         assert_eq!(json["severity"], "warning");
         assert_eq!(json["error_code"], "E2044");
+        assert_eq!(
+            json["suggested_fix"],
+            "remove the unused helper or reference it from a route"
+        );
     }
 
     #[test]

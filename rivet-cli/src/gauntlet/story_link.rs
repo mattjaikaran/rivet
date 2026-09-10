@@ -96,7 +96,8 @@ def ping() -> dict:
         let diagnostic = &diagnostics[0];
         assert_eq!(diagnostic.error_code, "E2045");
         assert_eq!(diagnostic.line, Some(4));
-        let fix = diagnostic.suggested_fix.as_deref().expect("fix suggestion");
+        let fix = diagnostic.suggested_fix.as_str();
+        assert!(!fix.is_empty(), "E2045 must carry a non-empty fix");
         assert!(fix.contains("@api.get(\"/ping\""), "fix: {fix}");
         assert!(fix.contains("stories"), "fix: {fix}");
     }

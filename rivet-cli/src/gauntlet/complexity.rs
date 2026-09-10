@@ -240,6 +240,10 @@ def create_order(request: dict) -> dict:
         assert_eq!(diagnostic.line, Some(4));
         let path = diagnostic.ast_path.as_deref().expect("ast path");
         assert!(path.starts_with("create_order."), "path was {path}");
+        assert!(
+            !diagnostic.suggested_fix.is_empty(),
+            "E2042 must carry a non-empty fix"
+        );
     }
 
     #[test]

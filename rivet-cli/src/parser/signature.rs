@@ -16,11 +16,12 @@ pub(crate) fn parse_parameters(
     file: &str,
 ) -> Result<(RequestSpec, HashMap<String, TypeRef>), Diagnostic> {
     let parameters = function.child_by_field_name("parameters").ok_or_else(|| {
-        Diagnostic::blocker("E1005", "function without a parameter list").located(
-            file,
-            line_of(function),
-            None::<String>,
+        Diagnostic::blocker(
+            "E1005",
+            "function without a parameter list",
+            "add a parameter list to the function definition, for example `def ping():`",
         )
+        .located(file, line_of(function))
     })?;
 
     let mut params: Vec<(String, TypeRef)> = Vec::new();
@@ -30,33 +31,38 @@ pub(crate) fn parse_parameters(
             "typed_parameter" => {
                 // The parameter name is the bare identifier child; `type:` is
                 // the only named field in the grammar.
-                let name_node =
-                    parameter
-                        .child_by_field_name("name")
-                        .or_else(|| {
-                            parameter
-                                .named_children_all()
-                                .into_iter()
-                                .find(|c| c.kind() == "identifier")
-                        })
-                        .ok_or_else(|| {
-                            Diagnostic::blocker("E1001", "parameter is missing a type hint")
-                                .located(file, parameter_line, None::<String>)
-                        })?;
+                let name_node = parameter
+                    .child_by_field_name("name")
+                    .or_else(|| {
+                        parameter
+                            .named_children_all()
+                            .into_iter()
+                            .find(|c| c.kind() == "identifier")
+                    })
+                    .ok_or_else(|| {
+                        Diagnostic::blocker(
+                            "E1001",
+                            "parameter is missing a type hint",
+                            "add a type annotation such as `request: dict`",
+                        )
+                        .located(file, parameter_line)
+                    })?;
                 let name = node_text(&name_node, source);
                 let ty = parameter.child_by_field_name("type").ok_or_else(|| {
-                    Diagnostic::blocker("E1001", "parameter is missing a type hint").located(
-                        file,
-                        parameter_line,
-                        Some("add a type annotation such as `request: dict`"),
+                    Diagnostic::blocker(
+                        "E1001",
+                        "parameter is missing a type hint",
+                        "add a type annotation such as `request: dict`",
                     )
+                    .located(file, parameter_line)
                 })?;
                 if !is_safe_identifier(name) {
                     return Err(Diagnostic::blocker(
                         "E1011",
                         format!("parameter name `{name}` is not a safe Rust identifier"),
+                        "rename the parameter to a snake_case Rust-safe identifier, for example `request_id`",
                     )
-                    .located(file, parameter_line, None::<String>));
+                    .located(file, parameter_line));
                 }
                 let (type_ref, is_optional) =
                     parse_type_text(node_text(&ty, source), file, parameter_line, false)?;
@@ -64,8 +70,9 @@ pub(crate) fn parse_parameters(
                     return Err(Diagnostic::blocker(
                         "E1004",
                         format!("optional request parameter `{name}` is not supported; a missing body cannot deserialize"),
+                        "declare the parameter without Optional[...] or `| None`; a JSON body is always present",
                     )
-                    .located(file, parameter_line, None::<String>));
+                    .located(file, parameter_line));
                 }
                 params.push((name.to_string(), type_ref));
             }
@@ -74,19 +81,17 @@ pub(crate) fn parse_parameters(
                 return Err(Diagnostic::blocker(
                     "E1001",
                     format!("parameter `{name}` is missing a type hint"),
+                    "add a type annotation such as `request: dict`",
                 )
-                .located(
-                    file,
-                    parameter_line,
-                    Some("add a type annotation such as `request: dict`"),
-                ));
+                .located(file, parameter_line));
             }
             other => {
                 return Err(Diagnostic::blocker(
                     "E1004",
                     format!("`{other}` parameters are not supported (defaults, splats, and keyword-only markers)"),
+                    "remove defaults, splats, and markers; declare the request as one plain typed parameter",
                 )
-                .located(file, parameter_line, None::<String>));
+                .located(file, parameter_line));
             }
         }
     }
@@ -99,12 +104,9 @@ pub(crate) fn parse_parameters(
                 handler_display_name(function, source),
                 params.len()
             ),
+            "merge the parameters into one dict or DTO body",
         )
-        .located(
-            file,
-            line_of(function),
-            Some("merge the parameters into one dict or DTO body"),
-        ));
+        .located(file, line_of(function)));
     }
 
     let mut types = HashMap::new();
@@ -130,12 +132,9 @@ pub(crate) fn parse_return_type(
         return Err(Diagnostic::blocker(
             "E1001",
             format!("handler `{name}` is missing a return type hint"),
+            "add a return annotation such as `-> dict` or `-> None`",
         )
-        .located(
-            file,
-            line_of(function),
-            Some("add a return annotation such as `-> dict` or `-> None`"),
-        ));
+        .located(file, line_of(function)));
     };
     let annotation = node_text(&return_type, source).trim();
     if annotation == "None" {
@@ -146,8 +145,9 @@ pub(crate) fn parse_return_type(
         return Err(Diagnostic::blocker(
             "E1004",
             "an optional response body is not supported; return the plain type",
+            "declare the return annotation without Optional[...] or `| None`",
         )
-        .located(file, line_of(&return_type), None::<String>));
+        .located(file, line_of(&return_type)));
     }
     Ok(ResponseSpec::Json(type_ref))
 }

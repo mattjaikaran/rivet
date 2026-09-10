@@ -33,7 +33,7 @@ pub fn translate(node: &Node<'_>, source: &str) -> Result<Expr, Diagnostic> {
                     node,
                     "E1007",
                     format!("integer literal `{text}` is too large for the target"),
-                    None,
+                    "use an integer literal within the supported range or represent the value as a string",
                 )
             })
         }
@@ -45,13 +45,13 @@ pub fn translate(node: &Node<'_>, source: &str) -> Result<Expr, Diagnostic> {
                     node,
                     "E1007",
                     format!("float literal `{text}` is not finite"),
-                    None,
+                    "write a finite float literal, for example 1.5",
                 )),
                 Err(_) => Err(at(
                     node,
                     "E1007",
                     format!("float literal `{text}` is not valid"),
-                    None,
+                    "write the float in a form Rust parses, for example 1.5 or 1e3",
                 )),
             }
         }
@@ -59,7 +59,12 @@ pub fn translate(node: &Node<'_>, source: &str) -> Result<Expr, Diagnostic> {
             let literal = text(node, source);
             match decode_string(literal) {
                 Ok(value) => Ok(Expr::Str(value)),
-                Err(reason) => Err(at(node, "E1007", reason, None)),
+                Err(reason) => Err(at(
+                    node,
+                    "E1007",
+                    reason,
+                    "rewrite the literal as a plain string without prefixes, f-strings, or invalid escapes",
+                )),
             }
         }
         "concatenated_string" => Err(unsupported(
@@ -82,21 +87,36 @@ pub fn translate(node: &Node<'_>, source: &str) -> Result<Expr, Diagnostic> {
                         "dictionary unpacking (`**`) is not supported",
                     ));
                 }
-                let key = child
-                    .child_by_field_name("key")
-                    .ok_or_else(|| at(&child, "E1007", "dictionary entry without a key", None))?;
-                let value = child
-                    .child_by_field_name("value")
-                    .ok_or_else(|| at(&child, "E1007", "dictionary entry without a value", None))?;
+                let key = child.child_by_field_name("key").ok_or_else(|| {
+                    at(
+                        &child,
+                        "E1007",
+                        "dictionary entry without a key",
+                        "add a string key to each dictionary entry, for example {\"key\": value}",
+                    )
+                })?;
+                let value = child.child_by_field_name("value").ok_or_else(|| {
+                    at(
+                        &child,
+                        "E1007",
+                        "dictionary entry without a value",
+                        "add a value to each dictionary entry, for example {\"key\": value}",
+                    )
+                })?;
                 pairs.push((string_key(&key, source)?, translate(&value, source)?));
             }
             Ok(Expr::Object(pairs))
         }
         "identifier" => Ok(Expr::Ident(text(node, source).to_string())),
         "call" => {
-            let function = node
-                .child_by_field_name("function")
-                .ok_or_else(|| at(node, "E1007", "call without a callee", None))?;
+            let function = node.child_by_field_name("function").ok_or_else(|| {
+                at(
+                    node,
+                    "E1007",
+                    "call without a callee",
+                    "write a named DTO constructor call, for example OrderResponse(status=\"ok\")",
+                )
+            })?;
             if function.kind() != "identifier" {
                 return Err(unsupported(
                     node,
@@ -117,10 +137,20 @@ pub fn translate(node: &Node<'_>, source: &str) -> Result<Expr, Diagnostic> {
                         .child_by_field_name("name")
                         .map(|n| text(&n, source))
                         .ok_or_else(|| {
-                            at(&child, "E1007", "keyword argument without a name", None)
+                            at(
+                                &child,
+                                "E1007",
+                                "keyword argument without a name",
+                                "name each DTO constructor argument, for example OrderResponse(status=\"ok\")",
+                            )
                         })?;
                     let value = child.child_by_field_name("value").ok_or_else(|| {
-                        at(&child, "E1007", "keyword argument without a value", None)
+                        at(
+                            &child,
+                            "E1007",
+                            "keyword argument without a value",
+                            "give each DTO constructor argument a value, for example OrderResponse(status=\"ok\")",
+                        )
                     })?;
                     args.push((name.to_string(), translate(&value, source)?));
                 }
@@ -142,11 +172,14 @@ pub fn translate(node: &Node<'_>, source: &str) -> Result<Expr, Diagnostic> {
 /// Translate a unary operator, supporting negated numeric literals only.
 fn translate_unary(node: &Node<'_>, source: &str) -> Result<Expr, Diagnostic> {
     let operator = node.child(0).map(|c| text(&c, source)).unwrap_or("");
-    let operand = node
-        .named_children_all()
-        .first()
-        .copied()
-        .ok_or_else(|| at(node, "E1007", "unary operator without an operand", None))?;
+    let operand = node.named_children_all().first().copied().ok_or_else(|| {
+        at(
+            node,
+            "E1007",
+            "unary operator without an operand",
+            "place the operator before a value, for example -1 or -1.5",
+        )
+    })?;
     match operator {
         "-" => match translate(&operand, source)? {
             Expr::Int(value) => Ok(Expr::Int(-value)),
@@ -167,16 +200,22 @@ fn translate_unary(node: &Node<'_>, source: &str) -> Result<Expr, Diagnostic> {
 /// A dictionary key must be a string literal.
 fn string_key(node: &Node<'_>, source: &str) -> Result<String, Diagnostic> {
     if node.kind() == "string" {
-        return decode_string(text(node, source)).map_err(|reason| at(node, "E1007", reason, None));
+        return decode_string(text(node, source)).map_err(|reason| {
+            at(
+                node,
+                "E1007",
+                reason,
+                "use a plain string literal without prefixes or invalid escapes as the dictionary key",
+            )
+        });
     }
     Err(unsupported(node, "dictionary keys must be string literals"))
 }
 
 /// Build a diagnostic anchored at a node's line.
-fn at(node: &Node<'_>, code: &str, message: impl Into<String>, fix: Option<&str>) -> Diagnostic {
-    let mut diagnostic = Diagnostic::blocker(code, message);
+fn at(node: &Node<'_>, code: &str, message: impl Into<String>, fix: &str) -> Diagnostic {
+    let mut diagnostic = Diagnostic::blocker(code, message, fix);
     diagnostic.line = Some(node.start_position().row + 1);
-    diagnostic.suggested_fix = fix.map(str::to_string);
     diagnostic
 }
 
@@ -185,9 +224,7 @@ fn unsupported(node: &Node<'_>, reason: &str) -> Diagnostic {
         node,
         "E1007",
         reason.to_string(),
-        Some(
-            "simplify the handler body to the supported subset: literals, lists, dictionaries, request parameters, and DTO constructors",
-        ),
+        "simplify the handler body to the supported subset: literals, lists, dictionaries, request parameters, and DTO constructors",
     )
 }
 

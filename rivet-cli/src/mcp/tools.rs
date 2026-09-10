@@ -171,10 +171,16 @@ fn parse_payload(app_file: &str) -> Result<Value, Vec<Diagnostic>> {
         return Err(vec![Diagnostic::blocker(
             "E1008",
             format!("{app_file} not found"),
+            "point the tool at an existing Rivet app module, or create one (`from rivet import api` with at least one `@api.*` handler) and pass its path",
         )]);
     }
-    let config = crate::config::RivetConfig::load(&project_dir(path))
-        .map_err(|message| vec![Diagnostic::blocker("E1008", message)])?;
+    let config = crate::config::RivetConfig::load(&project_dir(path)).map_err(|message| {
+        vec![Diagnostic::blocker(
+            "E1008",
+            message,
+            "correct the invalid `rivet.toml` value the message names (or fix the file's permissions), then rerun the tool",
+        )]
+    })?;
     let module = parse_python_file(path).map_err(|diagnostic| vec![diagnostic])?;
     let findings = crate::gauntlet::run_gauntlet(&module, &config.gauntlet);
 
@@ -182,6 +188,7 @@ fn parse_payload(app_file: &str) -> Result<Value, Vec<Diagnostic>> {
         vec![Diagnostic::blocker(
             "E1008",
             format!("failed to serialize the blueprint: {err}"),
+            "the module parses but its blueprint cannot be serialized to JSON; review the DTO field types in the module and report the error if they look valid",
         )]
     })?;
     let findings: Vec<Value> = findings.iter().map(Diagnostic::to_json_value).collect();
@@ -225,6 +232,7 @@ async fn vector_search_payload(app_file: &str, symptom: &str) -> Result<Value, V
         return Err(vec![Diagnostic::blocker(
             "E1008",
             format!("{app_file} not found"),
+            "point the tool at an existing Rivet app module, or create one (`from rivet import api` with at least one `@api.*` handler) and pass its path",
         )]);
     }
     let module = parse_python_file(path).map_err(|diagnostic| vec![diagnostic])?;
@@ -233,10 +241,10 @@ async fn vector_search_payload(app_file: &str, symptom: &str) -> Result<Value, V
 
     index_blueprint(&dir, &app_label(path), &routes)
         .await
-        .map_err(|err| vec![Diagnostic::blocker("E3005", err)])?;
+        .map_err(|err| vec![Diagnostic::blocker("E3005", err, "the local vector index failed to rebuild; confirm the project directory is writable, delete `.rivet/lancedb` so the next run rebuilds it, then retry the tool call")])?;
     let hits = search(&dir, &app_label(path), symptom)
         .await
-        .map_err(|err| vec![Diagnostic::blocker("E3005", err)])?;
+        .map_err(|err| vec![Diagnostic::blocker("E3005", err, "the local vector index failed to query; confirm the project directory is writable, delete `.rivet/lancedb` so the next run rebuilds it, then retry the tool call")])?;
 
     let hits: Vec<Value> = hits
         .iter()
@@ -338,6 +346,11 @@ mod tests {
             array[0].get("error_code").and_then(Value::as_str),
             Some("E1008")
         );
+        let fix = array[0]
+            .get("suggested_fix")
+            .and_then(Value::as_str)
+            .expect("diagnostic carries a suggested_fix");
+        assert!(!fix.is_empty(), "missing-file fix is concrete");
     }
 
     #[test]

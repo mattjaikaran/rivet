@@ -180,6 +180,10 @@ def ping() -> dict:
         assert_eq!(diagnostic.error_code, "E2046");
         assert_eq!(diagnostic.line, Some(4));
         assert!(diagnostic.message.contains("OrderService"));
+        assert!(
+            !diagnostic.suggested_fix.is_empty(),
+            "E2046 must carry a non-empty fix"
+        );
     }
 
     #[test]
@@ -199,6 +203,7 @@ def ping() -> dict:
         );
         assert_eq!(diagnostics.len(), 1);
         assert!(diagnostics[0].message.contains("cached"));
+        assert!(!diagnostics[0].suggested_fix.is_empty());
     }
 
     #[test]
@@ -216,6 +221,7 @@ def ping() -> dict:
         assert_eq!(diagnostics.len(), 1);
         assert!(diagnostics[0].message.contains("non-api decorator"));
         assert!(diagnostics[0].message.contains("ping"));
+        assert!(!diagnostics[0].suggested_fix.is_empty());
     }
 
     #[test]
@@ -233,6 +239,7 @@ def ping() -> dict:
         );
         assert_eq!(diagnostics.len(), 1);
         assert!(diagnostics[0].message.contains("statement"));
+        assert!(!diagnostics[0].suggested_fix.is_empty());
     }
 
     #[test]

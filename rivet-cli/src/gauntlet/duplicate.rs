@@ -138,6 +138,10 @@ def beta() -> dict:
         let message = &diagnostic.message;
         assert!(message.contains("`alpha` (line 4)"), "message: {message}");
         assert!(message.contains("`beta` (line 8)"), "message: {message}");
+        assert!(
+            !diagnostic.suggested_fix.is_empty(),
+            "E2043 must carry a non-empty fix"
+        );
     }
 
     #[test]

@@ -56,10 +56,10 @@ pub struct SessionRecord {
 pub fn open(project_dir: &Path) -> Result<Connection, Diagnostic> {
     let dir = project_dir.join(".rivet");
     std::fs::create_dir_all(&dir)
-        .map_err(|err| store_error("E3000", format!("cannot create store directory: {err}")))?;
+        .map_err(|err| store_error("E3000", format!("cannot create store directory: {err}"), "free disk space or fix write permissions on the project directory so the CLI can create `.rivet/rivet.db`, then rerun the command"))?;
     let path = dir.join("rivet.db");
     let conn = Connection::open(&path)
-        .map_err(|err| store_error("E3000", format!("cannot open {}: {err}", path.display())))?;
+        .map_err(|err| store_error("E3000", format!("cannot open {}: {err}", path.display()), "free disk space or fix write permissions on the project directory so the CLI can create `.rivet/rivet.db`, then rerun the command"))?;
     migrate(&conn)?;
     Ok(conn)
 }
@@ -68,7 +68,7 @@ pub fn open(project_dir: &Path) -> Result<Connection, Diagnostic> {
 fn migrate(conn: &Connection) -> Result<(), Diagnostic> {
     let current: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .map_err(|err| store_error("E3001", format!("cannot read schema version: {err}")))?;
+        .map_err(|err| store_error("E3001", format!("cannot read schema version: {err}"), "delete `.rivet/rivet.db` so the CLI recreates it, then rerun the command; a store written by a newer `rivet` needs the matching binary"))?;
     if current >= SCHEMA_VERSION {
         return Ok(());
     }
@@ -95,7 +95,7 @@ fn migrate(conn: &Connection) -> Result<(), Diagnostic> {
          PRAGMA user_version = 1;
          COMMIT;",
     )
-    .map_err(|err| store_error("E3001", format!("schema migration failed: {err}")))?;
+    .map_err(|err| store_error("E3001", format!("schema migration failed: {err}"), "delete `.rivet/rivet.db` so the CLI recreates it, then rerun the command; a store written by a newer `rivet` needs the matching binary"))?;
     Ok(())
 }
 
@@ -105,7 +105,7 @@ pub fn start_command(conn: &Connection, command: &str) -> Result<i64, Diagnostic
         "INSERT INTO commands (command, invoked_at) VALUES (?1, ?2)",
         rusqlite::params![command, now_epoch_secs()],
     )
-    .map_err(|err| store_error("E3002", format!("cannot record command: {err}")))?;
+    .map_err(|err| store_error("E3002", format!("cannot record command: {err}"), "the command log is corrupt or the disk is full; delete `.rivet/rivet.db` to reset it (or free disk space and fix `.rivet` permissions), then rerun the command"))?;
     Ok(conn.last_insert_rowid())
 }
 
@@ -121,7 +121,7 @@ pub fn finish_command(
         "UPDATE commands SET exit_status = ?1, duration_ms = ?2 WHERE id = ?3",
         rusqlite::params![exit_status, duration_ms, id],
     )
-    .map_err(|err| store_error("E3002", format!("cannot finish command: {err}")))?;
+    .map_err(|err| store_error("E3002", format!("cannot finish command: {err}"), "the command log is corrupt or the disk is full; delete `.rivet/rivet.db` to reset it (or free disk space and fix `.rivet` permissions), then rerun the command"))?;
     Ok(())
 }
 
@@ -134,7 +134,7 @@ pub fn list_commands(conn: &Connection, limit: usize) -> Result<Vec<CommandRecor
              WHERE exit_status IS NOT NULL
              ORDER BY id DESC LIMIT ?1",
         )
-        .map_err(|err| store_error("E3002", format!("cannot query commands: {err}")))?;
+        .map_err(|err| store_error("E3002", format!("cannot query commands: {err}"), "the command log is corrupt or the disk is full; delete `.rivet/rivet.db` to reset it (or free disk space and fix `.rivet` permissions), then rerun the command"))?;
     let rows = stmt
         .query_map(rusqlite::params![limit as i64], |row| {
             Ok(CommandRecord {
@@ -145,9 +145,9 @@ pub fn list_commands(conn: &Connection, limit: usize) -> Result<Vec<CommandRecor
                 duration_ms: row.get(4)?,
             })
         })
-        .map_err(|err| store_error("E3002", format!("cannot query commands: {err}")))?;
+        .map_err(|err| store_error("E3002", format!("cannot query commands: {err}"), "the command log is corrupt or the disk is full; delete `.rivet/rivet.db` to reset it (or free disk space and fix `.rivet` permissions), then rerun the command"))?;
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|err| store_error("E3002", format!("cannot read commands: {err}")))
+        .map_err(|err| store_error("E3002", format!("cannot read commands: {err}"), "the command log is corrupt or the disk is full; delete `.rivet/rivet.db` to reset it (or free disk space and fix `.rivet` permissions), then rerun the command"))
 }
 
 /// Save a session context blob, replacing an existing session of the same
@@ -158,7 +158,7 @@ pub fn save_session(conn: &Connection, name: &str, content: &str) -> Result<(), 
          ON CONFLICT(name) DO UPDATE SET created_at = ?2, content = ?3",
         rusqlite::params![name, now_epoch_secs(), content],
     )
-    .map_err(|err| store_error("E3003", format!("cannot save session: {err}")))?;
+    .map_err(|err| store_error("E3003", format!("cannot save session: {err}"), "the session table is corrupt or the disk is full; delete `.rivet/rivet.db` to reset it (or free disk space and fix `.rivet` permissions), then rerun the command"))?;
     Ok(())
 }
 
@@ -166,7 +166,7 @@ pub fn save_session(conn: &Connection, name: &str, content: &str) -> Result<(), 
 pub fn load_session(conn: &Connection, name: &str) -> Result<Option<SessionRecord>, Diagnostic> {
     let mut stmt = conn
         .prepare("SELECT name, created_at, content FROM sessions WHERE name = ?1")
-        .map_err(|err| store_error("E3003", format!("cannot query session: {err}")))?;
+        .map_err(|err| store_error("E3003", format!("cannot query session: {err}"), "the session table is corrupt or the disk is full; delete `.rivet/rivet.db` to reset it (or free disk space and fix `.rivet` permissions), then rerun the command"))?;
     let mut rows = stmt
         .query_map(rusqlite::params![name], |row| {
             Ok(SessionRecord {
@@ -175,17 +175,17 @@ pub fn load_session(conn: &Connection, name: &str) -> Result<Option<SessionRecor
                 content: row.get(2)?,
             })
         })
-        .map_err(|err| store_error("E3003", format!("cannot query session: {err}")))?;
+        .map_err(|err| store_error("E3003", format!("cannot query session: {err}"), "the session table is corrupt or the disk is full; delete `.rivet/rivet.db` to reset it (or free disk space and fix `.rivet` permissions), then rerun the command"))?;
     rows.next()
         .transpose()
-        .map_err(|err| store_error("E3003", format!("cannot read session: {err}")))
+        .map_err(|err| store_error("E3003", format!("cannot read session: {err}"), "the session table is corrupt or the disk is full; delete `.rivet/rivet.db` to reset it (or free disk space and fix `.rivet` permissions), then rerun the command"))
 }
 
 /// List saved session names and timestamps, oldest first.
 pub fn list_sessions(conn: &Connection) -> Result<Vec<SessionRecord>, Diagnostic> {
     let mut stmt = conn
         .prepare("SELECT name, created_at, content FROM sessions ORDER BY created_at")
-        .map_err(|err| store_error("E3003", format!("cannot query sessions: {err}")))?;
+        .map_err(|err| store_error("E3003", format!("cannot query sessions: {err}"), "the session table is corrupt or the disk is full; delete `.rivet/rivet.db` to reset it (or free disk space and fix `.rivet` permissions), then rerun the command"))?;
     let rows = stmt
         .query_map([], |row| {
             Ok(SessionRecord {
@@ -194,9 +194,9 @@ pub fn list_sessions(conn: &Connection) -> Result<Vec<SessionRecord>, Diagnostic
                 content: row.get(2)?,
             })
         })
-        .map_err(|err| store_error("E3003", format!("cannot query sessions: {err}")))?;
+        .map_err(|err| store_error("E3003", format!("cannot query sessions: {err}"), "the session table is corrupt or the disk is full; delete `.rivet/rivet.db` to reset it (or free disk space and fix `.rivet` permissions), then rerun the command"))?;
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|err| store_error("E3003", format!("cannot read sessions: {err}")))
+        .map_err(|err| store_error("E3003", format!("cannot read sessions: {err}"), "the session table is corrupt or the disk is full; delete `.rivet/rivet.db` to reset it (or free disk space and fix `.rivet` permissions), then rerun the command"))
 }
 
 /// Store an AST fingerprint for one commit and app path.
@@ -211,13 +211,13 @@ pub fn save_fingerprint(
          ON CONFLICT(commit_hash, app_path) DO UPDATE SET digest = ?3",
         rusqlite::params![commit, app_path, digest],
     )
-    .map_err(|err| store_error("E3004", format!("cannot save fingerprint: {err}")))?;
+    .map_err(|err| store_error("E3004", format!("cannot save fingerprint: {err}"), "the fingerprint table is corrupt or the disk is full; delete `.rivet/rivet.db` to reset it (or free disk space and fix `.rivet` permissions), then rerun the command"))?;
     Ok(())
 }
 
 /// Build a diagnostic with a context-engine error code.
-fn store_error(code: &str, message: String) -> Diagnostic {
-    Diagnostic::blocker(code, message)
+fn store_error(code: &str, message: String, fix: &str) -> Diagnostic {
+    Diagnostic::blocker(code, message, fix)
 }
 
 /// Seconds since the Unix epoch, as an i64.

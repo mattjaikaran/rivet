@@ -101,7 +101,11 @@ impl ParsedModule {
 /// Parse `app.py` from disk into a module the Gauntlet can audit.
 pub fn parse_python_file(path: &Path) -> Result<ParsedModule, Diagnostic> {
     let source = std::fs::read_to_string(path).map_err(|err| {
-        Diagnostic::blocker("E1008", format!("failed to read {}: {err}", path.display()))
+        Diagnostic::blocker(
+            "E1008",
+            format!("failed to read {}: {err}", path.display()),
+            "check that the file path is correct and readable, then re-run",
+        )
     })?;
     let name = path
         .file_stem()
@@ -123,20 +127,31 @@ pub fn parse_python_module(
 
     parser
         .set_language(&tree_sitter_python::LANGUAGE.into())
-        .map_err(|_| Diagnostic::blocker("E1008", "failed to load the Python grammar"))?;
+        .map_err(|_| {
+            Diagnostic::blocker(
+                "E1008",
+                "failed to load the Python grammar",
+                "ensure the tree-sitter-python grammar is linked and rebuild; this failure is internal",
+            )
+        })?;
     let tree = parser
         .parse(source, None)
-        .ok_or_else(|| Diagnostic::blocker("E1008", "the parser produced no syntax tree"))?;
+        .ok_or_else(|| {
+            Diagnostic::blocker(
+                "E1008",
+                "the parser produced no syntax tree",
+                "re-run the parser on well-formed source; an empty tree indicates an internal parser failure",
+            )
+        })?;
 
     let root = tree.root_node();
     if let Some(error) = first_error(root) {
-        return Err(
-            Diagnostic::blocker("E1008", "the module contains a Python syntax error").located(
-                file_label,
-                line_of(&error),
-                None::<String>,
-            ),
-        );
+        return Err(Diagnostic::blocker(
+            "E1008",
+            "the module contains a Python syntax error",
+            "correct the syntax near the reported line, for example close an unterminated string or parenthesis or add a missing `:`",
+        )
+        .located(file_label, line_of(&error)));
     }
 
     // Pass zero: classify every top-level item so the Gauntlet rules can
@@ -154,8 +169,9 @@ pub fn parse_python_module(
                 return Err(Diagnostic::blocker(
                     "E1003",
                     "duplicate DTO definition; class names must be unique",
+                    "rename one of the duplicate classes so every DTO name is unique",
                 )
-                .located(file_label, line_of(&child), None::<String>));
+                .located(file_label, line_of(&child)));
             }
             let name = dto.name.clone();
             dtos.insert(name.clone(), dto);
@@ -179,8 +195,9 @@ pub fn parse_python_module(
         return Err(Diagnostic::blocker(
             "E1009",
             "no routes found; decorate at least one function with an api decorator, for example @api.get(\"/ping\")",
+            "add an api decorator such as @api.get(\"/ping\") to at least one function",
         )
-        .located(file_label, 1, None::<String>));
+        .located(file_label, 1));
     }
 
     // Check DTO references and emit the reachable closure, keeping
@@ -349,49 +366,48 @@ fn parse_route(
         return Ok(None);
     }
     let Some(function) = function else {
-        return Err(
-            Diagnostic::blocker("E1005", "api decorator without a function definition").located(
-                file,
-                line_of(node),
-                None::<String>,
-            ),
-        );
+        return Err(Diagnostic::blocker(
+            "E1005",
+            "api decorator without a function definition",
+            "apply the decorator to a function definition, not to a class or another statement",
+        )
+        .located(file, line_of(node)));
     };
     if api_decorators.len() > 1 {
-        return Err(
-            Diagnostic::blocker("E1005", "a handler may carry only one api decorator").located(
-                file,
-                line_of(&function),
-                None::<String>,
-            ),
-        );
+        return Err(Diagnostic::blocker(
+            "E1005",
+            "a handler may carry only one api decorator",
+            "remove the extra api decorators and keep a single @api.<method>(\"path\")",
+        )
+        .located(file, line_of(&function)));
     }
     let Some((method, path, stories)) = api_decorators.pop() else {
-        return Err(
-            Diagnostic::blocker("E1005", "api decorator metadata is missing").located(
-                file,
-                line_of(&function),
-                None::<String>,
-            ),
-        );
+        return Err(Diagnostic::blocker(
+            "E1005",
+            "api decorator metadata is missing",
+            "write the decorator with a method and path, for example @api.get(\"/ping\")",
+        )
+        .located(file, line_of(&function)));
     };
 
     let handler_name = function
         .child_by_field_name("name")
         .map(|n| node_text(&n, source))
         .ok_or_else(|| {
-            Diagnostic::blocker("E1005", "function without a name").located(
-                file,
-                line_of(&function),
-                None::<String>,
+            Diagnostic::blocker(
+                "E1005",
+                "function without a name",
+                "give the function a name, for example `def ping():`",
             )
+            .located(file, line_of(&function))
         })?;
     if !crate::parser::is_safe_identifier(handler_name) {
         return Err(Diagnostic::blocker(
             "E1011",
             format!("handler name `{handler_name}` is not a safe Rust identifier"),
+            "rename the handler to a snake_case Rust-safe identifier, for example `ping_handler`",
         )
-        .located(file, line_of(&function), None::<String>));
+        .located(file, line_of(&function)));
     }
     decorator::validate_path(&path, file, line_of(&function))?;
 
@@ -530,6 +546,7 @@ def create_order(request: OrderCreate) -> OrderResponse:
                 .expect_err("must fail");
         assert_eq!(diagnostic.error_code, "E1001");
         assert_eq!(diagnostic.line, Some(4));
+        assert!(!diagnostic.suggested_fix.is_empty());
     }
 
     #[test]
@@ -539,6 +556,7 @@ def create_order(request: OrderCreate) -> OrderResponse:
         )
         .expect_err("must fail");
         assert_eq!(diagnostic.error_code, "E1001");
+        assert!(!diagnostic.suggested_fix.is_empty());
     }
 
     #[test]
@@ -548,6 +566,7 @@ def create_order(request: OrderCreate) -> OrderResponse:
         )
         .expect_err("must fail");
         assert_eq!(diagnostic.error_code, "E1004");
+        assert!(!diagnostic.suggested_fix.is_empty());
     }
 
     #[test]
@@ -557,6 +576,7 @@ def create_order(request: OrderCreate) -> OrderResponse:
         )
         .expect_err("must fail");
         assert_eq!(diagnostic.error_code, "E1005");
+        assert!(!diagnostic.suggested_fix.is_empty());
     }
 
     #[test]
@@ -566,6 +586,7 @@ def create_order(request: OrderCreate) -> OrderResponse:
         )
         .expect_err("must fail");
         assert_eq!(diagnostic.error_code, "E1006");
+        assert!(!diagnostic.suggested_fix.is_empty());
     }
 
     #[test]
@@ -575,12 +596,14 @@ def create_order(request: OrderCreate) -> OrderResponse:
         )
         .expect_err("must fail");
         assert_eq!(diagnostic.error_code, "E1010");
+        assert!(!diagnostic.suggested_fix.is_empty());
     }
 
     #[test]
     fn rejects_no_routes() {
         let diagnostic = parse("from rivet import api\n\nx = 1\n").expect_err("must fail");
         assert_eq!(diagnostic.error_code, "E1009");
+        assert!(!diagnostic.suggested_fix.is_empty());
     }
 
     #[test]
@@ -590,6 +613,7 @@ def create_order(request: OrderCreate) -> OrderResponse:
         )
         .expect_err("must fail");
         assert_eq!(diagnostic.error_code, "E1007");
+        assert!(!diagnostic.suggested_fix.is_empty());
     }
 
     #[test]
@@ -618,6 +642,7 @@ def create_order(request: OrderCreate) -> OrderResponse:
         )
         .expect_err("must fail");
         assert_eq!(diagnostic.error_code, "E1010");
+        assert!(!diagnostic.suggested_fix.is_empty());
     }
 
     #[test]
@@ -654,6 +679,7 @@ def vectors(request: Payload) -> dict:
         )
         .expect_err("must fail");
         assert_eq!(diagnostic.error_code, "E1003");
+        assert!(!diagnostic.suggested_fix.is_empty());
     }
 
     #[test]

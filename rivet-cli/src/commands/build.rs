@@ -20,16 +20,22 @@ pub fn run_build(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| ".".into());
 
-    let config = RivetConfig::load(&project_dir)
-        .map_err(|message| vec![Diagnostic::blocker("E1008", message)])?;
+    let config = RivetConfig::load(&project_dir).map_err(|message| {
+        vec![Diagnostic::blocker(
+            "E1008",
+            message,
+            "correct the invalid `rivet.toml` value the message names (or fix the file's permissions), then rerun the command",
+        )]
+    })?;
 
     if !app_file.exists() {
         return Err(vec![
-            Diagnostic::blocker("E1008", format!("{} not found", app_file.display())).located(
-                project_dir.display().to_string(),
-                1,
-                Some("write a `from rivet import api` module, then run `rivet build`"),
-            ),
+            Diagnostic::blocker(
+                "E1008",
+                format!("{} not found", app_file.display()),
+                "write a `from rivet import api` module, then run `rivet build`",
+            )
+            .located(project_dir.display().to_string(), 1),
         ]);
     }
 
@@ -61,18 +67,21 @@ pub fn run_build(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
         vec![Diagnostic::blocker(
             "E1008",
             format!("failed to create the generated directory: {err}"),
+            "free disk space or fix write permissions on the project's `generated` directory, then rerun `rivet build`",
         )]
     })?;
     std::fs::write(out_dir.join("Cargo.toml"), &generated.cargo_toml).map_err(|err| {
         vec![Diagnostic::blocker(
             "E1008",
             format!("failed to write the generated Cargo.toml: {err}"),
+            "free disk space or fix write permissions on the project's `generated` directory, then rerun `rivet build`",
         )]
     })?;
     std::fs::write(out_dir.join("src").join("main.rs"), &generated.main_rs).map_err(|err| {
         vec![Diagnostic::blocker(
             "E1008",
             format!("failed to write the generated main.rs: {err}"),
+            "free disk space or fix write permissions on the project's `generated` directory, then rerun `rivet build`",
         )]
     })?;
 
@@ -94,6 +103,7 @@ pub fn run_build(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
             vec![Diagnostic::blocker(
                 "E2009",
                 format!("failed to run cargo: {err}"),
+                "make sure `cargo` is installed and on your PATH, then rerun `rivet build`",
             )]
         })?;
 
@@ -101,12 +111,9 @@ pub fn run_build(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
         return Err(vec![Diagnostic::blocker(
             "E2009",
             "the generated crate failed to compile; review the cargo output above",
+            "run `rivet build` again after fixing the handler bodies; report the issue if the generated code is at fault",
         )
-        .located(
-            "<generated>",
-            1,
-            Some("run `rivet build` again after fixing the handler bodies; report the issue if the generated code is at fault"),
-        )]);
+        .located("<generated>", 1)]);
     }
 
     println!("Build succeeded.");
@@ -145,7 +152,7 @@ mod tests {
         let diagnostics = run_build(&app).expect_err("storyless route must fail");
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].error_code, "E2045");
-        assert!(diagnostics[0].suggested_fix.is_some());
+        assert!(!diagnostics[0].suggested_fix.is_empty());
         assert!(!dir.join("generated").exists(), "no crate may be written");
         fs::remove_dir_all(&dir).expect("clean up scratch dir");
     }

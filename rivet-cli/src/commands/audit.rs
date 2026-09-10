@@ -382,16 +382,22 @@ fn build_report(app_file: &Path) -> Result<Report, Vec<Diagnostic>> {
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| ".".into());
 
-    let config = RivetConfig::load(&project_dir)
-        .map_err(|message| vec![Diagnostic::blocker("E1008", message)])?;
+    let config = RivetConfig::load(&project_dir).map_err(|message| {
+        vec![Diagnostic::blocker(
+            "E1008",
+            message,
+            "correct the invalid `rivet.toml` value the message names (or fix the file's permissions), then rerun the command",
+        )]
+    })?;
 
     if !app_file.exists() {
         return Err(vec![
-            Diagnostic::blocker("E1008", format!("{} not found", app_file.display())).located(
-                project_dir.display().to_string(),
-                1,
-                Some("write a `from rivet import api` module, then run `rivet audit`"),
-            ),
+            Diagnostic::blocker(
+                "E1008",
+                format!("{} not found", app_file.display()),
+                "write a `from rivet import api` module, then run `rivet audit`",
+            )
+            .located(project_dir.display().to_string(), 1),
         ]);
     }
 
@@ -488,7 +494,7 @@ def ping() -> dict:
             file: Some("app.py".to_string()),
             line: Some(1),
             column: None,
-            suggested_fix: None,
+            suggested_fix: "resolve the test finding".to_string(),
             ast_path: None,
         }
     }

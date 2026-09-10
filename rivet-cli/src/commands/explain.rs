@@ -59,8 +59,13 @@ pub(crate) async fn explain_async(
     app_file: &Path,
 ) -> Result<Explanation, Vec<Diagnostic>> {
     let project_dir = store::project_dir_for(app_file);
-    let config = RivetConfig::load(&project_dir)
-        .map_err(|message| vec![Diagnostic::blocker("E1008", message)])?;
+    let config = RivetConfig::load(&project_dir).map_err(|message| {
+        vec![Diagnostic::blocker(
+            "E1008",
+            message,
+            "correct the invalid `rivet.toml` value the message names (or fix the file's permissions), then rerun the command",
+        )]
+    })?;
 
     let module = parse_python_file(app_file)?;
     // Run the gauntlet too so the explanation carries the module's
@@ -90,10 +95,22 @@ pub(crate) async fn explain_async(
 
     index_blueprint(&project_dir, &app_label, &routes)
         .await
-        .map_err(|err| Diagnostic::blocker("E3005", err))?;
+        .map_err(|err| {
+            Diagnostic::blocker(
+                "E3005",
+                err,
+                "confirm the project directory is writable, then delete `.rivet/lancedb` and rerun so the vector index rebuilds",
+            )
+        })?;
     let result = search(&project_dir, &app_label, symptom)
         .await
-        .map_err(|err| Diagnostic::blocker("E3005", err))?;
+        .map_err(|err| {
+            Diagnostic::blocker(
+                "E3005",
+                err,
+                "confirm the project directory is writable, then delete `.rivet/lancedb` and rerun so the vector index rebuilds",
+            )
+        })?;
 
     let mut introducer = None;
     let mut distance = None;
@@ -133,6 +150,7 @@ pub(crate) fn explain_data(symptom: &str, app_file: &Path) -> Result<Explanation
             vec![Diagnostic::blocker(
                 "E3005",
                 format!("runtime error: {err}"),
+                "this is an internal runtime failure; rerun the command, and report the issue if it persists",
             )]
         })?;
     runtime.block_on(explain_async(symptom, app_file))

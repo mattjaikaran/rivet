@@ -35,13 +35,12 @@ pub(crate) fn parse_api_decorator(
     }
     let attribute = function.child_by_field_name("attribute");
     let Some(attribute) = attribute else {
-        return Err(
-            Diagnostic::blocker("E1005", "malformed api decorator").located(
-                file,
-                line_of(decorator),
-                None::<String>,
-            ),
-        );
+        return Err(Diagnostic::blocker(
+            "E1005",
+            "malformed api decorator",
+            "write the decorator as @api.<method>(\"path\"), for example @api.get(\"/ping\")",
+        )
+        .located(file, line_of(decorator)));
     };
     let method = match_method(node_text(&attribute, source), decorator, file)?;
 
@@ -54,21 +53,21 @@ pub(crate) fn parse_api_decorator(
             match argument.kind() {
                 "string" => {
                     if path.is_some() {
-                        return Err(
-                            Diagnostic::blocker("E1005", "too many positional arguments").located(
-                                file,
-                                argument_line,
-                                None::<String>,
-                            ),
-                        );
+                        return Err(Diagnostic::blocker(
+                            "E1005",
+                            "too many positional arguments",
+                            "pass a single path string as the first argument",
+                        )
+                        .located(file, argument_line));
                     }
                     let decoded =
                         expr::decode_string(node_text(&argument, source)).map_err(|reason| {
-                            Diagnostic::blocker("E1005", reason).located(
-                                file,
-                                argument_line,
-                                None::<String>,
+                            Diagnostic::blocker(
+                                "E1005",
+                                reason,
+                                "write the path as a plain string literal, for example @api.get(\"/ping\")",
                             )
+                            .located(file, argument_line)
                         })?;
                     path = Some(decoded);
                 }
@@ -80,12 +79,9 @@ pub(crate) fn parse_api_decorator(
                         return Err(Diagnostic::blocker(
                             "E1005",
                             format!("unsupported decorator keyword `{}`", name.unwrap_or("?")),
+                            "the only supported keyword is stories=[...]",
                         )
-                        .located(
-                            file,
-                            argument_line,
-                            Some("the only supported keyword is stories=[...]"),
-                        ));
+                        .located(file, argument_line));
                     }
                     stories = parse_stories(&argument, source, file)?;
                 }
@@ -93,12 +89,9 @@ pub(crate) fn parse_api_decorator(
                     return Err(Diagnostic::blocker(
                         "E1005",
                         format!("unsupported decorator argument `{other}`"),
+                        "the api decorator takes a path string and stories=[...]",
                     )
-                    .located(
-                        file,
-                        argument_line,
-                        Some("the api decorator takes a path string and stories=[...]"),
-                    ));
+                    .located(file, argument_line));
                 }
             }
         }
@@ -107,8 +100,9 @@ pub(crate) fn parse_api_decorator(
         Diagnostic::blocker(
             "E1005",
             "the api decorator requires a path, for example @api.get(\"/ping\")",
+            "add a path string as the decorator's first argument",
         )
-        .located(file, line_of(decorator), None::<String>)
+        .located(file, line_of(decorator))
     })?;
     Ok(Some((method, path, stories)))
 }
@@ -126,12 +120,9 @@ fn match_method(name: &str, decorator: &Node<'_>, file: &str) -> Result<HttpMeth
             return Err(Diagnostic::blocker(
                 "E1005",
                 format!("`api.{other}` is not an HTTP method"),
+                "use one of api.get, api.post, api.put, api.delete, api.patch, api.options, api.head",
             )
-            .located(
-                file,
-                line_of(decorator),
-                Some("use one of api.get, api.post, api.put, api.delete, api.patch, api.options, api.head"),
-            ));
+            .located(file, line_of(decorator)));
         }
     };
     Ok(method)
@@ -140,32 +131,38 @@ fn match_method(name: &str, decorator: &Node<'_>, file: &str) -> Result<HttpMeth
 /// Parse `stories=["US-1", ...]` into a list of story IDs.
 fn parse_stories(keyword: &Node<'_>, source: &str, file: &str) -> Result<Vec<String>, Diagnostic> {
     let value = keyword.child_by_field_name("value").ok_or_else(|| {
-        Diagnostic::blocker("E1005", "stories requires a list value").located(
-            file,
-            line_of(keyword),
-            None::<String>,
+        Diagnostic::blocker(
+            "E1005",
+            "stories requires a list value",
+            "give stories a list of story IDs, for example stories=[\"US-123\"]",
         )
+        .located(file, line_of(keyword))
     })?;
     if value.kind() != "list" {
         return Err(Diagnostic::blocker(
             "E1005",
             "stories must be a list of story IDs, for example stories=[\"US-123\"]",
+            "replace the value with a list of quoted story IDs, for example stories=[\"US-1\", \"US-2\"]",
         )
-        .located(file, line_of(keyword), None::<String>));
+        .located(file, line_of(keyword)));
     }
     let mut stories = Vec::new();
     for element in value.named_children_all() {
         if element.kind() != "string" {
-            return Err(
-                Diagnostic::blocker("E1005", "story IDs must be string literals").located(
-                    file,
-                    line_of(&element),
-                    None::<String>,
-                ),
-            );
+            return Err(Diagnostic::blocker(
+                "E1005",
+                "story IDs must be string literals",
+                "write each story ID as a quoted string, for example \"US-123\"",
+            )
+            .located(file, line_of(&element)));
         }
         let story = expr::decode_string(node_text(&element, source)).map_err(|reason| {
-            Diagnostic::blocker("E1005", reason).located(file, line_of(&element), None::<String>)
+            Diagnostic::blocker(
+                "E1005",
+                reason,
+                "write the story ID as a plain string literal, for example \"US-123\"",
+            )
+            .located(file, line_of(&element))
         })?;
         stories.push(story);
     }
@@ -179,19 +176,17 @@ pub(crate) fn validate_path(path: &str, file: &str, line: usize) -> Result<(), D
         return Err(Diagnostic::blocker(
             "E1005",
             format!("route path `{path}` must start with `/`"),
+            "prefix the route path with `/`, for example \"/ping\"",
         )
-        .located(file, line, None::<String>));
+        .located(file, line));
     }
     if path.contains('{') || path.contains('}') {
         return Err(Diagnostic::blocker(
             "E1004",
             format!("route path `{path}` uses path parameters, which are not supported yet"),
+            "move the parameter into the JSON body for now",
         )
-        .located(
-            file,
-            line,
-            Some("move the parameter into the JSON body for now"),
-        ));
+        .located(file, line));
     }
     Ok(())
 }

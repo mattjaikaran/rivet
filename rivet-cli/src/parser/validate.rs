@@ -23,12 +23,9 @@ pub(crate) fn validate_returns(
                     return Err(Diagnostic::blocker(
                         "E1010",
                         "handler declares `-> None` but returns a value",
+                        "return nothing, or change the return annotation",
                     )
-                    .located(
-                        file,
-                        1,
-                        Some("return nothing, or change the return annotation"),
-                    ));
+                    .located(file, 1));
                 }
             }
             Ok(())
@@ -42,15 +39,17 @@ pub(crate) fn validate_returns(
                         "handler must return a value of type `{}`",
                         type_label(target)
                     ),
+                    "add a return statement to the handler",
                 )
-                .located(file, 1, Some("add a return statement to the handler"))),
+                .located(file, 1)),
             },
             [value] => validate_value(value, target, file, dtos, param_types),
             _ => Err(Diagnostic::blocker(
                 "E1006",
                 "multiple return statements are not supported yet",
+                "collapse the handler to a single return statement",
             )
-            .located(file, 1, None::<String>)),
+            .located(file, 1)),
         },
     }
 }
@@ -91,12 +90,9 @@ fn validate_json_value(
         Expr::Construct { .. } => Err(Diagnostic::blocker(
             "E1010",
             "constructing a DTO inside a `dict` response is not supported yet",
+            "return the DTO directly, or build the dict from literals and request values",
         )
-        .located(
-            file,
-            1,
-            Some("return the DTO directly, or build the dict from literals and request values"),
-        )),
+        .located(file, 1)),
         Expr::Array(items) => items
             .iter()
             .try_for_each(|item| validate_json_value(item, file, params)),
@@ -126,8 +122,9 @@ fn validate_primitive(
             Some(_) => Err(Diagnostic::blocker(
                 "E1010",
                 format!("parameter `{var}` does not match the declared response type"),
+                "return a value of the declared type or change the parameter's annotation",
             )
-            .located(file, 1, None::<String>)),
+            .located(file, 1)),
             None => Err(unknown_parameter(var, file)),
         },
         _ => Err(Diagnostic::blocker(
@@ -136,8 +133,12 @@ fn validate_primitive(
                 "return value does not match the declared type `{}`",
                 type_label(target)
             ),
+            format!(
+                "return a literal or request parameter of type `{}`",
+                type_label(target)
+            ),
         )
-        .located(file, 1, None::<String>)),
+        .located(file, 1)),
     }
 }
 
@@ -149,13 +150,12 @@ fn validate_array(
     dtos: &HashMap<String, StructDefinition>,
 ) -> Result<(), Diagnostic> {
     let TypeRef::Array { element, .. } = target else {
-        return Err(
-            Diagnostic::blocker("E1010", "internal: expected an array target").located(
-                file,
-                1,
-                None::<String>,
-            ),
-        );
+        return Err(Diagnostic::blocker(
+            "E1010",
+            "internal: expected an array target",
+            "report this internal error with the handler source; it is not a user-code issue",
+        )
+        .located(file, 1));
     };
     match value {
         Expr::Array(items) => items
@@ -166,15 +166,17 @@ fn validate_array(
             Some(_) => Err(Diagnostic::blocker(
                 "E1010",
                 format!("parameter `{var}` does not match the declared `list` response type"),
+                "return a list of the declared element type or change the parameter's annotation",
             )
-            .located(file, 1, None::<String>)),
+            .located(file, 1)),
             None => Err(unknown_parameter(var, file)),
         },
         _ => Err(Diagnostic::blocker(
             "E1010",
             "return value does not match the declared `list` response type",
+            "return a list literal of the declared element type or a request parameter typed as that list",
         )
-        .located(file, 1, None::<String>)),
+        .located(file, 1)),
     }
 }
 
@@ -192,15 +194,17 @@ fn validate_construct(
                 Diagnostic::blocker(
                     "E1003",
                     format!("response type `{name}` is not a defined DTO class"),
+                    format!("define `{name}` as an annotation-only class in the app module"),
                 )
-                .located(file, 1, None::<String>)
+                .located(file, 1)
             })?;
             if ty != name {
                 return Err(Diagnostic::blocker(
                     "E1010",
                     format!("handler must return `{name}`, not `{ty}`"),
+                    format!("construct `{name}(field=\"value\")` instead of `{ty}`"),
                 )
-                .located(file, 1, None::<String>));
+                .located(file, 1));
             }
             let field_types: HashMap<&str, &TypeRef> = struct_def
                 .fields
@@ -215,11 +219,7 @@ fn validate_construct(
                     return Err(Diagnostic::blocker(
                         "E1010",
                         format!("`{name}` has no field `{arg_name}`"),
-                    )
-                    .located(
-                        file,
-                        1,
-                        Some(format!(
+                        format!(
                             "available fields: {}",
                             struct_def
                                 .fields
@@ -227,8 +227,9 @@ fn validate_construct(
                                 .map(|f| f.name.as_str())
                                 .collect::<Vec<_>>()
                                 .join(", ")
-                        )),
-                    ));
+                        ),
+                    )
+                    .located(file, 1));
                 };
                 let field_ty = field_types[arg_name.as_str()];
                 let ok = if matches!(arg_value, Expr::Null) {
@@ -240,8 +241,9 @@ fn validate_construct(
                     return Err(Diagnostic::blocker(
                         "E1010",
                         format!("field `{arg_name}` of `{name}` cannot accept this value"),
+                        "pass a value of the field's declared type or remove the argument",
                     )
-                    .located(file, 1, None::<String>));
+                    .located(file, 1));
                 }
             }
             for field in &struct_def.fields {
@@ -249,12 +251,9 @@ fn validate_construct(
                     return Err(Diagnostic::blocker(
                         "E1010",
                         format!("missing required field `{}` for `{name}`", field.name),
+                        "pass the field as a keyword argument",
                     )
-                    .located(
-                        file,
-                        1,
-                        Some("pass the field as a keyword argument"),
-                    ));
+                    .located(file, 1));
                 }
             }
             Ok(())
@@ -264,21 +263,17 @@ fn validate_construct(
             Some(_) => Err(Diagnostic::blocker(
                 "E1010",
                 format!("parameter `{var}` does not have the response type `{name}`"),
+                "return a constructed DTO or change the parameter type",
             )
-            .located(
-                file,
-                1,
-                Some("return a constructed DTO or change the parameter type"),
-            )),
+            .located(file, 1)),
             None => Err(unknown_parameter(var, file)),
         },
-        _ => Err(
-            Diagnostic::blocker("E1010", format!("handler must return a `{name}` value")).located(
-                file,
-                1,
-                Some(format!("construct it: `{name}(field=\"value\")`")),
-            ),
-        ),
+        _ => Err(Diagnostic::blocker(
+            "E1010",
+            format!("handler must return a `{name}` value"),
+            format!("construct it: `{name}(field=\"value\")`"),
+        )
+        .located(file, 1)),
     }
 }
 
@@ -316,8 +311,9 @@ fn arg_value_matches(
                         return Err(Diagnostic::blocker(
                             "E1010",
                             "constructing a DTO inside a list is not supported yet",
+                            "return plain values in the list, or construct the DTO only as the top-level response",
                         )
-                        .located(file, 1, None::<String>));
+                        .located(file, 1));
                     }
                 }
                 Ok(true)
@@ -341,8 +337,12 @@ fn arg_value_matches(
                         "field expects `{}`, not a constructed `{ty}`",
                         type_label(field_ty)
                     ),
+                    format!(
+                        "pass a value of type `{}` for this field",
+                        type_label(field_ty)
+                    ),
                 )
-                .located(file, 1, None::<String>))
+                .located(file, 1))
             }
         }
     }
@@ -352,8 +352,11 @@ fn unknown_parameter(var: &str, file: &str) -> Diagnostic {
     Diagnostic::blocker(
         "E1010",
         format!("`{var}` is not a parameter of this handler"),
+        format!(
+            "refer only to the handler's request parameter or a literal; check the spelling of `{var}`"
+        ),
     )
-    .located(file, 1, None::<String>)
+    .located(file, 1)
 }
 
 /// Reject references to DTO types that are not defined as annotation-only
@@ -372,12 +375,9 @@ pub(crate) fn ensure_known_dtos(
             TypeRef::Named(name) if !dtos.contains_key(name) => Err(Diagnostic::blocker(
                 "E1003",
                 format!("type `{name}` is not a defined DTO class"),
+                "define the DTO as an annotation-only class in the app module",
             )
-            .located(
-                file,
-                1,
-                Some("define the DTO as an annotation-only class in the app module"),
-            )),
+            .located(file, 1)),
             TypeRef::Array { element, .. } => check(element, dtos, file),
             _ => Ok(()),
         }
@@ -423,12 +423,12 @@ pub(crate) fn reachable_structs(
             continue;
         }
         let struct_def = dtos.get(&name).ok_or_else(|| {
-            Diagnostic::blocker("E1003", format!("type `{name}` is not a defined DTO class"))
-                .located(
-                    file,
-                    1,
-                    Some("define the DTO as an annotation-only class in the app module"),
-                )
+            Diagnostic::blocker(
+                "E1003",
+                format!("type `{name}` is not a defined DTO class"),
+                "define the DTO as an annotation-only class in the app module",
+            )
+            .located(file, 1)
         })?;
         reachable.push(name.clone());
         for field in &struct_def.fields {

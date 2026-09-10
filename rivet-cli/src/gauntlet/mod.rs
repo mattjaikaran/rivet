@@ -70,7 +70,7 @@ pub struct Finding {
     pub file: String,
     pub line: usize,
     pub ast_path: Option<String>,
-    pub suggested_fix: Option<String>,
+    pub suggested_fix: String,
 }
 
 impl Finding {
@@ -88,7 +88,7 @@ impl Finding {
             file: file.to_string(),
             line,
             ast_path: None,
-            suggested_fix: None,
+            suggested_fix: String::new(),
         }
     }
 
@@ -98,8 +98,10 @@ impl Finding {
         self
     }
 
+    /// Name the remediation an agent can apply. Every finding must carry
+    /// one; the enforcement tests fail a finding whose fix is empty.
     pub fn with_fix(mut self, fix: impl Into<String>) -> Self {
-        self.suggested_fix = Some(fix.into());
+        self.suggested_fix = fix.into();
         self
     }
 
@@ -228,13 +230,10 @@ def ping() -> dict:
             Severity::Blocker
         }
         fn check(&self, ctx: &Context<'_>) -> Vec<Finding> {
-            vec![Finding::new(
-                "E2999",
-                ctx.severity,
-                "test finding",
-                &ctx.module.file,
-                2,
-            )]
+            vec![
+                Finding::new("E2999", ctx.severity, "test finding", &ctx.module.file, 2)
+                    .with_fix("resolve the violation the stand-in rule reports"),
+            ]
         }
     }
 
@@ -253,6 +252,13 @@ def ping() -> dict:
         assert_eq!(json["severity"], "blocker");
         assert_eq!(json["file"], "app.py");
         assert_eq!(json["line"], 2);
+        assert!(
+            !json["suggested_fix"]
+                .as_str()
+                .unwrap_or_default()
+                .is_empty(),
+            "json must carry a non-empty suggested_fix"
+        );
     }
 
     #[test]
@@ -296,5 +302,50 @@ def b(request: dict) -> dict:
         assert_eq!(lines, vec![4, 8]);
         assert_eq!(diagnostics[0].error_code, "E2043");
         assert_eq!(diagnostics[1].error_code, "E2045");
+    }
+
+    /// A module that trips every rule a real parse can reach: duplicated
+    /// handlers (E2043), an unused helper and DTO (E2044), a storyless
+    /// route (E2045), and a runtime class (E2046). Complexity (E2042)
+    /// needs a branchy handler body, which real parses reject, so its
+    /// fixture stays in the complexity module tests.
+    const EVERY_RULE: &str = r#"
+from rivet import api
+
+def unused(value: int) -> int:
+    return value + 1
+
+class Ghost:
+    id: int
+
+class OrderService:
+    def create(self) -> None:
+        pass
+
+@api.get("/a", stories=["US-1"])
+def alpha() -> dict:
+    return {"kind": "same"}
+
+@api.post("/b", stories=["US-1"])
+def beta() -> dict:
+    return {"kind": "same"}
+
+@api.get("/c")
+def gamma() -> dict:
+    return {"ok": True}
+"#;
+
+    #[test]
+    fn every_rule_diagnostic_carries_a_non_empty_suggested_fix() {
+        let parsed = parse_python_module(EVERY_RULE, "app", "app.py").expect("module must parse");
+        let diagnostics = run_gauntlet(&parsed, &GauntletConfig::default());
+        let codes: Vec<&str> = diagnostics.iter().map(|d| d.error_code.as_str()).collect();
+        for code in ["E2043", "E2044", "E2045", "E2046"] {
+            assert!(codes.contains(&code), "expected {code} in {codes:?}");
+        }
+        assert!(
+            diagnostics.iter().all(|d| !d.suggested_fix.is_empty()),
+            "every diagnostic must carry a non-empty suggested_fix"
+        );
     }
 }

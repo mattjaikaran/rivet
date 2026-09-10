@@ -17,27 +17,30 @@ pub(crate) fn parse_dto_class(
     file: &str,
 ) -> Result<Option<StructDefinition>, Diagnostic> {
     let name_node = node.child_by_field_name("name").ok_or_else(|| {
-        Diagnostic::blocker("E1003", "class without a name").located(
-            file,
-            line_of(node),
-            None::<String>,
+        Diagnostic::blocker(
+            "E1003",
+            "class without a name",
+            "name the class, for example `class Order:`",
         )
+        .located(file, line_of(node))
     })?;
     let name = node_text(&name_node, source);
     if !is_safe_identifier(name) {
         return Err(Diagnostic::blocker(
             "E1011",
             format!("class name `{name}` is not a safe Rust identifier"),
+            "rename the class to a PascalCase Rust-safe identifier, for example `OrderCreate`",
         )
-        .located(file, line_of(node), None::<String>));
+        .located(file, line_of(node)));
     }
 
     let body = node.child_by_field_name("body").ok_or_else(|| {
-        Diagnostic::blocker("E1003", "class without a body").located(
-            file,
-            line_of(node),
-            None::<String>,
+        Diagnostic::blocker(
+            "E1003",
+            "class without a body",
+            "give the class a body of field annotations, for example a class body containing `sku: str`",
         )
+        .located(file, line_of(node))
     })?;
 
     let mut fields = Vec::new();
@@ -54,12 +57,9 @@ pub(crate) fn parse_dto_class(
                             return Err(Diagnostic::blocker(
                                 "E1011",
                                 format!("field name `{field_name}` is not a safe Rust identifier"),
+                                "rename the field to a snake_case Rust-safe identifier",
                             )
-                            .located(
-                                file,
-                                statement_line,
-                                None::<String>,
-                            ));
+                            .located(file, statement_line));
                         }
                         let (type_ref, is_optional) = parse_type_text(
                             node_text(&type_node, source),
@@ -143,8 +143,9 @@ pub(crate) fn parse_type_text(
         return Err(Diagnostic::blocker(
             "E1002",
             format!("union type `{text}` is not supported; use `Optional[...]`"),
+            "rewrite the annotation with `Optional[...]` or a single type, for example `Optional[str]`",
         )
-        .located(file, line, None::<String>));
+        .located(file, line));
     }
 
     // `List[T]` or `List[T, N]` (the DSL drops the `typing.` prefix)
@@ -153,8 +154,9 @@ pub(crate) fn parse_type_text(
             return Err(Diagnostic::blocker(
                 "E1002",
                 format!("nested array type `{text}` is not supported"),
+                "flatten the annotation to a single array level, for example `List[dict]`",
             )
-            .located(file, line, None::<String>));
+            .located(file, line));
         }
         let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
         let (element_text, len) = match parts.as_slice() {
@@ -164,8 +166,9 @@ pub(crate) fn parse_type_text(
                     Diagnostic::blocker(
                         "E1002",
                         format!("array size `{size}` is not a positive integer"),
+                        "give the array a positive integer size, for example `List[float, 768]`",
                     )
-                    .located(file, line, None::<String>)
+                    .located(file, line)
                 })?;
                 (*element, Some(size))
             }
@@ -173,8 +176,9 @@ pub(crate) fn parse_type_text(
                 return Err(Diagnostic::blocker(
                     "E1002",
                     format!("array type `{text}` must name an element type and an optional size"),
+                    "write the array as `List[Element]` or `List[Element, Size]`, for example `List[str]`",
                 )
-                .located(file, line, None::<String>));
+                .located(file, line));
             }
         };
         let (element, _) = parse_type_text(element_text, file, line, true)?;
@@ -206,20 +210,18 @@ pub(crate) fn parse_type_text(
                 return Err(Diagnostic::blocker(
                     "E1011",
                     format!("type name `{other}` is not a safe Rust identifier"),
+                    "reference an existing DTO by a PascalCase name or use a builtin type",
                 )
-                .located(file, line, None::<String>));
+                .located(file, line));
             }
             Ok((TypeRef::Named(other.to_string()), false))
         }
         other => Err(Diagnostic::blocker(
             "E1002",
             format!("type annotation `{other}` is not supported"),
+            "use str, bool, int, float, dict, List[T], Optional[T], or a DTO class",
         )
-        .located(
-            file,
-            line,
-            Some("use str, bool, int, float, dict, List[T], Optional[T], or a DTO class"),
-        )),
+        .located(file, line)),
     }
 }
 
@@ -280,8 +282,15 @@ mod tests {
 
     #[test]
     fn rejects_unknown_shapes() {
-        assert!(parse_type_text("Tuple[int]", "app.py", 1, false).is_err());
-        assert!(parse_type_text("List[List[int]]", "app.py", 1, false).is_err());
-        assert!(parse_type_text("int | str", "app.py", 1, false).is_err());
+        let diagnostic = parse_type_text("Tuple[int]", "app.py", 1, false).expect_err("must fail");
+        assert_eq!(diagnostic.error_code, "E1002");
+        assert!(!diagnostic.suggested_fix.is_empty());
+        let diagnostic =
+            parse_type_text("List[List[int]]", "app.py", 1, false).expect_err("must fail");
+        assert_eq!(diagnostic.error_code, "E1002");
+        assert!(!diagnostic.suggested_fix.is_empty());
+        let diagnostic = parse_type_text("int | str", "app.py", 1, false).expect_err("must fail");
+        assert_eq!(diagnostic.error_code, "E1002");
+        assert!(!diagnostic.suggested_fix.is_empty());
     }
 }
