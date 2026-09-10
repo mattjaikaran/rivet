@@ -20,9 +20,11 @@ use std::path::Path;
 mod assets;
 mod channel;
 mod handler;
+mod main_file;
 mod service;
 
 pub use assets::AssetEmbedding;
+use main_file::{MainBlocks, MainParts, assemble, render_manifest, used_router_fns};
 
 /// A complete, ready-to-write generated crate, with what became of the
 /// project's static assets.
@@ -128,62 +130,6 @@ fn render_plugin_installs(plugins: &[ResolvedPlugin]) -> String {
     format!("\n{}\n", installs.join("\n"))
 }
 
-/// The generated manifest: the axum stack, the transport's dependencies, the
-/// embedded-asset stack, and one dependency per plugin.
-///
-/// The gRPC transport pulls `tonic` without `prost` or generated code, so the
-/// crate builds on a machine with only rustc and cargo.
-fn render_manifest(
-    package_name: &str,
-    plugins: &[ResolvedPlugin],
-    mode: TransportMode,
-    assets: bool,
-) -> String {
-    let transport_section = match mode {
-        TransportMode::InProcess => String::new(),
-        TransportMode::Grpc => String::from(
-            "\n# grpc transport: hand-written tonic service, no protoc and no prost.\ntonic = { version = \"0.12\", default-features = false, features = [\"transport\"] }\ntokio-stream = { version = \"0.1\", features = [\"net\"] }\ntower = \"0.4\"\nhttp = \"1\"\nhttp-body = \"1\"\nbytes = \"1\"\n",
-        ),
-    };
-    let assets_section = if assets {
-        String::from(
-            "\n# The embedded frontend build (pillar 03): `debug-embed` keeps the assets in debug binaries too, so no build reads them from disk, and `compression-br` compresses every response on the wire.\nrust-embed = { version = \"8\", features = [\"mime-guess\", \"debug-embed\"] }\ntower-http = { version = \"0.6\", features = [\"compression-br\"] }\npercent-encoding = \"2\"\n",
-        )
-    } else {
-        String::new()
-    };
-    let mut dependencies = String::new();
-    for plugin in plugins {
-        dependencies.push_str(&plugin.dependency);
-        dependencies.push('\n');
-    }
-    let plugin_section = if plugins.is_empty() {
-        String::new()
-    } else {
-        format!("\n# Plugins, composed at compile time by `rivet build`.\n{dependencies}")
-    };
-    format!(
-        r#"[workspace]
-
-[package]
-name = "{package_name}"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-axum = "0.8"
-tokio = {{ version = "1", features = ["macros", "rt-multi-thread", "net"] }}
-serde = {{ version = "1", features = ["derive"] }}
-serde_json = "1"
-tracing = "0.1"
-tracing-subscriber = {{ version = "0.3", features = ["env-filter"] }}
-{transport_section}{assets_section}{plugin_section}
-[profile.release]
-strip = true
-"#
-    )
-}
-
 /// Stateless render context. DTO structs are already closed over nested
 /// references by the parser, in declaration order.
 struct Codegen<'a> {
@@ -285,121 +231,6 @@ impl<'a> Codegen<'a> {
             .located("<generated>", 1)
         })
     }
-}
-
-/// The rendered blocks of `main.rs`, in the order the file emits them.
-struct MainBlocks<'a> {
-    structs: &'a str,
-    service: &'a str,
-    channel: &'a str,
-    handlers: &'a str,
-    router: &'a str,
-    /// The `mod assets` block, or empty when the app embeds no assets.
-    assets: &'a str,
-}
-
-/// Bundled main-file inputs so `assemble` stays under the argument-count
-/// threshold.
-struct MainParts {
-    routing: String,
-    host: String,
-    port: u16,
-    /// The plugin install calls, already framed with blank lines, or empty
-    /// when the project configures no plugins.
-    plugins: String,
-    /// The statements that start the service channel, or empty in
-    /// `in_process` mode.
-    channel_setup: String,
-    /// The expression the router takes as state.
-    channel_state: String,
-    /// The router's asset-fallback line, or empty when the app embeds no
-    /// assets.
-    assets_fallback: String,
-    /// The compression layer applied after the plugins install, or empty
-    /// when the app embeds no assets.
-    assets_layer: String,
-}
-
-/// The axum routing functions the blueprint actually uses, in first-use
-/// order, so the generated `use` list has no unused imports.
-fn used_router_fns(blueprint: &ServiceBlueprint) -> Vec<&'static str> {
-    let mut seen: Vec<&'static str> = Vec::new();
-    for route in &blueprint.routes {
-        let name = route.method.axum_router_fn();
-        if !seen.contains(&name) {
-            seen.push(name);
-        }
-    }
-    seen
-}
-
-/// Assemble the final `main.rs` from its parts.
-fn assemble(blocks: &MainBlocks<'_>, parts: &MainParts) -> Result<String, Diagnostic> {
-    // The runtime helpers are always emitted and annotated so unused ones do
-    // not warn in the generated crate.
-    let helpers = "\
-#[allow(dead_code)]
-fn json_obj(pairs: Vec<(&'static str, serde_json::Value)>) -> serde_json::Value {
-    let mut map = serde_json::Map::new();
-    for (key, value) in pairs {
-        map.insert(key.to_string(), value);
-    }
-    serde_json::Value::Object(map)
-}
-
-#[allow(dead_code)]
-fn json_number(value: f64) -> serde_json::Value {
-    serde_json::Number::from_f64(value)
-        .map(serde_json::Value::Number)
-        .expect(\"finite float literal\")
-}
-
-/// Map a channel failure to `502` with the reason.
-#[allow(dead_code)]
-fn channel_error(detail: String) -> (axum::http::StatusCode, String) {
-    tracing::error!(error = %detail, \"service channel call failed\");
-    (axum::http::StatusCode::BAD_GATEWAY, detail)
-}
-
-";
-    Ok(format!(
-        r#"// Generated by rivet {version}. Do not edit; run `rivet build` again.
-use axum::{{extract::{{Json, State}}, routing::{{{routing}}}, Router}};
-
-{structs}{helpers}{service}{channel}{handlers}{assets}
-#[tokio::main]
-async fn main() {{
-    tracing_subscriber::fmt::init();
-
-    let host = std::env::var("HOST").unwrap_or_else(|_| "{host}".to_string());
-    let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or({port});
-
-{channel_setup}    let app = Router::new()
-{router}{assets_fallback}
-        .with_state({channel_state});
-{plugins}{assets_layer}    let addr = format!("{{host}}:{{port}}");
-    let listener = tokio::net::TcpListener::bind(&addr).await.expect("failed to bind address");
-    println!("rivet app listening on http://{{addr}}");
-    axum::serve(listener, app).await.expect("server error");
-}}
-"#,
-        version = env!("CARGO_PKG_VERSION"),
-        routing = parts.routing,
-        structs = blocks.structs,
-        helpers = helpers,
-        service = blocks.service,
-        channel = blocks.channel,
-        handlers = blocks.handlers,
-        router = blocks.router,
-        assets = blocks.assets,
-        assets_fallback = parts.assets_fallback,
-        assets_layer = parts.assets_layer,
-        plugins = parts.plugins,
-        channel_setup = parts.channel_setup,
-        channel_state = parts.channel_state,
-        host = parts.host,
-        port = parts.port,
-    ))
 }
 
 impl Emitter<'_> {
