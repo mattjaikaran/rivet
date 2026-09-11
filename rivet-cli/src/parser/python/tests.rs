@@ -382,3 +382,5 @@ fn a_handler_name_the_generated_crate_owns_still_parses() {
         assert_eq!(module.blueprint.routes[0].handler_name, name);
     }
 }
+
+mod borrow;

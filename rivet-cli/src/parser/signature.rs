@@ -1,7 +1,7 @@
 //! Handler signatures: parameters and return annotations.
 
 use crate::diagnostic::Diagnostic;
-use crate::parser::types::parse_type_text;
+use crate::parser::annotation::parse_type_text;
 use crate::parser::{NamedChildren, is_safe_identifier, line_of, node_text};
 use rivet_core::ir::{RequestSpec, ResponseSpec, TypeRef};
 use std::collections::HashMap;
@@ -64,9 +64,16 @@ pub(crate) fn parse_parameters(
                     )
                     .located(file, parameter_line));
                 }
-                let (type_ref, is_optional) =
-                    parse_type_text(node_text(&ty, source), file, parameter_line, false)?;
-                if is_optional {
+                let parsed = parse_type_text(node_text(&ty, source), file, parameter_line, false)?;
+                if parsed.is_borrowed {
+                    return Err(Diagnostic::blocker(
+                        "E1014",
+                        format!("request parameter `{name}` cannot borrow from the request body"),
+                        "declare a DTO that holds the borrowed field, then take that class as the parameter, for example `request: Note`",
+                    )
+                    .located(file, parameter_line));
+                }
+                if parsed.is_optional {
                     return Err(Diagnostic::blocker(
                         "E1004",
                         format!("optional request parameter `{name}` is not supported; a missing body cannot deserialize"),
@@ -74,7 +81,7 @@ pub(crate) fn parse_parameters(
                     )
                     .located(file, parameter_line));
                 }
-                params.push((name.to_string(), type_ref));
+                params.push((name.to_string(), parsed.type_ref));
             }
             "identifier" => {
                 let name = node_text(&parameter, source);
@@ -140,8 +147,16 @@ pub(crate) fn parse_return_type(
     if annotation == "None" {
         return Ok(ResponseSpec::None);
     }
-    let (type_ref, is_optional) = parse_type_text(annotation, file, line_of(&return_type), false)?;
-    if is_optional {
+    let parsed = parse_type_text(annotation, file, line_of(&return_type), false)?;
+    if parsed.is_borrowed {
+        return Err(Diagnostic::blocker(
+            "E1014",
+            "a route cannot return a borrowed value",
+            "return a DTO whose text fields are owned `str` values",
+        )
+        .located(file, line_of(&return_type)));
+    }
+    if parsed.is_optional {
         return Err(Diagnostic::blocker(
             "E1004",
             "an optional response body is not supported; return the plain type",
@@ -149,7 +164,7 @@ pub(crate) fn parse_return_type(
         )
         .located(file, line_of(&return_type)));
     }
-    Ok(ResponseSpec::Json(type_ref))
+    Ok(ResponseSpec::Json(parsed.type_ref))
 }
 
 pub(crate) fn handler_display_name(function: &Node<'_>, source: &str) -> String {

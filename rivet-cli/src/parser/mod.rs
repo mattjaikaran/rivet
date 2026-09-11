@@ -8,6 +8,7 @@
 //! Shared node helpers used by every front end live here; grammar-specific
 //! parsing lives in the per-language modules.
 
+pub(crate) mod annotation;
 mod body;
 pub(crate) mod decorator;
 mod expr;

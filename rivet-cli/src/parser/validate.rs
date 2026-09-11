@@ -5,7 +5,7 @@
 //! fields, and that the blueprint carries every DTO a route mentions.
 
 use crate::diagnostic::Diagnostic;
-use crate::parser::types::type_label;
+use crate::parser::annotation::type_label;
 use rivet_core::ir::{Expr, RequestSpec, ResponseSpec, RouteDefinition, StructDefinition, TypeRef};
 use std::collections::HashMap;
 
