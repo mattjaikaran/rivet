@@ -1,9 +1,9 @@
 //! The one HTTP call `rivet sync` makes per request.
 //!
-//! Both providers describe a request as a plain value ([`Request`]), so
-//! request assembly is a pure function a unit test pins offline. This module
-//! turns that value into one reqwest call; only [`send`] touches the
-//! network.
+//! Both providers describe a request as a plain value ([`Request`]) and
+//! return a page ([`Page`]), so request assembly and response parsing are
+//! pure functions a unit test pins offline. This module turns the request
+//! value into one reqwest call; only [`send`] touches the network.
 
 use std::time::Duration;
 
@@ -61,6 +61,19 @@ impl Request {
     }
 }
 
+/// One page of tracker issues, and the token that reads the next page.
+///
+/// `next` is `None` on the last page, so the caller reads the tracker to the
+/// end instead of treating a full page as the whole tracker — which would
+/// report every later story as missing and let `--apply` file duplicates.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct Page {
+    /// The issues on this page.
+    pub(super) issues: Vec<super::issue::Issue>,
+    /// The token that reads the next page, when one exists.
+    pub(super) next: Option<String>,
+}
+
 /// Send one request and return the response body.
 ///
 /// The failure is a plain message: the caller decides whether the failed
@@ -100,4 +113,23 @@ pub(super) async fn send(request: &Request) -> Result<String, String> {
         return Err(format!("the tracker answered {}: {body}", status.as_u16()));
     }
     Ok(body)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_request_builder_carries_its_method_url_and_headers() {
+        let request = Request::post("https://example.test/graphql".to_string(), "{}".to_string())
+            .authorization("key");
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.authorization.as_deref(), Some("key"));
+        assert!(request.bearer.is_none());
+
+        let request = Request::get("https://example.test/x".to_string()).bearer("token");
+        assert_eq!(request.method, "GET");
+        assert_eq!(request.bearer.as_deref(), Some("token"));
+        assert!(request.body.is_none());
+    }
 }

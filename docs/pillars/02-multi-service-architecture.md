@@ -147,10 +147,14 @@ Registration never stops the app:
   answer within five seconds prints a warning, and the app serves anyway.
   Every request carries that deadline, connect included, so a registry that
   accepts a connection and never answers cannot hold startup.
-- `rivet build` rejects a service name that cannot go into a registry path
-  or key — an empty name, a name longer than 128 characters, or one that
-  holds a character outside letters, digits, dot, dash, and underscore —
-  with `E2005` and a fix.
+- A registry URL that does not start with `http://` is a runtime warning
+  for the same reason: the client reports the scheme it cannot speak and
+  the app continues without registering.
+
+The build rejects only a configuration it cannot generate for: `rivet build`
+fails with `E2005` when the service name cannot go into a registry path or
+key — an empty name, a name longer than 128 characters, or one holding a
+character outside letters, digits, dot, dash, and underscore.
 
 ## Scope
 

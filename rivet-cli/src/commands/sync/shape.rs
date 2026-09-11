@@ -5,11 +5,14 @@
 //! shape out of the captured payload itself: a top-level `issues` array is a
 //! Jira search answer, and a top-level `data.issues.nodes` array is a Linear
 //! GraphQL answer.
+//!
+//! A captured payload is one page. It is a fixture for the diff, so it does
+//! not page: use `--from` to exercise the diff, and the configured tracker to
+//! read a whole project.
 
 use super::config::e3020;
-use super::issue::Issue;
+use super::http::Page;
 use crate::diagnostic::Diagnostic;
-use serde_json::Value;
 
 /// The tracker a payload belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,20 +26,24 @@ pub(super) enum Shape {
 impl Shape {
     /// The shape a captured payload has, from its top-level fields.
     pub(super) fn detect(payload: &str) -> Result<Shape, Diagnostic> {
-        let answer: Value = serde_json::from_str(payload).map_err(|err| {
+        let answer: serde_json::Value = serde_json::from_str(payload).map_err(|err| {
             e3020(
                 format!("the captured tracker payload is not JSON: {err}"),
                 "point --from at a tracker's JSON response, or set RIVET_JIRA_* or RIVET_LINEAR_* and drop --from",
             )
         })?;
-        if answer.get("issues").and_then(Value::as_array).is_some() {
+        if answer
+            .get("issues")
+            .and_then(serde_json::Value::as_array)
+            .is_some()
+        {
             return Ok(Shape::Jira);
         }
         if answer
             .get("data")
             .and_then(|data| data.get("issues"))
             .and_then(|issues| issues.get("nodes"))
-            .and_then(Value::as_array)
+            .and_then(serde_json::Value::as_array)
             .is_some()
         {
             return Ok(Shape::Linear);
@@ -47,11 +54,11 @@ impl Shape {
         ))
     }
 
-    /// Parse a payload of this shape into the issues the diff compares.
-    pub(super) fn parse(self, payload: &str) -> Result<Vec<Issue>, Diagnostic> {
+    /// Parse one payload of this shape.
+    pub(super) fn parse(self, payload: &str) -> Result<Page, Diagnostic> {
         match self {
-            Shape::Jira => super::jira::parse_issues(payload),
-            Shape::Linear => super::linear::parse_issues(payload),
+            Shape::Jira => super::jira::parse_page(payload),
+            Shape::Linear => super::linear::parse_page(payload),
         }
     }
 }
@@ -85,11 +92,11 @@ mod tests {
     #[test]
     fn the_detected_shape_parses_its_own_payload() {
         let payload = r#"{"data":{"issues":{"nodes":[{"identifier":"ORD-1","title":"US-001: GET /ping","state":{"type":"started"}}]}}}"#;
-        let issues = Shape::detect(payload)
+        let page = Shape::detect(payload)
             .expect("detect")
             .parse(payload)
             .expect("parse");
-        assert_eq!(issues.len(), 1);
-        assert_eq!(issues[0].title, "US-001: GET /ping");
+        assert_eq!(page.issues.len(), 1);
+        assert_eq!(page.issues[0].title, "US-001: GET /ping");
     }
 }

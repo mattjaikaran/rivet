@@ -3,9 +3,10 @@
 //! `rivet sync` binds a tracker issue to a story through the issue title:
 //! the title starts with the story ID, then a colon, then the routes the
 //! story covers — `US-001: GET /ping`. [`title_for`] builds that title, and
-//! [`key_of`] reads the story ID back out of a title, so `--apply` writes an
-//! issue the next run recognizes.
+//! [`title_key`] reads the story ID back out of a title, so `--apply` writes
+//! an issue the next run recognizes.
 
+use crate::diagnostic::Diagnostic;
 use rivet_core::ir::ServiceBlueprint;
 
 /// One story the blueprint declares, with the title its issue carries.
@@ -20,8 +21,12 @@ pub(super) struct Story {
 /// Every story the blueprint declares, in first-use order, keyed by ID.
 ///
 /// A story that several routes share covers all of them, so one issue tracks
-/// the whole story.
-pub(super) fn from_blueprint(blueprint: &ServiceBlueprint) -> Vec<Story> {
+/// the whole story. Returns [`E3023`](Diagnostic::blocker) when the blueprint
+/// declares an ID the title format cannot carry.
+pub(super) fn from_blueprint(
+    blueprint: &ServiceBlueprint,
+    app_file: &std::path::Path,
+) -> Result<Vec<Story>, Diagnostic> {
     let mut ids: Vec<String> = Vec::new();
     for route in &blueprint.routes {
         for story in &route.stories {
@@ -30,12 +35,18 @@ pub(super) fn from_blueprint(blueprint: &ServiceBlueprint) -> Vec<Story> {
             }
         }
     }
-    ids.into_iter()
+    for id in &ids {
+        if let Some(problem) = id_problem(id) {
+            return Err(id_diagnostic(id, problem, app_file));
+        }
+    }
+    Ok(ids
+        .into_iter()
         .map(|id| {
             let title = title_for(&id, blueprint);
             Story { id, title }
         })
-        .collect()
+        .collect())
 }
 
 /// The issue title a story expects: the ID, then the routes it covers.
@@ -50,27 +61,60 @@ fn title_for(id: &str, blueprint: &ServiceBlueprint) -> String {
     format!("{id}: {}", routes.join("; "))
 }
 
-/// The story ID an issue title names, when the title carries one.
+/// The story ID an issue title names: the text before the first colon.
 ///
-/// The ID is the text before the first colon, and only an ID-shaped token
-/// counts, so a tracker full of ordinary issues contributes no orphans.
-pub(super) fn key_of(title: &str) -> Option<&str> {
+/// This is the exact binding: a story is tracked when this equals its ID, so
+/// an ID the shape heuristic below would reject still round-trips through the
+/// title `--apply` writes.
+pub(super) fn title_key(title: &str) -> Option<&str> {
     let (key, _) = title.split_once(':')?;
     let key = key.trim();
-    if key.is_empty() || key.len() > 64 {
+    (!key.is_empty()).then_some(key)
+}
+
+/// The story ID an issue title names, when the title is shaped like one.
+///
+/// Only an ID-shaped prefix counts, so an unrelated tracker issue such as
+/// `Fix the flaky test: again` never reports as an orphan. Tracking uses
+/// [`title_key`] instead, so this narrow check never hides a declared story.
+pub(super) fn key_of(title: &str) -> Option<&str> {
+    let key = title_key(title)?;
+    if key.len() > 64 {
         return None;
     }
     let shaped = key
         .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
     let has_letter = key.chars().any(|c| c.is_ascii_alphabetic());
     (shaped && has_letter).then_some(key)
+}
+
+/// The reason a story ID cannot go into an issue title.
+fn id_problem(id: &str) -> Option<&'static str> {
+    if id.trim() != id || id.is_empty() {
+        return Some("it is empty or has leading or trailing whitespace");
+    }
+    if id.contains(':') {
+        return Some("it holds a colon");
+    }
+    None
+}
+
+/// The `E3023` diagnostic for a story ID the title format cannot carry.
+fn id_diagnostic(id: &str, problem: &str, app_file: &std::path::Path) -> Diagnostic {
+    Diagnostic::blocker(
+        "E3023",
+        format!("`{id}` is not a usable story ID: {problem}"),
+        "rename the story in the route's `stories=[...]` decorator, because the issue title binds to a story through the text before its first colon",
+    )
+    .located(app_file.display().to_string(), 1)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use rivet_core::ir::{Expr, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, TypeRef};
+    use std::path::Path;
 
     fn route(method: HttpMethod, path: &str, stories: &[&str]) -> RouteDefinition {
         RouteDefinition {
@@ -100,7 +144,7 @@ mod tests {
             route(HttpMethod::Get, "/ping", &["US-002", "US-001"]),
             route(HttpMethod::Post, "/echo", &["US-002"]),
         ]);
-        let stories = from_blueprint(&blueprint);
+        let stories = from_blueprint(&blueprint, Path::new("app.py")).expect("the stories bind");
         assert_eq!(stories.len(), 2);
         assert_eq!(stories[0].id, "US-002");
         assert_eq!(stories[1].id, "US-001");
@@ -112,14 +156,37 @@ mod tests {
             route(HttpMethod::Post, "/echo", &["US-002"]),
             route(HttpMethod::Get, "/ping", &["US-002"]),
         ]);
-        let stories = from_blueprint(&blueprint);
+        let stories = from_blueprint(&blueprint, Path::new("app.py")).expect("the stories bind");
         assert_eq!(stories[0].title, "US-002: GET /ping; POST /echo");
     }
 
     #[test]
-    fn a_title_round_trips_through_the_key() {
-        let title = "US-001: GET /ping";
-        assert_eq!(key_of(title), Some("US-001"));
+    fn a_generated_title_reads_back_as_its_own_story() {
+        let blueprint = blueprint(vec![route(HttpMethod::Post, "/orders", &["123", "US.1"])]);
+        let stories = from_blueprint(&blueprint, Path::new("app.py")).expect("the stories bind");
+        for story in &stories {
+            assert_eq!(
+                title_key(&story.title),
+                Some(story.id.as_str()),
+                "every generated title round-trips: {story:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_story_id_the_title_cannot_carry_is_rejected() {
+        let blueprint = blueprint(vec![route(HttpMethod::Get, "/ping", &["US:1"])]);
+        let error = from_blueprint(&blueprint, Path::new("app.py"))
+            .expect_err("a colon cannot go into a title");
+        assert_eq!(error.error_code, "E3023");
+        assert!(error.message.contains("US:1"));
+        assert!(!error.suggested_fix.is_empty());
+    }
+
+    #[test]
+    fn only_an_id_shaped_prefix_marks_an_orphan() {
+        assert_eq!(key_of("US-001: GET /ping"), Some("US-001"));
+        assert_eq!(key_of("US.1: GET /ping"), Some("US.1"));
         assert_eq!(
             key_of("ORD-7"),
             None,
@@ -127,6 +194,7 @@ mod tests {
         );
         assert_eq!(key_of("Fix the flaky test: again"), None, "not ID-shaped");
         assert_eq!(key_of(": no key"), None);
-        assert_eq!(key_of("US-001: GET /ping; POST /echo"), Some("US-001"));
+        assert_eq!(key_of("123: digits only"), None, "no letter");
+        assert_eq!(title_key("123: digits only"), Some("123"));
     }
 }

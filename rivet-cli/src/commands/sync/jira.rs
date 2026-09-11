@@ -1,45 +1,56 @@
 //! The Jira REST API v3 provider for `rivet sync`.
 //!
-//! Two requests, both built by pure functions so a unit test pins the shape
+//! Three requests, all built by pure functions so a unit test pins the shape
 //! without a network:
 //!
-//! - [`issues_request`] — `GET /rest/api/3/search` over the configured
-//!   project, asking for the fields the diff needs.
+//! - [`issues_request`] — `GET /rest/api/3/search/jql`, the enhanced search
+//!   endpoint. The classic `/rest/api/3/search` is marked "Currently being
+//!   removed" in the REST v3 reference, so this client does not use it.
 //! - [`create_request`] — `POST /rest/api/3/issue` for one missing story.
 //!
-//! [`parse_issues`] reads the search answer. Jira reports an issue as closed
-//! when its status category is `done`, which is stable across the status
-//! names a project chooses.
+//! [`parse_page`] reads the search answer. It pages on `nextPageToken`, not
+//! on `isLast`: Atlassian's own API reference documents the token, and the
+//! endpoint's `isLast` flag is reported as unreliable on real sites.
+//!
+//! Jira reports an issue as closed when its status category is `done`, which
+//! is stable across the status names a project chooses.
 
 use super::config::JiraConfig;
 use super::config::e3020;
 use super::http::Request;
 use super::issue::Issue;
+use super::story::Story;
 use crate::diagnostic::Diagnostic;
 use serde_json::{Map, Value};
 
 /// The fields the search asks for.
-const FIELDS: &str = "summary,status,labels";
+const FIELDS: &str = "summary,status";
 
 /// How many issues one search page returns.
+///
+/// The enhanced search endpoint caps this below the documented maximum in
+/// practice, so the client pages rather than trusting one big request.
 const PAGE_SIZE: u32 = 100;
 
 /// The issue type a created issue uses.
 const ISSUE_TYPE: &str = "Task";
 
-/// The request that lists the project's issues.
-pub(super) fn issues_request(cfg: &JiraConfig) -> Request {
+/// The request that lists the project's issues, from one page on.
+pub(super) fn issues_request(cfg: &JiraConfig, page_token: Option<&str>) -> Request {
     let jql = format!("project = \"{}\" ORDER BY key ASC", cfg.project);
-    let url = format!(
-        "{}/rest/api/3/search?jql={}&maxResults={PAGE_SIZE}&fields={FIELDS}",
+    let mut url = format!(
+        "{}/rest/api/3/search/jql?jql={}&maxResults={PAGE_SIZE}&fields={FIELDS}",
         cfg.base_url.trim_end_matches('/'),
         encode_query(&jql),
     );
+    if let Some(token) = page_token {
+        url.push_str(&format!("&nextPageToken={}", encode_query(token)));
+    }
     Request::get(url).bearer(&cfg.token)
 }
 
 /// The request that creates one issue for a missing story.
-pub(super) fn create_request(cfg: &JiraConfig, story: &super::story::Story) -> Request {
+pub(super) fn create_request(cfg: &JiraConfig, story: &Story) -> Request {
     let mut fields = Map::new();
     fields.insert("summary".into(), Value::String(story.title.clone()));
     let mut project = Map::new();
@@ -58,8 +69,8 @@ pub(super) fn create_request(cfg: &JiraConfig, story: &super::story::Story) -> R
     .bearer(&cfg.token)
 }
 
-/// Parse the search answer into the issues the diff compares.
-pub(super) fn parse_issues(payload: &str) -> Result<Vec<Issue>, Diagnostic> {
+/// Parse one search page: its issues and the token that reads the next page.
+pub(super) fn parse_page(payload: &str) -> Result<super::http::Page, Diagnostic> {
     let answer: Value = serde_json::from_str(payload).map_err(|err| {
         e3020(
             format!("the Jira answer is not JSON: {err}"),
@@ -72,7 +83,7 @@ pub(super) fn parse_issues(payload: &str) -> Result<Vec<Issue>, Diagnostic> {
             "check RIVET_JIRA_BASE_URL and RIVET_JIRA_PROJECT, then run rivet sync again; with --from, point it at a Jira search response",
         )
     })?;
-    Ok(issues
+    let parsed = issues
         .iter()
         .map(|issue| {
             let fields = issue.get("fields").unwrap_or(&Value::Null);
@@ -83,7 +94,13 @@ pub(super) fn parse_issues(payload: &str) -> Result<Vec<Issue>, Diagnostic> {
             }
         })
         .filter(|issue| !issue.key.is_empty())
-        .collect())
+        .collect();
+    // An empty token means the page is the last one.
+    let next = text(answer.get("nextPageToken"));
+    Ok(super::http::Page {
+        issues: parsed,
+        next: (!next.is_empty()).then_some(next),
+    })
 }
 
 /// The key of the created issue in a create answer.
@@ -121,7 +138,7 @@ fn text(value: Option<&Value>) -> String {
         .to_string()
 }
 
-/// Percent-encode a JQL query: everything outside the unreserved set.
+/// Percent-encode a query parameter: everything outside the unreserved set.
 fn encode_query(query: &str) -> String {
     let mut out = String::with_capacity(query.len());
     for byte in query.bytes() {
@@ -134,31 +151,22 @@ fn encode_query(query: &str) -> String {
     out
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
+    use super::super::story::Story;
     use super::*;
-    use crate::commands::sync::story::Story;
 
-    /// A captured Jira search response.
+    /// A captured Jira enhanced-search response.
     const CAPTURED: &str = r#"{
-      "startAt": 0,
-      "maxResults": 100,
-      "total": 3,
       "issues": [
         {
           "key": "ORD-1",
           "fields": {
             "summary": "US-001: GET /ping",
-            "labels": ["rivet"],
             "status": { "name": "In Progress", "statusCategory": { "key": "indeterminate" } }
           }
         },
         {
-          "id": "10002",
           "key": "ORD-2",
           "fields": {
             "summary": "US-002: POST /echo",
@@ -166,14 +174,14 @@ mod tests {
           }
         },
         {
-          "id": "10003",
           "key": "ORD-3",
           "fields": {
             "summary": "Update the docs",
             "status": { "name": "To Do", "statusCategory": { "key": "new" } }
           }
         }
-      ]
+      ],
+      "isLast": true
     }"#;
 
     fn config() -> JiraConfig {
@@ -185,14 +193,19 @@ mod tests {
     }
 
     #[test]
-    fn the_search_request_names_the_project_and_asks_for_the_fields() {
-        let request = issues_request(&config());
+    fn the_search_request_uses_the_enhanced_endpoint_and_asks_for_the_fields() {
+        let request = issues_request(&config(), None);
         assert_eq!(request.method, "GET");
         assert!(
             request
                 .url
-                .starts_with("https://example.atlassian.net/rest/api/3/search?"),
+                .starts_with("https://example.atlassian.net/rest/api/3/search/jql?"),
             "{}",
+            request.url
+        );
+        assert!(
+            !request.url.contains("/rest/api/3/search?"),
+            "the classic search endpoint is being removed: {}",
             request.url
         );
         assert!(
@@ -200,9 +213,24 @@ mod tests {
             "the JQL is percent-encoded: {}",
             request.url
         );
-        assert!(request.url.contains("fields=summary,status,labels"));
+        assert!(
+            request.url.contains("fields=summary,status"),
+            "{}",
+            request.url
+        );
+        assert!(!request.url.contains("nextPageToken"));
         assert_eq!(request.bearer.as_deref(), Some("secret"));
         assert!(request.body.is_none());
+    }
+
+    #[test]
+    fn the_search_request_carries_the_page_token() {
+        let request = issues_request(&config(), Some("tok/en+1"));
+        assert!(
+            request.url.contains("&nextPageToken=tok%2Fen%2B1"),
+            "the token is percent-encoded: {}",
+            request.url
+        );
     }
 
     #[test]
@@ -228,24 +256,32 @@ mod tests {
     }
 
     #[test]
-    fn the_captured_answer_parses_into_issues() {
-        let issues = parse_issues(CAPTURED).expect("the captured answer parses");
-        assert_eq!(issues.len(), 3);
-        assert_eq!(issues[0].key, "ORD-1");
-        assert_eq!(issues[0].title, "US-001: GET /ping");
-        assert!(!issues[0].closed, "an indeterminate category is open");
-        assert!(issues[1].closed, "a done category is closed");
-        assert!(!issues[2].closed);
+    fn the_captured_page_parses_into_issues() {
+        let page = parse_page(CAPTURED).expect("the captured answer parses");
+        assert_eq!(page.issues.len(), 3);
+        assert_eq!(page.issues[0].key, "ORD-1");
+        assert_eq!(page.issues[0].title, "US-001: GET /ping");
+        assert!(!page.issues[0].closed, "an indeterminate category is open");
+        assert!(page.issues[1].closed, "a done category is closed");
+        assert!(!page.issues[2].closed);
+        assert!(page.next.is_none(), "an absent token ends the search");
+    }
+
+    #[test]
+    fn a_page_token_asks_for_the_next_page() {
+        let payload = r#"{"issues":[],"nextPageToken":"abc123"}"#;
+        let page = parse_page(payload).expect("the page parses");
+        assert_eq!(page.next.as_deref(), Some("abc123"));
     }
 
     #[test]
     fn an_answer_without_issues_is_reported_with_a_fix() {
-        let error = parse_issues(r#"{"errorMessages":["bad token"]}"#)
+        let error = parse_page(r#"{"errorMessages":["bad token"]}"#)
             .expect_err("a missing issues array is an error");
         assert_eq!(error.error_code, "E3020");
         assert!(!error.suggested_fix.is_empty());
 
-        let error = parse_issues("not json").expect_err("a non-JSON body is an error");
+        let error = parse_page("not json").expect_err("a non-JSON body is an error");
         assert_eq!(error.error_code, "E3020");
     }
 

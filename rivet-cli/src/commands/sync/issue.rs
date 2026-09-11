@@ -5,8 +5,8 @@
 //!
 //! - **missing** — the blueprint declares a story the tracker has no issue
 //!   for. `--apply` creates those issues.
-//! - **orphan** — the tracker holds an issue for a story the blueprint no
-//!   longer declares.
+//! - **orphan** — the tracker holds an ID-shaped issue for a story the
+//!   blueprint no longer declares.
 //! - **title drift** — the issue title no longer matches the routes the
 //!   blueprint serves for that story.
 //! - **state drift** — the tracker closed the issue while the blueprint
@@ -15,7 +15,7 @@
 //! The computation is pure: it takes the stories and the issues and returns
 //! the diff, so a captured tracker payload exercises it offline.
 
-use super::story::{Story, key_of};
+use super::story::{Story, key_of, title_key};
 
 /// One issue as the tracker reported it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,6 +112,14 @@ impl Diff {
             self.drifted.len()
         )
     }
+
+    /// Record that `--apply` created an issue for every missing story.
+    ///
+    /// The created issue carries exactly the derived title, so it matches its
+    /// story and contributes no drift: the stories are no longer missing.
+    pub(super) fn created(&mut self) {
+        self.missing.clear();
+    }
 }
 
 /// Compute the diff between the stories and the issues.
@@ -119,11 +127,16 @@ pub(super) fn compute(stories: &[Story], issues: &[Issue]) -> Diff {
     let mut diff = Diff::default();
 
     for issue in issues {
-        let Some(key) = key_of(&issue.title) else {
-            continue;
-        };
-        let Some(story) = stories.iter().find(|story| story.id == key) else {
-            diff.orphan.push(issue.clone());
+        // Tracking binds on the exact story ID, so an ID the orphan
+        // heuristic ignores still matches its story.
+        let tracked =
+            title_key(&issue.title).and_then(|key| stories.iter().find(|story| story.id == key));
+        let Some(story) = tracked else {
+            // An issue that names no story is only an orphan when it is
+            // shaped like a story reference; anything else is unrelated.
+            if key_of(&issue.title).is_some() {
+                diff.orphan.push(issue.clone());
+            }
             continue;
         };
         if issue.title.trim() != story.title {
@@ -153,7 +166,7 @@ pub(super) fn compute(stories: &[Story], issues: &[Issue]) -> Diff {
     for story in stories {
         let tracked = issues
             .iter()
-            .any(|issue| key_of(&issue.title) == Some(story.id.as_str()));
+            .any(|issue| title_key(&issue.title) == Some(story.id.as_str()));
         if !tracked {
             diff.missing.push(story.clone());
         }
@@ -257,5 +270,37 @@ mod tests {
         assert_eq!(diff.drifted[0].kind, DriftKind::Title);
         assert_eq!(diff.drifted[1].kind, DriftKind::State);
         assert_eq!(diff.summary(), "0 missing, 0 orphan, 2 drifted");
+    }
+
+    #[test]
+    fn a_story_id_outside_the_orphan_shape_is_still_tracked() {
+        // `123` and `US.1` are legal story IDs, and the titles `--apply`
+        // writes must bind them, not report them missing again.
+        let stories = vec![
+            story("123", "123: POST /orders"),
+            story("US.1", "US.1: GET /ping"),
+        ];
+        let issues = vec![
+            issue("ORD-1", "123: POST /orders", false),
+            issue("ORD-2", "US.1: GET /ping", false),
+        ];
+        let diff = compute(&stories, &issues);
+        assert!(diff.is_empty(), "{diff:?}");
+
+        // Against an unrelated tracker, only the ID-shaped title reports:
+        // the digits-only one is invisible to the orphan heuristic.
+        let diff = compute(&[], &issues);
+        assert_eq!(diff.orphan.len(), 1, "{diff:?}");
+        assert_eq!(diff.orphan[0].title, "US.1: GET /ping");
+    }
+
+    #[test]
+    fn created_issues_clear_the_missing_list() {
+        let stories = vec![story("US-001", "US-001: GET /ping")];
+        let mut diff = compute(&stories, &[]);
+        assert_eq!(diff.missing.len(), 1);
+        diff.created();
+        assert!(diff.is_empty(), "{diff:?}");
+        assert_eq!(diff.summary(), "the blueprint and the tracker agree");
     }
 }

@@ -16,7 +16,8 @@
 //! parser, so the offline path needs no secrets at all.
 //!
 //! Codes: E3019 tracker configuration, E3020 tracker request or answer,
-//! E3021 tracker write, E3022 the diff the run could not reconcile.
+//! E3021 tracker write, E3022 the diff the run could not reconcile, E3023 a
+//! story ID the issue title cannot carry.
 
 use crate::diagnostic::Diagnostic;
 use crate::parser::python::parse_python_file;
@@ -34,9 +35,17 @@ mod story;
 mod tests;
 
 use config::{Provider, read_payload};
-use issue::Diff;
+use http::Page;
+use issue::{Diff, Issue};
 use shape::Shape;
 use story::Story;
+
+/// The most pages one tracker read may take.
+///
+/// The cap bounds a tracker whose paging never converges: a repeated token
+/// and an alternating cycle both stop here, instead of growing the issue
+/// list without bound.
+const MAX_PAGES: usize = 64;
 
 /// What the diff means for the command's exit code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,14 +109,13 @@ fn source(
 /// outcome.
 fn run_with(source: Source, app_file: &Path, apply: bool) -> Result<(Outcome, Diff), Diagnostic> {
     let module = parse_python_file(app_file)?;
-    let stories = story::from_blueprint(&module.blueprint);
+    let stories = story::from_blueprint(&module.blueprint, app_file)?;
 
-    let (shape, payload, tracker) = match &source {
-        Source::Tracker(provider) => (provider.shape(), fetch(provider)?, Some(provider)),
-        Source::Captured { shape, payload } => (*shape, payload.clone(), None),
+    let (issues, tracker) = match &source {
+        Source::Tracker(provider) => (read_tracker(provider)?, Some(provider)),
+        Source::Captured { shape, payload } => (shape.parse(payload)?.issues, None),
     };
-    let issues = shape.parse(&payload)?;
-    let diff = issue::compute(&stories, &issues);
+    let mut diff = issue::compute(&stories, &issues);
 
     println!(
         "rivet sync: {} stories in the blueprint, {} issues in the tracker",
@@ -117,7 +125,7 @@ fn run_with(source: Source, app_file: &Path, apply: bool) -> Result<(Outcome, Di
     for line in diff.lines() {
         println!("{line}");
     }
-    if apply {
+    if apply && !diff.missing.is_empty() {
         let tracker = tracker.ok_or_else(|| {
             config::e3019(
                 "a captured payload cannot be written to the tracker",
@@ -125,6 +133,9 @@ fn run_with(source: Source, app_file: &Path, apply: bool) -> Result<(Outcome, Di
             )
         })?;
         create_missing(tracker, &diff.missing)?;
+        // Every created issue carries exactly the derived title, so the
+        // stories it covers are no longer missing.
+        diff.created();
     }
     println!("diff: {}", diff.summary());
 
@@ -136,12 +147,52 @@ fn run_with(source: Source, app_file: &Path, apply: bool) -> Result<(Outcome, Di
     Ok((outcome, diff))
 }
 
-/// The issues payload from the tracker itself.
-fn fetch(provider: &Provider) -> Result<String, Diagnostic> {
-    let request = match provider {
-        Provider::Jira(cfg) => jira::issues_request(cfg),
-        Provider::Linear(cfg) => linear::issues_request(cfg),
-    };
+/// Read every page of the tracker's issues.
+///
+/// A tracker with more issues than one page must be read to the end: a short
+/// read would report the later stories as missing and let `--apply` file
+/// duplicate issues on every run.
+fn read_tracker(provider: &Provider) -> Result<Vec<Issue>, Diagnostic> {
+    let mut issues = Vec::new();
+    let mut page_token: Option<String> = None;
+    // A tracker that never stops handing out tokens must not page forever:
+    // the cap bounds every cycle, not just a repeated token.
+    for _ in 0..MAX_PAGES {
+        let request = match provider {
+            Provider::Jira(cfg) => jira::issues_request(cfg, page_token.as_deref()),
+            Provider::Linear(cfg) => linear::issues_request(cfg, page_token.as_deref()),
+        };
+        let body = read(request)?;
+        let page: Page = match provider {
+            Provider::Jira(_) => jira::parse_page(&body)?,
+            Provider::Linear(_) => linear::parse_page(&body)?,
+        };
+        let next = page.next;
+        issues.extend(page.issues);
+        // A page that names the token just used would loop; fail on it at
+        // once instead of paying for the whole page cap.
+        if next.is_some() && next == page_token {
+            return Err(config::e3020(
+                format!(
+                    "the tracker repeated its page token {:?}, so paging cannot finish",
+                    next.as_deref().unwrap_or_default()
+                ),
+                "report this error: the tracker's paging is not converging, so rerun rivet sync later or reconcile the issues by hand",
+            ));
+        }
+        match next {
+            Some(token) => page_token = Some(token),
+            None => return Ok(issues),
+        }
+    }
+    Err(config::e3020(
+        format!("the tracker is still paging after {MAX_PAGES} pages, so the read cannot finish"),
+        "report this error: the tracker's paging is not converging, so rerun rivet sync later or reconcile the issues by hand",
+    ))
+}
+
+/// Send a read request; a failure is an `E3020` diagnostic.
+fn read(request: http::Request) -> Result<String, Diagnostic> {
     block_on(http::send(&request)).map_err(|detail| {
         config::e3020(
             detail,
@@ -150,19 +201,33 @@ fn fetch(provider: &Provider) -> Result<String, Diagnostic> {
     })
 }
 
+/// Send a write request; a failure is an `E3021` diagnostic.
+fn write(request: http::Request) -> Result<String, Diagnostic> {
+    block_on(http::send(&request)).map_err(|detail| {
+        config::e3021(
+            detail,
+            "check that the token may create issues in the configured project or team, then run rivet sync --apply again",
+        )
+    })
+}
+
 /// Create one issue per missing story, and report the key of each.
 fn create_missing(provider: &Provider, missing: &[Story]) -> Result<(), Diagnostic> {
+    // Linear's creation takes a team ID, and the configuration names a team
+    // key, so resolve one into the other once.
+    let linear_team = match provider {
+        Provider::Jira(_) => None,
+        Provider::Linear(cfg) => Some(linear::parse_team(&write(linear::team_request(cfg))?)?),
+    };
     for story in missing {
         let request = match provider {
             Provider::Jira(cfg) => jira::create_request(cfg, story),
-            Provider::Linear(cfg) => linear::create_request(cfg, story),
+            Provider::Linear(cfg) => {
+                let team = linear_team.as_deref().unwrap_or_default();
+                linear::create_request(cfg, team, story)
+            }
         };
-        let answer = block_on(http::send(&request)).map_err(|detail| {
-            config::e3021(
-                detail,
-                "check that the token may create issues in the configured project or team, then run rivet sync --apply again",
-            )
-        })?;
+        let answer = write(request)?;
         let key = match provider {
             Provider::Jira(_) => jira::parse_created(&answer),
             Provider::Linear(_) => linear::parse_created(&answer),

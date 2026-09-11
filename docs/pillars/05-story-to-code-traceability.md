@@ -36,9 +36,16 @@ tracker holds, then reports four disagreements:
 An issue binds to a story through its title: the title starts with the story
 ID, then a colon, then the routes the story covers —
 `US-002: POST /echo; POST /orders`. `--apply` writes that title, so the
-issue it creates participates in the next run. A tracker full of ordinary
-issues contributes no orphans: only an ID-shaped prefix before the colon
-counts.
+issue it creates participates in the next run.
+
+The binding is exact: a story is tracked when the text before the title's
+first colon equals its ID, so every ID the decorator accepts round-trips.
+Only the *orphan* check is narrower — it counts an issue as an orphan when
+its prefix is shaped like a story reference (letters and digits with dots,
+dashes, or underscores, 64 characters or fewer) — so a tracker full of
+ordinary issues such as `Fix the flaky test: again` contributes no noise.
+`rivet sync` rejects a story ID the title cannot carry, such as one holding
+a colon, with `E3023` rather than creating an issue that never binds.
 
 ## Running it
 
@@ -78,16 +85,21 @@ creation is `E3021`.
 Each provider is a small module with pure request builders and pure
 parsers:
 
-- **Jira** — `GET /rest/api/3/search` over the configured project, asking
-  for `summary`, `status`, and `labels`; `POST /rest/api/3/issue` to create.
-  An issue is closed when its status category is `done`.
-- **Linear** — one GraphQL document: `issues(filter: {team: {key: {eq:
-  $team}}})` to read, `issueCreate` to create. An issue is closed when its
+- **Jira** — `GET /rest/api/3/search/jql` over the configured project,
+  asking for `summary` and `status`, paged on `nextPageToken`; the classic
+  `/rest/api/3/search` is marked "Currently being removed" in the REST v3
+  reference. `POST /rest/api/3/issue` creates. An issue is closed when its
+  status category is `done`.
+- **Linear** — GraphQL documents against `https://api.linear.app/graphql`:
+  `issues(filter: {team: {key: {eq: $team}}})` to read, cursor-paged through
+  `pageInfo`; a `teams` query resolves the team key into the ID that
+  `issueCreate(input: {teamId: ...})` requires. An issue is closed when its
   state type is `completed` or `canceled`.
 
-The network call is not exercised by the gate; the request assembly, the
-response parsing, and the diff computation are. A captured tracker payload in
-a test drives the same diff a live run computes.
+Both readers page to the end of the tracker. A short read would report every
+later story as missing, and `--apply` would then file a duplicate issue on
+every run; a tracker whose paging never converges fails with `E3020`
+instead.
 
 ## Scope
 
