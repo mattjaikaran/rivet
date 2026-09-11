@@ -721,3 +721,29 @@ exist.
   bridge for a plain array, the short literal (`E2011`), the optional form
   (`E2012`), and the unimplemented flag (`E2013`); the config tests cover
   the defaults and the flag the generator does not implement (`927fb68`).
+
+### Blueprint checks the generator makes
+
+- The generator rejects two routes that serve the same method and path with
+  `E2014`, naming the method, the path, and both handlers. The Gauntlet's
+  duplicate rule compares handler bodies, so routes that share a route but
+  differ in body passed it; the native router then panicked at startup after
+  the build reported success, and the WASI dispatch would have kept only the
+  first arm, so the two targets disagreed on the same blueprint.
+- Both `generate_project` and `generate_wasm_project` call the check, so one
+  blueprint gets one answer whichever target is built. The diagnostic
+  carries no file location, because the generator holds no app path. Pillar
+  03 documents both build-time route checks beside the admin panel
+  (`565f4c2`).
+
+### Verification: the blueprint checks
+
+- Reproduced both halves before the fix: two `GET /ping` routes with
+  different bodies built successfully, emitted two `.route("/ping", …)`
+  calls, and the binary panicked with "Overlapping method route".
+- After the fix, native and wasm builds both answer `E2014` with
+  ``two routes serve `GET /ping`: `ping` and `ping_again` ``, and
+  `examples/basic` still builds on both targets (`565f4c2`).
+- Three generator tests cover the rejection, the wasm target's agreement,
+  and the negative case: the same path on two methods is two valid routes
+  (`565f4c2`).

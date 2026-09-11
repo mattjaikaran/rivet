@@ -292,3 +292,28 @@ def helper() -> None:
     assert_eq!(module.decls[1].kind, DeclKind::Helper);
     assert_eq!(module.decls[1].line, 6);
 }
+
+#[test]
+fn two_routes_cannot_share_a_handler_name() {
+    // Python accepts this module: the second `def` rebinds the name. The
+    // front end rejects it, because the handler name becomes a Rust
+    // function name and the generated crate would define it twice.
+    let source = "@api.get(\"/ping\")\ndef ping() -> dict:\n    return {}\n\n@api.get(\"/health\")\ndef ping() -> dict:\n    return {}\n";
+    let error = match parse_python_module(source, "app", "app.py") {
+        Ok(_) => panic!("a duplicate handler must not parse"),
+        Err(error) => error,
+    };
+    assert_eq!(error.error_code, "E1010");
+    assert!(error.message.contains("ping"), "{}", error.message);
+    // The decorated definition starts at its decorator, which is what makes
+    // the function a route.
+    assert_eq!(error.line, Some(5), "the second route is reported");
+    assert!(!error.suggested_fix.is_empty());
+}
+
+#[test]
+fn distinct_handler_names_on_one_shape_still_parse() {
+    let source = "@api.get(\"/ping\")\ndef ping() -> dict:\n    return {}\n\n@api.get(\"/health\")\ndef health() -> dict:\n    return {}\n";
+    let module = parse_python_module(source, "app", "app.py").expect("parse");
+    assert_eq!(module.blueprint.routes.len(), 2);
+}

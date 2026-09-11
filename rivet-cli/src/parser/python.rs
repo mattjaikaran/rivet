@@ -182,11 +182,31 @@ pub fn parse_python_module(
     // Pass two: parse routes. Undecorated functions and non-`api` decorators
     // are not routes and are skipped.
     let mut routes = Vec::new();
+    // Handler names become Rust function names, so two routes cannot share
+    // one: the generated `mod service`, the channel trait, and the handlers
+    // would each define the name twice, and cargo reports "defined multiple
+    // times" against generated code. Python accepts this module (the second
+    // `def` rebinds the name), so the front end rejects it instead.
+    let mut handler_names: HashMap<String, usize> = HashMap::new();
 
     for child in root.named_children_all() {
         if child.kind() == "decorated_definition"
             && let Some(route) = parse_route(&child, source, file_label, &dtos)?
         {
+            let name = route.handler_name.clone();
+            if let Some(first) = handler_names.get(&name) {
+                return Err(Diagnostic::blocker(
+                    "E1010",
+                    format!(
+                        "duplicate handler `{name}`: it is defined at line {first} and again here, and a handler name must be unique because it becomes a Rust function name"
+                    ),
+                    format!(
+                        "rename one of the two `{name}` functions so every handler has its own name and its own route"
+                    ),
+                )
+                .located(file_label, line_of(&child)));
+            }
+            handler_names.insert(name, line_of(&child));
             routes.push(route);
         }
     }
