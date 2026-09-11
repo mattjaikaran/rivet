@@ -76,6 +76,8 @@ pub(super) fn run(
         .located("<generated-wasm>", 1)]);
     }
 
+    report_omitted(config);
+
     let module = out_dir
         .join("target")
         .join(WASM_TARGET)
@@ -84,9 +86,37 @@ pub(super) fn run(
     println!("Build succeeded.");
     println!("Module: {}", module.display());
     println!(
-        "Run it with a WASI host, for example a small driver that writes the request JSON\nand calls the exported `rivet_invoke`; see `docs/pillars/08-wasm-mobile-sdk-support.md`."
+        "Run it with a WASI host, for example:\n  echo '{{\"method\":\"GET\",\"path\":\"/ping\"}}' | wasmtime run {}",
+        module.display()
     );
     Ok(())
+}
+
+/// Report every configured feature the WASI module cannot carry.
+///
+/// The native path warns when `[frontend] dist` is missing; a target that
+/// drops a capability silently is worse, because the build looks successful
+/// and the module serves less than the project configured.
+fn report_omitted(config: &RivetConfig) {
+    let mut omitted: Vec<&str> = Vec::new();
+    if !config.plugins.is_empty() {
+        omitted.push("`[plugins]` (a module has no router to compose into)");
+    }
+    if config.admin.enabled {
+        omitted.push("`[admin]` (the panel serves from the native router)");
+    }
+    if config.discovery.backend.is_some() {
+        omitted.push("`[discovery]` (a module has no process to register)");
+    }
+    if config.frontend.dist.is_some() {
+        omitted.push("`[frontend]` (a module has no filesystem to serve from)");
+    }
+    if !omitted.is_empty() {
+        println!(
+            "Note: the WASI module omits the configured {}.",
+            omitted.join(", ")
+        );
+    }
 }
 
 /// Whether the `wasm32-wasip1` standard library is installed.

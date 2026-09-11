@@ -56,6 +56,18 @@ to stdout.
 | A body that does not match the declared type, or no body where one is required | `400` |
 | A request the module cannot read | `400` |
 
+The `body` field carries the raw request body as a **JSON string**, not a
+nested object. The module parses that text straight into the route's declared
+type, so a `dict` route receives its JSON unchanged:
+
+```json
+{"method": "POST", "path": "/echo", "body": "{\"hello\": \"world\"}"}
+```
+
+```json
+{"status": 200, "body": {"echo": {"hello": "world"}}}
+```
+
 Run it with a WASI host:
 
 ```bash

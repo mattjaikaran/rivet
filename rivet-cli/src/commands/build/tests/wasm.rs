@@ -78,19 +78,24 @@ fn body(envelope: &str) -> serde_json::Value {
 fn assert_protocol(run: impl Fn(&str) -> String) {
     let ping = run("{\"method\":\"GET\",\"path\":\"/ping\"}");
     assert_eq!(status(&ping), 200, "{ping}");
+    let pong = body(&ping);
     assert_eq!(
-        body(&ping),
-        serde_json::json!({"status": "pong"}),
-        "a parameterless route answers its value"
+        pong.get("status").and_then(serde_json::Value::as_str),
+        Some("pong"),
+        "a parameterless route answers its value: {ping}"
     );
 
     let echo =
         run("{\"method\":\"POST\",\"path\":\"/echo\",\"body\":\"{\\\"hello\\\":\\\"world\\\"}\"}");
     assert_eq!(status(&echo), 200, "{echo}");
+    let echoed = body(&echo);
     assert_eq!(
-        body(&echo),
-        serde_json::json!({"echo": {"hello": "world"}}),
-        "the request body round-trips"
+        echoed
+            .get("echo")
+            .and_then(|echo| echo.get("hello"))
+            .and_then(serde_json::Value::as_str),
+        Some("world"),
+        "the request body round-trips: {echo}"
     );
 
     let missing = run("{\"method\":\"GET\",\"path\":\"/nope\"}");

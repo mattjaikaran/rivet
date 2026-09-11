@@ -15,17 +15,23 @@ struct StubRegistry {
 }
 
 impl StubRegistry {
-    /// Start a stub that answers every request with `200`.
+    /// Start a Consul-shaped stub that answers every request with `200`.
     fn answering() -> StubRegistry {
-        Self::start(true)
+        Self::start(Reply::Consul)
+    }
+
+    /// Start an etcd-shaped stub: it answers a lease grant with the lease ID
+    /// the v3 gateway sends, and every other request with `{}`.
+    fn etcd() -> StubRegistry {
+        Self::start(Reply::Etcd)
     }
 
     /// Start a stub that accepts a connection and never answers it.
     fn silent() -> StubRegistry {
-        Self::start(false)
+        Self::start(Reply::Silent)
     }
 
-    fn start(answering: bool) -> StubRegistry {
+    fn start(reply: Reply) -> StubRegistry {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind the stub registry");
         let port = listener.local_addr().expect("stub registry address").port();
         let requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -43,15 +49,21 @@ impl StubRegistry {
                     Some(request) => request,
                     None => continue,
                 };
+                let body = reply.body(&request);
                 if let Ok(mut recorded) = recorded.lock() {
                     recorded.push(request);
                 }
-                if answering {
-                    let _ = stream.write_all(
-                        b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}",
-                    );
-                } else {
-                    held.push(stream);
+                match body {
+                    Some(body) => {
+                        let _ = stream.write_all(
+                            format!(
+                                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                                body.len()
+                            )
+                            .as_bytes(),
+                        );
+                    }
+                    None => held.push(stream),
                 }
             }
         });
@@ -61,6 +73,32 @@ impl StubRegistry {
     /// The requests the stub captured so far.
     fn requests(&self) -> Vec<String> {
         self.requests.lock().expect("stub registry records").clone()
+    }
+}
+
+/// How a stub answers.
+enum Reply {
+    /// Consul: `200` with an empty JSON object, for every request.
+    Consul,
+    /// etcd: a lease ID for a grant, an empty object for everything else.
+    Etcd,
+    /// No answer at all: the connection stays open.
+    Silent,
+}
+
+impl Reply {
+    /// The body for one request, or `None` to hold the connection open.
+    fn body(&self, request: &str) -> Option<&'static str> {
+        match self {
+            Reply::Consul => Some("{}"),
+            // The v3 JSON gateway sends an int64 as a string, which is the
+            // shape the generated `lease_id` has to accept.
+            Reply::Etcd if request.starts_with("POST /v3/lease/grant ") => {
+                Some("{\"ID\":\"7587883067265372352\",\"TTL\":\"60\"}")
+            }
+            Reply::Etcd => Some("{}"),
+            Reply::Silent => None,
+        }
     }
 }
 
@@ -223,5 +261,78 @@ fn a_registry_that_never_answers_does_not_hold_startup() {
         started.elapsed() >= Duration::from_secs(4),
         "startup waited for the registry deadline, not for an answer: {:?}",
         started.elapsed()
+    );
+}
+
+#[test]
+fn the_app_leaves_an_etcd_lease_and_releases_it_on_shutdown() {
+    let dir = ScratchDir::new("discovery-etcd");
+    let app = dir.join("app.py");
+    fs::write(&app, FIXTURE_APP).expect("write app.py");
+    let registry = StubRegistry::etcd();
+    fs::write(
+        dir.join("rivet.toml"),
+        format!(
+            "[project]\nname = \"orders\"\n\n[discovery]\nbackend = \"etcd\"\nurl = \"http://127.0.0.1:{}\"\nservice_name = \"orders-api\"\nservice_port = 4336\n\n[environments]\ndevelopment = {{ host = \"127.0.0.1\", port = 4336 }}\n",
+            registry.port
+        ),
+    )
+    .expect("write rivet.toml");
+
+    run_build(&app, BuildTarget::Native).expect("the fixture must build");
+
+    let mut server = Server(
+        Command::new(dir.join("generated/target/release/orders"))
+            .env("HOST", "127.0.0.1")
+            .env("PORT", "4336")
+            .spawn()
+            .expect("start the generated server"),
+    );
+
+    let ping = http_exchange(4336, &get_request("/ping", ""));
+    assert!(ping.ends_with("{\"status\":\"pong\"}"), "{ping}");
+
+    // The lease state machine: grant, attach the key to that lease, and
+    // remember the ID the gateway sent as a string.
+    let requests = registry.requests();
+    assert_eq!(requests.len(), 2, "a grant and a put: {requests:?}");
+    assert!(
+        requests[0].starts_with("POST /v3/lease/grant HTTP/1.1\r\n"),
+        "the first request grants a lease: {}",
+        requests[0]
+    );
+    let put = &requests[1];
+    assert!(
+        put.starts_with("POST /v3/kv/put HTTP/1.1\r\n"),
+        "the second request attaches the key: {put}"
+    );
+    let body = put
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| body)
+        .unwrap_or_default();
+    // `/rivet/services/orders-api` in standard base64.
+    let key = "L3JpdmV0L3NlcnZpY2VzL29yZGVycy1hcGk=";
+    assert!(body.contains(key), "the put carries the base64 key: {body}");
+    assert!(
+        body.contains("\"lease\":7587883067265372352"),
+        "the put carries the lease ID the grant answered as a string: {body}"
+    );
+
+    // Shutdown releases the lease, which removes the key.
+    signal_and_wait(&mut server.0, "INT");
+    let after = registry.requests();
+    assert_eq!(after.len(), 3, "shutdown revokes the lease: {after:?}");
+    assert!(
+        after[2].starts_with("POST /v3/lease/revoke HTTP/1.1\r\n"),
+        "the third request revokes the lease: {}",
+        after[2]
+    );
+    let body = after[2]
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| body)
+        .unwrap_or_default();
+    assert!(
+        body.contains("7587883067265372352"),
+        "the revoke names the lease that was granted: {body}"
     );
 }
