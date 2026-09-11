@@ -2,7 +2,7 @@
 
 use super::fixtures::{RustNativeFeatures, ping_blueprint};
 use super::*;
-use rivet_core::ir::Expr;
+use rivet_core::ir::{Expr, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, TypeRef};
 
 /// A blueprint whose DTO carries a fixed-size array.
 fn embedding_blueprint() -> ServiceBlueprint {
@@ -172,4 +172,85 @@ fn an_array_literal_must_match_a_fixed_size_declaration() {
     };
     assert_eq!(error.error_code, "E2011");
     assert!(error.message.contains("768"), "{}", error.message);
+}
+
+/// A blueprint with two routes on one method and path, with differing bodies
+/// so the Gauntlet's duplicate rule does not catch them.
+fn duplicate_route_blueprint() -> ServiceBlueprint {
+    let mut blueprint = ping_blueprint();
+    blueprint.routes.push(RouteDefinition {
+        method: HttpMethod::Get,
+        path: "/ping".to_string(),
+        handler_name: "ping_again".to_string(),
+        stories: vec!["US-002".to_string()],
+        middlewares: vec![],
+        request: RequestSpec::None,
+        response: ResponseSpec::Json(TypeRef::Json),
+        returns: vec![Expr::Object(vec![(
+            "status".to_string(),
+            Expr::Str("alive".to_string()),
+        )])],
+    });
+    blueprint
+}
+
+#[test]
+fn two_routes_on_one_method_and_path_are_rejected() {
+    let error = match generate_project(
+        &duplicate_route_blueprint(),
+        &RivetConfig::default(),
+        Path::new("."),
+    ) {
+        Ok(_) => panic!("the native router would panic at startup"),
+        Err(error) => error,
+    };
+    assert_eq!(error.error_code, "E2014");
+    assert!(error.message.contains("GET /ping"), "{}", error.message);
+    assert!(
+        error.message.contains("`ping`") && error.message.contains("`ping_again`"),
+        "the message names both handlers: {}",
+        error.message
+    );
+    assert!(
+        error.file.is_none(),
+        "the generator holds no app path to name"
+    );
+    assert!(!error.suggested_fix.is_empty());
+}
+
+#[test]
+fn the_wasm_target_rejects_the_same_duplicate() {
+    // Both targets must agree: the native router panics on the overlap, and
+    // the wasm dispatch would silently keep the first arm.
+    let error = match generate_wasm_project(&duplicate_route_blueprint(), &RivetConfig::default()) {
+        Ok(_) => panic!("the dispatch would carry two identical arms"),
+        Err(error) => error,
+    };
+    assert_eq!(error.error_code, "E2014");
+    assert!(error.message.contains("GET /ping"), "{}", error.message);
+}
+
+#[test]
+fn the_same_path_on_two_methods_is_not_a_duplicate() {
+    let mut blueprint = ping_blueprint();
+    blueprint.routes.push(RouteDefinition {
+        method: HttpMethod::Post,
+        path: "/ping".to_string(),
+        handler_name: "create_ping".to_string(),
+        stories: vec!["US-002".to_string()],
+        middlewares: vec![],
+        request: RequestSpec::None,
+        response: ResponseSpec::Json(TypeRef::Json),
+        returns: vec![Expr::Object(vec![(
+            "status".to_string(),
+            Expr::Str("created".to_string()),
+        )])],
+    });
+    let project = generate_project(&blueprint, &RivetConfig::default(), Path::new("."))
+        .expect("a GET and a POST on one path are two routes");
+    assert!(
+        project
+            .main_rs
+            .contains("post(create_ping::<channel::InProcess>)")
+    );
 }

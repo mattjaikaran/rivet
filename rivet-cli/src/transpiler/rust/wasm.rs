@@ -49,6 +49,7 @@ pub fn generate_wasm_project(
     config: &RivetConfig,
 ) -> Result<WasmProject, Diagnostic> {
     super::check_features(config)?;
+    super::check_routes(blueprint)?;
     let package_name = super::crate_name(&config.project.name);
     let codegen = Codegen {
         structs: &blueprint.structs,

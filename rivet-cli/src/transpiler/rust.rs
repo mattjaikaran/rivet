@@ -60,6 +60,48 @@ pub(super) fn check_features(config: &RivetConfig) -> Result<(), Diagnostic> {
     .located("rivet.toml", 1))
 }
 
+/// Reject two routes that serve the same method and path.
+///
+/// The Gauntlet's duplicate rule compares handler *bodies*, so two routes
+/// that share a method and a path but differ in body pass it. Each target
+/// then fails differently and late: the native router panics at startup with
+/// axum's "Overlapping method route", and the wasm dispatch emits two
+/// identical match arms, where the first silently wins. Neither is a build
+/// error the user can read, so the generator rejects the blueprint.
+pub(super) fn check_routes(blueprint: &ServiceBlueprint) -> Result<(), Diagnostic> {
+    let mut seen: Vec<(&str, &str, &str)> = Vec::new();
+    for route in &blueprint.routes {
+        let served = (
+            route.method.as_str(),
+            route.path.as_str(),
+            route.handler_name.as_str(),
+        );
+        if let Some((method, path, first)) = seen
+            .iter()
+            .find(|(method, path, _)| (*method, *path) == (served.0, served.1))
+            .copied()
+        {
+            // No `.located`: the generator holds no app path, so a location
+            // would name a file that may not exist. The message carries the
+            // method, the path, and both handlers, which is what to search
+            // for. The Gauntlet's own `E2043` reports lines, and it runs
+            // before this check.
+            return Err(Diagnostic::blocker(
+                "E2014",
+                format!(
+                    "two routes serve `{method} {path}`: `{first}` and `{}`",
+                    route.handler_name
+                ),
+                format!(
+                    "give each route its own method or path, so `{method} {path}` is served once, then rerun the command"
+                ),
+            ));
+        }
+        seen.push(served);
+    }
+    Ok(())
+}
+
 /// Render the whole crate from a blueprint, the project configuration, and
 /// the project directory that anchors plugin paths.
 pub fn generate_project(
@@ -68,6 +110,7 @@ pub fn generate_project(
     project_dir: &Path,
 ) -> Result<GeneratedProject, Diagnostic> {
     check_features(config)?;
+    check_routes(blueprint)?;
     let package_name = crate_name(&config.project.name);
     let plugins = plugin::resolve(config, project_dir)?;
     let mode = config.transport.mode;
