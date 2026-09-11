@@ -111,6 +111,32 @@ The bindings wrap the same functions the HTTP handlers call, so the mobile
 SDK and the server cannot drift: one blueprint, one implementation of the
 route logic.
 
+## Fixed-size arrays
+
+`[rust_native_features] const_generics = true` renders a `List[T, N]` DTO
+field as a fixed-size Rust array:
+
+```python
+class Embedding:
+    values: List[float, 768]
+```
+
+```rust
+#[serde(with = "fixed_array")]
+pub values: [f64; 768],
+```
+
+Without the flag the generator keeps the `E2003` blocker, whose fix names the
+opt-in. The flag is the switch, so a config never advertises a capability the
+generator does not implement.
+
+serde derives `Serialize` and `Deserialize` for arrays up to 32 elements, so
+a larger array borrows a generated bridge: serializing goes through a slice,
+and deserializing builds the array from a `Vec` and rejects a length that
+does not match the declaration. The bridge is emitted only when a DTO
+declares such a field, and both targets carry it, so a 768-element embedding
+round-trips as a real array with no `Vec` in the struct.
+
 ### Toolchain status
 
 The WASM target is verifiable in this repository: `rustup target add

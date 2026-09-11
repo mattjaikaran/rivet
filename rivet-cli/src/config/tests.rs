@@ -30,12 +30,39 @@ name = "orders"
 [gauntlet]
 max_complexity = 8
 
-[rust_native_features]
-compile_time_rbac = true
+[telemetry]
+exporter = "otlp"
 "#;
     let config: RivetConfig = toml::from_str(raw).expect("parse");
     assert_eq!(config.project.name, "orders");
     assert_eq!(config.environments.development.port, 3000);
+}
+
+#[test]
+fn rust_native_features_are_off_by_default() {
+    let features = RustNativeFeatures::default();
+    assert!(!features.const_generics);
+    assert!(!features.zero_copy_deserialization);
+    assert!(!features.raii_connections);
+    assert!(!features.compile_time_rbac);
+    assert!(features.unimplemented().is_none());
+}
+
+#[test]
+fn a_flag_the_generator_does_not_implement_is_reported() {
+    let features = RustNativeFeatures {
+        compile_time_rbac: true,
+        ..RustNativeFeatures::default()
+    };
+    assert_eq!(features.unimplemented(), Some("compile_time_rbac"));
+}
+
+#[test]
+fn the_rust_native_features_section_parses_the_opt_in() {
+    let raw = "[rust_native_features]\nconst_generics = true\n";
+    let config: RivetConfig = toml::from_str(raw).expect("parse");
+    assert!(config.rust_native_features.const_generics);
+    assert!(config.rust_native_features.unimplemented().is_none());
 }
 
 #[test]

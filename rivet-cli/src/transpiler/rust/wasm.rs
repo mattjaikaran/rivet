@@ -48,9 +48,11 @@ pub fn generate_wasm_project(
     blueprint: &ServiceBlueprint,
     config: &RivetConfig,
 ) -> Result<WasmProject, Diagnostic> {
+    super::check_features(config)?;
     let package_name = super::crate_name(&config.project.name);
     let codegen = Codegen {
         structs: &blueprint.structs,
+        features: &config.rust_native_features,
     };
 
     let structs = codegen.render_structs()?;
@@ -296,6 +298,20 @@ fn main() {
     }
 }
 
+/// The request body as text.
+///
+/// A host may send the body either as a JSON string (the raw body) or as a
+/// JSON value (the parsed body). Both mean the same request, so a value is
+/// re-serialized rather than rejected: answering 400 because a body arrived
+/// parsed would blame the client for a shape it cannot know about.
+fn body_text(request: &serde_json::Value) -> Option<String> {
+    match request.get("body") {
+        Some(serde_json::Value::String(text)) => Some(text.clone()),
+        Some(value) if !value.is_null() => Some(value.to_string()),
+        _ => None,
+    }
+}
+
 /// Parse one request and answer its envelope body.
 fn answer(raw: &str) -> (u16, serde_json::Value) {
     let request: serde_json::Value = match serde_json::from_str(raw) {
@@ -307,8 +323,8 @@ fn answer(raw: &str) -> (u16, serde_json::Value) {
     let (Some(method), Some(path)) = (method, path) else {
         return (400, json_error("the request names no method or path"));
     };
-    let body = request.get("body").and_then(serde_json::Value::as_str);
-    match executor::block_on(dispatch(method, path, body)) {
+    let body = body_text(&request);
+    match executor::block_on(dispatch(method, path, body.as_deref())) {
         Ok(value) => (200, value),
         Err((status, message)) => (status, json_error(&message)),
     }

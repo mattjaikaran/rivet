@@ -682,3 +682,42 @@ exist.
   the crate reuses `mod service` and the DTO structs, the dispatch names
   every route, a body route deserializes its declared type, and every
   template token is substituted (`ddd4d45`).
+
+### The const_generics flag
+
+- `[rust_native_features] const_generics = true` renders a `List[T, N]` DTO
+  field as a fixed-size Rust array instead of failing with `E2003`, and the
+  example config sets the flag. Without the opt-in the generator reports the
+  same blocker it always did, with a fix that names the flag.
+- serde derives `Serialize` and `Deserialize` for arrays up to 32 elements,
+  so a larger `[T; N]` borrows a generated bridge
+  (`#[serde(with = "fixed_array")]`): serializing goes through a slice, and
+  deserializing builds the array from a `Vec` and rejects a length that does
+  not match the declaration. The bridge lives beside the two helpers the
+  service layer emits, so it travels into both targets.
+- The example app gained an `Embedding` DTO with `List[float, 768]` and a
+  `POST /embed` route, so the gate exercises the feature end to end.
+- Three more generator gaps closed with the flag: an array literal now
+  renders `[...]` for a fixed-size target and fails with `E2011` when its
+  element count does not match the declaration (it used to emit `vec![...]`
+  against a `[T; N]` field, which cargo reported as a generator fault);
+  `Optional[List[T, N]]` is rejected with `E2012` rather than generating a
+  struct that cannot compile; and a flag the generator does not implement is
+  rejected with `E2013`, so the section cannot advertise a capability the
+  build ignores.
+
+### Verification: the const_generics flag
+
+- End to end on the native target: `POST /embed` with 768 values answers all
+  768 back in order, and a 10-value request answers `422` from the
+  deserializer.
+- End to end on the WASI target: `wasmtime run` answers `200` for a
+  768-element embedding and `400` for a short one.
+- The wasm integration fixture carries a fixed-size array DTO, and both
+  protocol runs assert the array round-trips and that a short one is
+  rejected, so a bridge emitted for one target and not the other would fail
+  the gate instead of shipping.
+- Generator tests cover the render, the missing opt-in (`E2003`), the absent
+  bridge for a plain array, the short literal (`E2011`), the optional form
+  (`E2012`), and the unimplemented flag (`E2013`); the config tests cover
+  the defaults and the flag the generator does not implement.

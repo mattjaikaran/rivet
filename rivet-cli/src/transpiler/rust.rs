@@ -7,7 +7,7 @@
 //! or DTO construction). The generator therefore does not re-validate
 //! semantics; it renders the IR to Rust syntax.
 
-use crate::config::{RivetConfig, TransportMode};
+use crate::config::{RivetConfig, RustNativeFeatures, TransportMode};
 use crate::diagnostic::Diagnostic;
 use crate::plugin::{self, ResolvedPlugin};
 use rivet_core::ir::{
@@ -41,6 +41,25 @@ pub struct GeneratedProject {
     pub assets: AssetEmbedding,
 }
 
+/// Reject a `[rust_native_features]` flag the generator does not implement.
+///
+/// The section advertises what the generator does. A flag set true that the
+/// build ignores would make every reader of that file — a person or an agent
+/// — believe the crate carries a capability it does not.
+pub(super) fn check_features(config: &RivetConfig) -> Result<(), Diagnostic> {
+    let Some(name) = config.rust_native_features.unimplemented() else {
+        return Ok(());
+    };
+    Err(Diagnostic::blocker(
+        "E2013",
+        format!("`{name}` is set in `[rust_native_features]`, and the generator does not implement it yet"),
+        format!(
+            "set `{name} = false` in `rivet.toml` (the flag advertises what the generator does), then rerun the command"
+        ),
+    )
+    .located("rivet.toml", 1))
+}
+
 /// Render the whole crate from a blueprint, the project configuration, and
 /// the project directory that anchors plugin paths.
 pub fn generate_project(
@@ -48,12 +67,15 @@ pub fn generate_project(
     config: &RivetConfig,
     project_dir: &Path,
 ) -> Result<GeneratedProject, Diagnostic> {
+    check_features(config)?;
     let package_name = crate_name(&config.project.name);
     let plugins = plugin::resolve(config, project_dir)?;
     let mode = config.transport.mode;
     let codegen = Codegen {
         structs: &blueprint.structs,
+        features: &config.rust_native_features,
     };
+
     let host = &config.environments.development.host;
     let port = config.environments.development.port;
 
@@ -152,6 +174,9 @@ fn render_plugin_installs(plugins: &[ResolvedPlugin]) -> String {
 /// references by the parser, in declaration order.
 struct Codegen<'a> {
     structs: &'a [StructDefinition],
+    /// The project's `[rust_native_features]` flags. A flag the generator
+    /// does not implement stays false, so the config never over-claims.
+    features: &'a RustNativeFeatures,
 }
 
 /// Per-route render state: parameter types plus identifier use counts (used
@@ -173,6 +198,12 @@ impl<'a> Codegen<'a> {
                 out.push_str(&self.render_struct(struct_def)?);
             }
         }
+        // A fixed-size array field borrows this bridge through
+        // `#[serde(with = "fixed_array")]`, so it travels with the structs
+        // into both targets.
+        if self.features.const_generics && self.structs.iter().any(has_fixed_array) {
+            out.push_str(helpers::FIXED_ARRAY);
+        }
         Ok(out)
     }
 
@@ -183,15 +214,40 @@ impl<'a> Codegen<'a> {
         );
         for field in &struct_def.fields {
             let ty = self.rust_type(&field.type_ref, field.is_optional)?;
-            let attrs = if field.is_optional {
-                "    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n"
-            } else {
-                ""
-            };
-            out.push_str(&format!("{attrs}    pub {}: {ty},\n", field.name));
+            out.push_str(&self.field_attrs(field)?);
+            out.push_str(&format!("    pub {}: {ty},\n", field.name));
         }
         out.push_str("}\n\n");
         Ok(out)
+    }
+
+    /// The serde attributes a field needs.
+    ///
+    /// serde derives `Serialize` and `Deserialize` for arrays up to 32
+    /// elements, so a fixed-size array field takes the generated bridge that
+    /// goes through a slice and a `Vec`. The field's Rust type stays `[T; N]`.
+    fn field_attrs(&self, field: &FieldDefinition) -> Result<String, Diagnostic> {
+        let mut attrs = String::new();
+        if let Some(size) = fixed_array_len(&field.type_ref) {
+            // The bridge is typed over `[T; N]`, so an `Option<[T; N]>` would
+            // hand it the wrong shape and the generated crate would fail to
+            // compile. Reject the combination where the user can see it.
+            if field.is_optional {
+                return Err(Diagnostic::blocker(
+                    "E2012",
+                    format!(
+                        "`Optional[List[_, {size}]]` is not generated yet: a fixed-size array field cannot be optional"
+                    ),
+                    "drop the `Optional[...]` wrapper, or declare the field as a plain `List[...]` so an empty value is legal",
+                )
+                .located("<generated>", 1));
+            }
+            attrs.push_str("    #[serde(with = \"fixed_array\")]\n");
+        }
+        if field.is_optional {
+            attrs.push_str("    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n");
+        }
+        Ok(attrs)
     }
 
     /// Map an IR type to a Rust type name.
@@ -205,13 +261,22 @@ impl<'a> Codegen<'a> {
             TypeRef::Array { element, len: None } => {
                 format!("Vec<{}>", self.rust_type(element, false)?)
             }
+            // A fixed-size array needs the `const_generics` opt-in: without
+            // it the generator reports the same blocker it always did, so a
+            // project that has not opted in sees no change.
+            TypeRef::Array {
+                element,
+                len: Some(size),
+            } if self.features.const_generics => {
+                format!("[{}; {size}]", self.rust_type(element, false)?)
+            }
             TypeRef::Array {
                 len: Some(size), ..
             } => {
                 return Err(Diagnostic::blocker(
                     "E2003",
-                    format!("fixed-size arrays (List[T, {size}]) are not generated yet; const generics arrive with the zero-copy phase"),
-                    "use a plain `List[T]` without a size until the zero-copy phase generates fixed-size arrays",
+                    format!("fixed-size arrays (List[T, {size}]) need the `const_generics` opt-in"),
+                    "set `const_generics = true` in the `[rust_native_features]` section of `rivet.toml`, or use a plain `List[T]`, then rerun the command",
                 )
                 .located("<generated>", 1));
             }
@@ -347,13 +412,32 @@ impl Emitter<'_> {
                 Expr::Ident(var) => Ok(var.clone()),
                 _ => Err(self.type_error(expr, ty)),
             },
-            TypeRef::Array { element, .. } => match expr {
+            TypeRef::Array { element, len } => match expr {
                 Expr::Array(items) => {
                     let rendered = items
                         .iter()
                         .map(|item| self.render_typed(item, element))
                         .collect::<Result<Vec<_>, _>>()?;
-                    Ok(format!("vec![{}]", rendered.join(", ")))
+                    match len {
+                        // A fixed-size target takes an array literal, and
+                        // its length has to match the declaration exactly:
+                        // Rust would report the mismatch as a type error in
+                        // the generated crate, which reads as a generator
+                        // fault instead of a body mistake.
+                        Some(size) if items.len() != *size => Err(Diagnostic::blocker(
+                            "E2011",
+                            format!(
+                                "the list literal holds {} value(s); the fixed-size array is declared as `List[_, {size}]`",
+                                items.len()
+                            ),
+                            format!(
+                                "give the literal exactly {size} values, or declare the field as a plain `List[...]` without a size"
+                            ),
+                        )
+                        .located("<generated>", 1)),
+                        Some(_) => Ok(format!("[{}]", rendered.join(", "))),
+                        None => Ok(format!("vec![{}]", rendered.join(", "))),
+                    }
                 }
                 Expr::Ident(var) => Ok(self.owned_ident(var)),
                 _ => Err(self.type_error(expr, ty)),
@@ -511,6 +595,25 @@ pub(crate) fn crate_name(name: &str) -> String {
 /// Render a string as a Rust string literal.
 fn rust_str(value: &str) -> String {
     format!("{value:?}")
+}
+
+/// The declared length of a fixed-size array type, when it has one.
+fn fixed_array_len(ty: &TypeRef) -> Option<usize> {
+    match ty {
+        TypeRef::Array {
+            len: Some(size), ..
+        } => Some(*size),
+        _ => None,
+    }
+}
+
+/// Whether a DTO declares a fixed-size array field, so the generated crate
+/// needs the serde bridge for one.
+fn has_fixed_array(struct_def: &StructDefinition) -> bool {
+    struct_def
+        .fields
+        .iter()
+        .any(|field| fixed_array_len(&field.type_ref).is_some())
 }
 
 fn expr_kind(expr: &Expr) -> &'static str {

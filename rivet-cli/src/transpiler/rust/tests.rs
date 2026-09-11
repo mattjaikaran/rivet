@@ -4,65 +4,10 @@ use crate::test_support::ScratchDir;
 use rivet_core::ir::{HttpMethod, ResponseSpec};
 use std::fs;
 
-fn ping_blueprint() -> ServiceBlueprint {
-    ServiceBlueprint {
-        name: "app".to_string(),
-        structs: vec![],
-        routes: vec![RouteDefinition {
-            method: HttpMethod::Get,
-            path: "/ping".to_string(),
-            handler_name: "ping".to_string(),
-            stories: vec!["US-001".to_string()],
-            middlewares: vec![],
-            request: RequestSpec::None,
-            response: ResponseSpec::Json(TypeRef::Json),
-            returns: vec![Expr::Object(vec![(
-                "status".to_string(),
-                Expr::Str("pong".to_string()),
-            )])],
-        }],
-        dependencies: vec![],
-    }
-}
+mod features;
+mod fixtures;
 
-fn dto_blueprint() -> ServiceBlueprint {
-    ServiceBlueprint {
-        name: "app".to_string(),
-        structs: vec![StructDefinition {
-            name: "OrderResponse".to_string(),
-            fields: vec![FieldDefinition {
-                name: "status".to_string(),
-                type_ref: TypeRef::String,
-                is_optional: false,
-                is_borrowed: false,
-            }],
-        }],
-        routes: vec![RouteDefinition {
-            method: HttpMethod::Post,
-            path: "/orders".to_string(),
-            handler_name: "create_order".to_string(),
-            stories: vec!["US-123".to_string()],
-            middlewares: vec![],
-            request: RequestSpec::None,
-            response: ResponseSpec::Json(TypeRef::Named("OrderResponse".to_string())),
-            returns: vec![Expr::Construct {
-                ty: "OrderResponse".to_string(),
-                args: vec![("status".to_string(), Expr::Str("ok".to_string()))],
-            }],
-        }],
-        dependencies: vec![],
-    }
-}
-
-fn grpc_config() -> RivetConfig {
-    RivetConfig {
-        transport: Transport {
-            mode: TransportMode::Grpc,
-            grpc_port: 51000,
-        },
-        ..RivetConfig::default()
-    }
-}
+use fixtures::*;
 
 #[test]
 fn crate_name_is_sanitized() {

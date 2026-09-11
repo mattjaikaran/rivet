@@ -176,6 +176,48 @@ pub struct Admin {
     pub enabled: bool,
 }
 
+/// The `[rust_native_features]` section: the four Rust capabilities a
+/// project can opt into (phase 5).
+///
+/// Each flag is `false` by default, and a flag the generator does not
+/// implement stays `false`: the section advertises what the generator does,
+/// and a config must never over-claim. `const_generics` is the first to
+/// land — it renders `List[T, N]` as a fixed-size array instead of failing
+/// with `E2003`.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct RustNativeFeatures {
+    /// Render `List[T, N]` as `[T; N]`.
+    pub const_generics: bool,
+    /// Borrow request bodies through `#[serde(borrow)]` instead of copying.
+    pub zero_copy_deserialization: bool,
+    /// Release pooled connections automatically at handler exit.
+    pub raii_connections: bool,
+    /// Require an authenticated request type at compile time on a protected
+    /// route.
+    pub compile_time_rbac: bool,
+}
+
+impl RustNativeFeatures {
+    /// The first flag the generator does not implement, when the project set
+    /// one.
+    ///
+    /// A set-but-unimplemented flag is a blocker rather than a silent
+    /// no-op: the section advertises what the generator does, and a config
+    /// that claims a capability the build does not apply would mislead every
+    /// reader of that file.
+    pub fn unimplemented(&self) -> Option<&'static str> {
+        [
+            ("zero_copy_deserialization", self.zero_copy_deserialization),
+            ("raii_connections", self.raii_connections),
+            ("compile_time_rbac", self.compile_time_rbac),
+        ]
+        .into_iter()
+        .find(|(_, set)| *set)
+        .map(|(name, _)| name)
+    }
+}
+
 /// The `[discovery]` section: the service registry the generated app joins
 /// (phase 4, pillar 02).
 ///
@@ -256,6 +298,8 @@ pub struct RivetConfig {
     pub admin: Admin,
     /// The service registry the generated app joins.
     pub discovery: Discovery,
+    /// The Rust capabilities this project opts into.
+    pub rust_native_features: RustNativeFeatures,
 }
 
 impl RivetConfig {

@@ -74,25 +74,30 @@ A task is done when all of the following hold:
 ## Cross-phase: Rust-native features
 
 `rivet.toml` `[rust_native_features]` advertises four flags. Each is false
-today; each item below flips its flag to true in the example config only when
-the feature is actually implemented, so the config never over-claims.
+until its feature is actually implemented, and the example config flips a
+flag only then, so the config never over-claims.
+
+`const_generics` has landed and its flag is true in the example config; see
+`tasks/completed.md`. The other three stay false, because each needs a layer
+the generator does not have yet:
 
 - [ ] `zero_copy_deserialization`: borrowed request bodies (`&str` fields via
-  `#[serde(borrow)]`).
+  `#[serde(borrow)]`). The IR tracks `FieldDefinition::is_borrowed`, but the
+  parser never sets it and no renderer emits a lifetime, so the flag would
+  claim a plumbing the IR does not carry.
   Acceptance: a DTO with a borrowed `str` field builds and a request round-trips
   without owned copies; `rivet.toml` flag true.
 - [ ] `raii_connections`: pooled connections released automatically at handler
-  exit.
+  exit. The DSL has no database surface at all yet, so there is no
+  connection to pool.
   Acceptance: a handler that touches the database compiles with no explicit
   close calls; a test proves the connection returns to the pool; flag true.
 - [ ] `compile_time_rbac`: typestate auth so protected routes require an
-  authenticated request type at compile time.
+  authenticated request type at compile time. The decorator accepts only
+  `path` and `stories`, so there is no way to mark a route protected.
   Acceptance: a route flagged protected fails to compile without an
   authentication layer; the generated code has no runtime role lookup; flag true.
-- [ ] `const_generics`: fixed-size arrays from `List[T, N]` generate
-  `[T; N]` instead of erroring with `E2003`.
-  Acceptance: a DTO with `List[float, 768]` generates `[f64; 768]` and builds;
-  flag true.
+- The completed `const_generics` line is in `tasks/completed.md`.
 
 ---
 

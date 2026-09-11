@@ -28,6 +28,49 @@ fn json_number(value: f64) -> serde_json::Value {
 
 ";
 
+/// The serde bridge for a fixed-size array field, emitted only when a DTO
+/// declares one.
+///
+/// serde derives `Serialize` and `Deserialize` for arrays up to 32 elements,
+/// so a larger `[T; N]` needs its own impls. Serializing goes through a
+/// slice, and deserializing builds the array from a `Vec`, so the field's
+/// Rust type stays `[T; N]` at every size.
+pub(super) const FIXED_ARRAY: &str = r#"/// Serde support for a fixed-size array field.
+///
+/// A DTO uses it as `#[serde(with = "fixed_array")]` on the array field.
+mod fixed_array {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    /// Write the array as a JSON sequence, through a slice.
+    pub(super) fn serialize<S, T, const N: usize>(
+        value: &[T; N],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: Serialize,
+    {
+        value.as_slice().serialize(serializer)
+    }
+
+    /// Read a JSON sequence into the array, and reject a length that does
+    /// not match the declaration.
+    pub(super) fn deserialize<'de, D, T, const N: usize>(
+        deserializer: D,
+    ) -> Result<[T; N], D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de>,
+    {
+        let values = Vec::<T>::deserialize(deserializer)?;
+        values.try_into().map_err(|values: Vec<T>| {
+            serde::de::Error::invalid_length(values.len(), &"an array of the declared length")
+        })
+    }
+}
+
+"#;
+
 /// The helper the native target adds: a channel failure maps to `502`.
 pub(super) const CHANNEL_ERROR: &str = "\
 /// Map a channel failure to `502` with the reason.

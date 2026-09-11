@@ -9,8 +9,13 @@
 
 use super::*;
 
-/// A fixture app with a parameterless route and a body-taking route.
-const FIXTURE_APP: &str = "from rivet import api\n\n@api.get(\"/ping\", stories=[\"US-001\"])\ndef ping() -> dict:\n    return {\"status\": \"pong\"}\n\n@api.post(\"/echo\", stories=[\"US-002\"])\ndef echo(request: dict) -> dict:\n    return {\"echo\": request}\n";
+/// A fixture app with a parameterless route, a body-taking route, and a DTO
+/// that carries a fixed-size array.
+///
+/// The array field proves the serde bridge travels into the wasm crate too:
+/// the DTO renderer is shared, so a bridge emitted for one target and not the
+/// other would fail to compile here.
+const FIXTURE_APP: &str = "from typing import List\n\nfrom rivet import api\n\n@api.get(\"/ping\", stories=[\"US-001\"])\ndef ping() -> dict:\n    return {\"status\": \"pong\"}\n\n@api.post(\"/echo\", stories=[\"US-002\"])\ndef echo(request: dict) -> dict:\n    return {\"echo\": request}\n\nclass Embedding:\n    values: List[float, 4]\n\n@api.post(\"/embed\", stories=[\"US-003\"])\ndef embed(request: Embedding) -> Embedding:\n    return request\n";
 
 /// Build the fixture for the wasm target and answer the module path.
 fn build_wasm(dir: &ScratchDir, name: &str) -> std::path::PathBuf {
@@ -18,7 +23,7 @@ fn build_wasm(dir: &ScratchDir, name: &str) -> std::path::PathBuf {
     fs::write(&app, FIXTURE_APP).expect("write app.py");
     fs::write(
         dir.join("rivet.toml"),
-        format!("[project]\nname = \"{name}\"\n"),
+        format!("[project]\nname = \"{name}\"\n\n[rust_native_features]\nconst_generics = true\n"),
     )
     .expect("write rivet.toml");
     run_build(&app, BuildTarget::Wasm).expect("the wasm fixture must build");
@@ -31,7 +36,6 @@ fn build_wasm(dir: &ScratchDir, name: &str) -> std::path::PathBuf {
 
 /// Run one request through a command, and answer its stdout.
 fn run_with_stdin(mut command: std::process::Command, request: &str) -> String {
-    use std::io::Write;
     use std::process::Stdio;
 
     command
@@ -88,14 +92,47 @@ fn assert_protocol(run: impl Fn(&str) -> String) {
     let echo =
         run("{\"method\":\"POST\",\"path\":\"/echo\",\"body\":\"{\\\"hello\\\":\\\"world\\\"}\"}");
     assert_eq!(status(&echo), 200, "{echo}");
-    let echoed = body(&echo);
     assert_eq!(
-        echoed
+        body(&echo)
             .get("echo")
             .and_then(|echo| echo.get("hello"))
             .and_then(serde_json::Value::as_str),
         Some("world"),
         "the request body round-trips: {echo}"
+    );
+
+    let unreadable = run("not json");
+    assert_eq!(status(&unreadable), 400, "{unreadable}");
+
+    // A fixed-size array field round-trips through the shared serde bridge,
+    // on both the host build and the module.
+    let array = run(
+        "{\"method\":\"POST\",\"path\":\"/embed\",\"body\":\"{\\\"values\\\":[0.5,0.25,0.125,1.0]}\"}",
+    );
+    assert_eq!(status(&array), 200, "{array}");
+    assert_eq!(
+        body(&array)
+            .get("values")
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len),
+        Some(4),
+        "the array keeps its declared length: {array}"
+    );
+
+    let short =
+        run("{\"method\":\"POST\",\"path\":\"/embed\",\"body\":\"{\\\"values\\\":[0.5]}\"}");
+    assert_eq!(status(&short), 400, "a short array is rejected: {short}");
+
+    // A host that sends the body as a JSON value means the same request.
+    let parsed = run("{\"method\":\"POST\",\"path\":\"/echo\",\"body\":{\"hello\":\"world\"}}");
+    assert_eq!(status(&parsed), 200, "{parsed}");
+    assert_eq!(
+        body(&parsed)
+            .get("echo")
+            .and_then(|echo| echo.get("hello"))
+            .and_then(serde_json::Value::as_str),
+        Some("world"),
+        "a parsed body round-trips: {parsed}"
     );
 
     let missing = run("{\"method\":\"GET\",\"path\":\"/nope\"}");
@@ -135,7 +172,7 @@ fn the_generated_module_answers_the_request_protocol() {
     );
 
     assert_protocol(|request| {
-        let mut command = std::process::Command::new(&binary);
+        let command = std::process::Command::new(&binary);
         run_with_stdin(command, request)
     });
 }
