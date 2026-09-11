@@ -118,7 +118,7 @@ fn render_trait(methods: &[Method]) -> String {
 /// The monolith transport: a direct call into `service`.
 fn render_in_process(methods: &[Method]) -> String {
     let mut out = String::from(
-        "    /// The monolith transport: a direct call into `service`.\n    #[derive(Debug, Clone, Copy)]\n    pub struct InProcess;\n\n    impl Channel for InProcess {\n",
+        "    /// The monolith transport: a direct call into `service`.\n    ///\n    /// Unused when the project selects the remote transport, so it takes an\n    /// allow rather than a condition.\n    #[derive(Debug, Clone, Copy)]\n    #[allow(dead_code)]\n    pub struct InProcess;\n\n    impl Channel for InProcess {\n",
     );
     for method in methods {
         let body = if method.return_ty.is_empty() {
