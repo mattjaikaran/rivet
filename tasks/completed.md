@@ -641,28 +641,28 @@ exist.
   and the same `mod service` as the native target, so a route's business
   logic has one implementation; what it drops is everything that needs a
   server. The manifest depends on serde and serde_json alone — no axum, no
-  tokio, no gRPC, no plugins, and no embedded assets (`<pending>`).
+  tokio, no gRPC, no plugins, and no embedded assets (`ddd4d45`).
 - The module is an edge handler, not a server: it reads one request as JSON
   on stdin (`{"method": "GET", "path": "/ping"}`), dispatches it through a
   `match` rendered at build time, and writes one envelope to stdout
   (`{"status": 200, "body": {...}}`). A path no route declares answers `404`;
   a declared path with a method it does not serve answers `405` and names the
   methods it allows; a body that does not match the declared type, or an
-  unreadable request, answers `400` (`<pending>`).
+  unreadable request, answers `400` (`ddd4d45`).
 - The executor is one poll with `Waker::noop()`. Every generated route is an
   `async fn` that never awaits — the parser's subset is literals, request
   parameters, and one DTO construction — so the module carries no runtime and
-  no reactor (`<pending>`).
+  no reactor (`ddd4d45`).
 - `rivet build` gained `--target native|wasm` and defaults to `native`, so
   every existing invocation behaves as before. A missing `wasm32-wasip1`
   target is `E2010` with the `rustup target add` command that fixes it, not a
-  wall of cargo output (`<pending>`).
+  wall of cargo output (`ddd4d45`).
 - `docs/pillars/08-wasm-mobile-sdk-support.md` documents the target matrix,
   the request protocol, why the module has no reactor, what the target
   deliberately omits (WASI sockets, `[frontend] dist`, plugins, and
   discovery), and which toolchain each mobile deliverable still needs.
   `docs/ROADMAP.md` ticks the WASM box and leaves the two mobile boxes open
-  (`<pending>`).
+  (`ddd4d45`).
 
 ### Verification: the WASM target
 
@@ -672,13 +672,13 @@ exist.
   `{"hello":"world"}` answers `{"body":{"echo":{"hello":"world"}},"status":200}`;
   `GET /nope` answers `404`; `DELETE /ping` answers
   `{"body":{"error":"DELETE is not served by /ping; it allows GET"},"status":405}`;
-  and a non-JSON request answers `400` (`<pending>`).
+  and a non-JSON request answers `400` (`ddd4d45`).
 - Two integration tests drive the same protocol. One builds the crate for the
   host and runs it, which proves the dispatch, the four statuses, and the
   envelope without a WASI host; the other builds the module and runs it under
   Wasmtime, and reports the missing host instead of passing silently when
-  `wasmtime` is absent (`<pending>`).
+  `wasmtime` is absent (`ddd4d45`).
 - Five renderer tests assert the wasm manifest carries no native dependency,
   the crate reuses `mod service` and the DTO structs, the dispatch names
   every route, a body route deserializes its declared type, and every
-  template token is substituted (`<pending>`).
+  template token is substituted (`ddd4d45`).
