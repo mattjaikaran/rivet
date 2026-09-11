@@ -2,7 +2,7 @@
 
 use super::*;
 use rivet_core::ir::{
-    Expr, FieldDefinition, HttpMethod, PathParam, RequestSpec, ResponseSpec, RouteDefinition,
+    Expr, FieldDefinition, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, RouteParam,
     StructDefinition, TypeRef,
 };
 
@@ -25,6 +25,7 @@ fn blueprint() -> ServiceBlueprint {
                 method: HttpMethod::Get,
                 path: "/ping".to_string(),
                 path_params: vec![],
+                query_params: vec![],
                 handler_name: "ping".to_string(),
                 stories: vec!["US-001".to_string()],
                 middlewares: vec![],
@@ -39,6 +40,7 @@ fn blueprint() -> ServiceBlueprint {
                 method: HttpMethod::Post,
                 path: "/orders".to_string(),
                 path_params: vec![],
+                query_params: vec![],
                 handler_name: "create_order".to_string(),
                 stories: vec!["US-002".to_string()],
                 middlewares: vec![],
@@ -52,10 +54,11 @@ fn blueprint() -> ServiceBlueprint {
             RouteDefinition {
                 method: HttpMethod::Get,
                 path: "/orders/{id}".to_string(),
-                path_params: vec![PathParam {
+                path_params: vec![RouteParam {
                     name: "id".to_string(),
                     ty: TypeRef::Int,
                 }],
+                query_params: vec![],
                 handler_name: "get_order".to_string(),
                 stories: vec!["US-003".to_string()],
                 middlewares: vec![],
@@ -146,14 +149,9 @@ fn a_path_parameter_route_binds_and_parses_its_segment() {
     assert!(
         project
             .main_rs
-            .contains("let id: i64 = match rivet_id_text.parse() {"),
-        "{}",
+            .contains("let id: i64 = match rivet_percent_decode(segments[2]).parse() {"),
+        "the segment is decoded and parsed in place:\n{}",
         project.main_rs
-    );
-    assert!(
-        project
-            .main_rs
-            .contains("rivet_percent_decode(segments[2])")
     );
     assert!(
         project.main_rs.contains("service::get_order(id).await"),
@@ -161,9 +159,7 @@ fn a_path_parameter_route_binds_and_parses_its_segment() {
         project.main_rs
     );
     assert!(
-        project
-            .main_rs
-            .contains("return Err((400, format!(\"`{rivet_id_text}` is not a valid `id`\")))"),
+        project.main_rs.contains("is not a valid `id`"),
         "a bad segment answers 400:\n{}",
         project.main_rs
     );
@@ -247,6 +243,8 @@ fn the_generator_symbols_carry_the_reserved_prefix() {
         format!("fn {PREFIX}percent_decode("),
         format!("fn {PREFIX}hex_value("),
         format!("fn {PREFIX}path_matches("),
+        format!("fn {PREFIX}query_value("),
+        format!("fn {PREFIX}query_decode("),
         format!("const {CONST_PREFIX}DECLARED_PATHS"),
     ] {
         assert!(
@@ -270,6 +268,8 @@ fn the_generator_symbols_carry_the_reserved_prefix() {
         "fn percent_decode(",
         "fn hex_value(",
         "fn path_matches(",
+        "fn query_value(",
+        "fn query_decode(",
     ] {
         assert!(
             !project.main_rs.contains(bare),

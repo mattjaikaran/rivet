@@ -65,6 +65,8 @@ fn render_fn(codegen: &Codegen<'_>, route: &RouteDefinition) -> Result<String, D
 pub(super) struct RenderedRoute {
     /// Path parameter `(name, Rust type)` pairs, in path order.
     pub(super) path_params: Vec<(String, String)>,
+    /// Query parameter `(name, Rust type)` pairs, in declaration order.
+    pub(super) query_params: Vec<(String, String)>,
     /// The JSON-body parameter `(name, Rust type)`, when the route takes one.
     pub(super) request: Option<(String, String)>,
     /// The Rust return type, or empty for a route that returns nothing.
@@ -79,6 +81,7 @@ impl RenderedRoute {
         let mut params: Vec<String> = self
             .path_params
             .iter()
+            .chain(self.query_params.iter())
             .map(|(name, ty)| format!("{name}: {ty}"))
             .collect();
         if let Some((name, ty)) = &self.request {
@@ -104,6 +107,12 @@ pub(super) fn render_route(
 
     let path_params: Vec<(String, String)> = route
         .path_params
+        .iter()
+        .map(|param| Ok((param.name.clone(), codegen.rust_type(&param.ty, false)?)))
+        .collect::<Result<_, Diagnostic>>()?;
+
+    let query_params: Vec<(String, String)> = route
+        .query_params
         .iter()
         .map(|param| Ok((param.name.clone(), codegen.rust_type(&param.ty, false)?)))
         .collect::<Result<_, Diagnostic>>()?;
@@ -143,6 +152,7 @@ pub(super) fn render_route(
 
     Ok(RenderedRoute {
         path_params,
+        query_params,
         request,
         return_ty,
         body,

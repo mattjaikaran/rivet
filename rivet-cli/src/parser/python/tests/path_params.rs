@@ -2,7 +2,7 @@
 //! the handler parameter of the same name, in path order.
 
 use super::*;
-use rivet_core::ir::PathParam;
+use rivet_core::ir::RouteParam;
 
 /// A `{name}` placeholder binds to the handler parameter of the same name and
 /// becomes a typed path parameter, in path order.
@@ -14,11 +14,11 @@ fn parses_path_parameters_in_path_order() {
     assert_eq!(
         route.path_params,
         vec![
-            PathParam {
+            RouteParam {
                 name: "id".to_string(),
                 ty: TypeRef::Int,
             },
-            PathParam {
+            RouteParam {
                 name: "sku".to_string(),
                 ty: TypeRef::String,
             },
@@ -46,7 +46,7 @@ def update_order(id: int, request: Order) -> Order:
     let route = &blueprint.routes[0];
     assert_eq!(
         route.path_params,
-        vec![PathParam {
+        vec![RouteParam {
             name: "id".to_string(),
             ty: TypeRef::Int,
         }]

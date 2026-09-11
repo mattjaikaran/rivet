@@ -146,6 +146,10 @@ pub fn generate_project(
             .routes
             .iter()
             .any(|route| !route.path_params.is_empty()),
+        has_query_params: blueprint
+            .routes
+            .iter()
+            .any(|route| !route.query_params.is_empty()),
         host: host.clone(),
         port,
         plugins: render_plugin_installs(&plugins),
@@ -434,10 +438,14 @@ impl<'a> Codegen<'a> {
 // ---------------------------------------------------------------------------
 
 /// The parameter types of a route, keyed by parameter name: the path
-/// parameters in path order, then the JSON body parameter.
+/// parameters in path order, then the query parameters, then the JSON body
+/// parameter.
 fn param_types(route: &RouteDefinition) -> HashMap<String, TypeRef> {
     let mut params = HashMap::new();
     for param in &route.path_params {
+        params.insert(param.name.clone(), param.ty.clone());
+    }
+    for param in &route.query_params {
         params.insert(param.name.clone(), param.ty.clone());
     }
     if let RequestSpec::Json { var, ty } = &route.request {

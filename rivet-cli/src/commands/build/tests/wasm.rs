@@ -18,7 +18,7 @@ use super::*;
 /// other would fail to compile here. The borrowed field proves the same for
 /// `#[serde(borrow)]`: the module decodes from the body text, so no string is
 /// copied on the way in.
-const FIXTURE_APP: &str = "from typing import List\n\nfrom rivet import api\n\n@api.get(\"/ping\", stories=[\"US-001\"])\ndef ping() -> dict:\n    return {\"status\": \"pong\"}\n\n@api.post(\"/echo\", stories=[\"US-002\"])\ndef echo(request: dict) -> dict:\n    return {\"echo\": request}\n\nclass Embedding:\n    values: List[float, 4]\n\n@api.post(\"/embed\", stories=[\"US-003\"])\ndef embed(request: Embedding) -> Embedding:\n    return request\n\nclass Note:\n    text: borrowed[str]\n\n@api.post(\"/notes\", stories=[\"US-004\"])\ndef create_note(request: Note) -> dict:\n    return {\"echo\": request}\n\n@api.get(\"/orders/{id}\", stories=[\"US-010\"])\ndef get_order(id: int) -> dict:\n    return {\"id\": id}\n";
+const FIXTURE_APP: &str = "from typing import List\n\nfrom rivet import api\n\n@api.get(\"/ping\", stories=[\"US-001\"])\ndef ping() -> dict:\n    return {\"status\": \"pong\"}\n\n@api.post(\"/echo\", stories=[\"US-002\"])\ndef echo(request: dict) -> dict:\n    return {\"echo\": request}\n\nclass Embedding:\n    values: List[float, 4]\n\n@api.post(\"/embed\", stories=[\"US-003\"])\ndef embed(request: Embedding) -> Embedding:\n    return request\n\nclass Note:\n    text: borrowed[str]\n\n@api.post(\"/notes\", stories=[\"US-004\"])\ndef create_note(request: Note) -> dict:\n    return {\"echo\": request}\n\n@api.get(\"/orders/{id}\", stories=[\"US-010\"])\ndef get_order(id: int) -> dict:\n    return {\"id\": id}\n\n@api.get(\"/search\", stories=[\"US-020\"])\ndef search(page: int, size: int, name: str) -> dict:\n    return {\"page\": page, \"size\": size, \"name\": name}\n";
 
 /// Build the fixture for the wasm target and answer the module path.
 fn build_wasm(dir: &ScratchDir, name: &str) -> std::path::PathBuf {
@@ -177,6 +177,81 @@ fn assert_protocol(run: impl Fn(&str) -> String) {
     // A trailing slash adds an empty segment and misses too.
     let trailing = run("{\"method\":\"GET\",\"path\":\"/orders/42/\"}");
     assert_eq!(status(&trailing), 404, "{trailing}");
+
+    // Query parameters: values reach the service as their declared types.
+    let search = run("{\"method\":\"GET\",\"path\":\"/search?page=2&size=10&name=ada\"}");
+    assert_eq!(status(&search), 200, "{search}");
+    assert_eq!(
+        body(&search)
+            .get("page")
+            .and_then(serde_json::Value::as_i64),
+        Some(2),
+        "the page round-trips: {search}"
+    );
+    assert_eq!(
+        body(&search)
+            .get("size")
+            .and_then(serde_json::Value::as_i64),
+        Some(10),
+        "the size round-trips: {search}"
+    );
+    assert_eq!(
+        body(&search)
+            .get("name")
+            .and_then(serde_json::Value::as_str),
+        Some("ada"),
+        "the name round-trips: {search}"
+    );
+
+    // A query with no parameters answers 400: the route matched, the
+    // required parameter is missing.
+    let search_missing = run("{\"method\":\"GET\",\"path\":\"/search\"}");
+    assert_eq!(status(&search_missing), 400, "{search_missing}");
+
+    // A value that cannot parse as its declared type answers 400.
+    let search_unparseable =
+        run("{\"method\":\"GET\",\"path\":\"/search?page=abc&size=10&name=ada\"}");
+    assert_eq!(status(&search_unparseable), 400, "{search_unparseable}");
+
+    // An unknown extra key is ignored.
+    let search_extra =
+        run("{\"method\":\"GET\",\"path\":\"/search?page=2&size=10&name=ada&extra=1\"}");
+    assert_eq!(status(&search_extra), 200, "{search_extra}");
+    assert_eq!(
+        body(&search_extra)
+            .get("name")
+            .and_then(serde_json::Value::as_str),
+        Some("ada"),
+        "an unknown query key is ignored: {search_extra}"
+    );
+
+    // A repeated key keeps the last value, which is what the native target's
+    // form decoder does. The two targets must answer one request the same way.
+    let search_repeated =
+        run("{\"method\":\"GET\",\"path\":\"/search?page=2&page=3&size=10&name=ada\"}");
+    assert_eq!(status(&search_repeated), 200, "{search_repeated}");
+    assert_eq!(
+        body(&search_repeated)
+            .get("page")
+            .and_then(serde_json::Value::as_i64),
+        Some(3),
+        "a repeated key keeps the last value: {search_repeated}"
+    );
+
+    // The query string on an unknown path still misses the route.
+    let nope_with_query = run("{\"method\":\"GET\",\"path\":\"/nope?page=2\"}");
+    assert_eq!(status(&nope_with_query), 404, "{nope_with_query}");
+
+    // A `+` in a query value decodes to a space, per form-urlencoded rules.
+    let search_plus = run("{\"method\":\"GET\",\"path\":\"/search?page=2&size=10&name=a+b\"}");
+    assert_eq!(status(&search_plus), 200, "{search_plus}");
+    assert_eq!(
+        body(&search_plus)
+            .get("name")
+            .and_then(serde_json::Value::as_str),
+        Some("a b"),
+        "a plus in a query value decodes to a space: {search_plus}"
+    );
 
     // The path matches but the method does not: 405, naming the allowed
     // methods.

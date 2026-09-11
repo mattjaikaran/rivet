@@ -78,7 +78,7 @@ fn rivet_percent_decode(segment: &str) -> String {
 
 /// The numeric value of one hexadecimal digit, or `None`.
 ///
-/// Only [`rivet_percent_decode`] calls it, so it carries the same allow.
+/// Both decoders call it, so it carries the same allow.
 #[allow(dead_code)]
 fn rivet_hex_value(byte: u8) -> Option<u8> {
     match byte {
@@ -87,6 +87,67 @@ fn rivet_hex_value(byte: u8) -> Option<u8> {
         b'A'..=b'F' => Some(byte - b'A' + 10),
         _ => None,
     }
+}
+
+/// The value of one query parameter, decoded, or `None`.
+///
+/// The query is the part of the request path after the first `?`. This
+/// splits it into `name=value` pairs and returns the value whose decoded name
+/// equals `name`. A pair with no `=` is a name with an empty value. An
+/// unknown key is simply not the one looked up, so it is ignored.
+///
+/// A repeated key answers the **last** value. The native target reads the
+/// query through the form decoder, which keeps the last value, and the two
+/// targets must answer the same request the same way.
+///
+/// Unused when no route reads a query parameter, which is a blueprint shape
+/// and not a defect, so the function carries an allow.
+#[allow(dead_code)]
+fn rivet_query_value(query: &str, name: &str) -> Option<String> {
+    let mut found = None;
+    for pair in query.split('&') {
+        let (key, value) = match pair.split_once('=') {
+            Some((key, value)) => (key, value),
+            None => (pair, ""),
+        };
+        if rivet_query_decode(key) == name {
+            found = Some(rivet_query_decode(value));
+        }
+    }
+    found
+}
+
+/// Percent-decode one query component, mapping `+` to a space.
+///
+/// The query string uses the form encoding, where `+` means a space; a path
+/// segment uses `+` literally, which is why [`rivet_percent_decode`] must not
+/// serve the query text. Everything else is the same percent-decode.
+///
+/// Only [`rivet_query_value`] calls it, so it carries the same allow.
+#[allow(dead_code)]
+fn rivet_query_decode(component: &str) -> String {
+    let bytes = component.as_bytes();
+    let mut decoded: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'+' {
+            decoded.push(b' ');
+            index += 1;
+            continue;
+        }
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            let high = rivet_hex_value(bytes[index + 1]);
+            let low = rivet_hex_value(bytes[index + 2]);
+            if let (Some(high), Some(low)) = (high, low) {
+                decoded.push((high << 4) | low);
+                index += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
 }
 
 /// Whether a requested path matches a declared path pattern.
@@ -134,15 +195,26 @@ fn rivet_allowed_methods(path: &str) -> &'static str {
 /// The function is `async` because the service layer is: the executor polls
 /// it inside `rivet_answer`.
 ///
-/// `body` is unused when no route takes a JSON body, which is a blueprint
-/// shape and not a defect, so the parameter carries an allow rather than a
-/// renamed binding the dispatch arms would have to match.
+/// `body` is unused when no route takes a JSON body, and `query` when no
+/// route reads a query parameter; both are blueprint shapes and not defects,
+/// so the function carries an allow rather than renaming bindings the
+/// dispatch arms would have to match.
 #[allow(unused_variables)]
 async fn rivet_dispatch(
     method: &str,
     path: &str,
     body: Option<&str>,
 ) -> Result<serde_json::Value, (u16, String)> {
+    // Split the query off the path before matching: segment matching, the
+    // declared-path table, and the allowed-methods lookup all see the path
+    // only, so `/search?page=2` matches the declared `/search`. The split
+    // shadows `path` with the part before the `?`, so every use below — the
+    // 404 and 405 messages included — names the path the router matched on.
+    // Each arm reads its parameters from `query`.
+    let (path, query) = match path.split_once('?') {
+        Some((path, query)) => (path, query),
+        None => (path, ""),
+    };
     let segments: Vec<&str> = path.split('/').collect();
     let mut known = false;
 @@DISPATCH@@

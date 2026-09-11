@@ -121,6 +121,7 @@ mod tests {
             method,
             path: path.to_string(),
             path_params: vec![],
+            query_params: vec![],
             handler_name: path.trim_start_matches('/').to_string(),
             stories: stories.iter().map(|story| story.to_string()).collect(),
             middlewares: vec![],

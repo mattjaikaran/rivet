@@ -14,8 +14,11 @@
 //! Supported surface (phase 0):
 //!
 //! - top-level handlers decorated with `@api.<method>(path, stories=[...])`
-//! - handler signatures with a return annotation and at most one
-//!   request-body parameter (`dict`, a DTO, or a primitive)
+//! - route paths with `{name}` placeholders, each bound to a handler
+//!   parameter of the same name (`str` or `int`)
+//! - handler signatures with a return annotation, any number of path
+//!   parameters, query parameters for the primitives the path does not name,
+//!   and at most one request body (`dict`, a DTO, or a list)
 //! - annotation-only DTO classes (`class OrderCreate: sku: str`)
 //! - handler bodies that are a single `return` of the supported expression
 //!   subset (see [`crate::parser::expr`])
@@ -469,6 +472,7 @@ fn parse_route(
 
     let signature::ParsedParameters {
         path_params,
+        query_params,
         request,
         types: param_types,
     } = signature::parse_parameters(&function, source, file, &placeholders)?;
@@ -489,6 +493,7 @@ fn parse_route(
         method,
         path,
         path_params,
+        query_params,
         handler_name: handler_name.to_string(),
         stories,
         middlewares: vec![],

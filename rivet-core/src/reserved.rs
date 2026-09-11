@@ -120,6 +120,24 @@ pub fn is_reserved_handler(name: &str) -> bool {
     has_prefix(name)
 }
 
+/// The names a generated handler binds as parameters.
+///
+/// Rust rejects two parameters bound to one name (`E0415`), so a handler
+/// parameter that reuses one of these does not compile — and cargo reports
+/// the error against generated code the user never wrote. The generator
+/// binds `channel` for the service channel in every handler, and `bytes` for
+/// the raw body of a route whose DTO borrows from it.
+///
+/// Only a parameter is bound this way. A value read *from* a parameter is a
+/// `let` in the handler body, where shadowing is legal, so those names need
+/// no reservation.
+pub const HANDLER_PARAMETERS: &[&str] = &["channel", "bytes"];
+
+/// Whether a handler parameter may not use `name`.
+pub fn is_reserved_parameter(name: &str) -> bool {
+    HANDLER_PARAMETERS.contains(&name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

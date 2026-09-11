@@ -96,22 +96,27 @@ pub struct StructDefinition {
     pub fields: Vec<FieldDefinition>,
 }
 
-/// One `{name}` placeholder in a route path, with the type its handler
-/// declares for it.
+/// A parameter a route reads from somewhere other than its response body.
 ///
-/// The order matches the placeholders in [`RouteDefinition::path`], because
-/// the generated router binds them positionally. The parser resolves the type
-/// from the handler signature and rejects a placeholder the handler does not
-/// declare, so every entry here has a matching parameter.
+/// One type serves both sources, because a path placeholder and a query
+/// parameter differ only in where the value comes from. The order of a
+/// [`RouteDefinition::path_params`] list matches the placeholders in
+/// [`RouteDefinition::path`], because the generated router binds them
+/// positionally; a `query_params` list keeps the order the handler declares.
+/// The parser resolves each type from the handler signature and rejects a
+/// value the handler does not declare, so every entry has a matching
+/// parameter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PathParam {
-    /// The placeholder name, without the braces.
+pub struct RouteParam {
+    /// The name, without the braces for a path placeholder.
     pub name: String,
     /// The type the handler declares for it.
     pub ty: TypeRef,
 }
 
-/// How a route receives its request. Phase 0 supports an optional JSON body.
+/// How a route receives its request body. A path or query value is not part
+/// of this: those live in [`RouteDefinition::path_params`] and
+/// [`RouteDefinition::query_params`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RequestSpec {
     /// No request body (for example a bare `GET`).
@@ -161,7 +166,11 @@ pub struct RouteDefinition {
     /// `{name}` placeholders in `path`, in path order, with the type the
     /// handler declares for each. Empty for a path with no placeholders.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub path_params: Vec<PathParam>,
+    pub path_params: Vec<RouteParam>,
+    /// Query-string parameters, in declaration order, with the type the
+    /// handler declares for each. Empty for a route that reads no query.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub query_params: Vec<RouteParam>,
     /// Rust-safe handler name, identical to the DSL function name.
     pub handler_name: String,
     /// User-story IDs; the Gauntlet requires at least one per endpoint.
@@ -228,6 +237,7 @@ mod tests {
                     var: "request".to_string(),
                     ty: TypeRef::Named("OrderCreate".to_string()),
                 },
+                query_params: vec![],
                 response: ResponseSpec::Json(TypeRef::Named("OrderResponse".to_string())),
                 returns: vec![],
             }],

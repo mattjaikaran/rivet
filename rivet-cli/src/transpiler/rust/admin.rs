@@ -197,6 +197,7 @@ mod tests {
                 method: HttpMethod::Post,
                 path: "/echo".to_string(),
                 path_params: vec![],
+                query_params: vec![],
                 handler_name: "echo".to_string(),
                 stories: vec!["US-002".to_string(), "US-003".to_string()],
                 middlewares: vec![],

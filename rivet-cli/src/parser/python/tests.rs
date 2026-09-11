@@ -385,3 +385,4 @@ fn a_handler_name_the_generated_crate_owns_still_parses() {
 
 mod borrow;
 mod path_params;
+mod query_params;

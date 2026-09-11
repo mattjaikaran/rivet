@@ -169,23 +169,50 @@ fn render_arm(codegen: &Codegen<'_>, route: &RouteDefinition) -> Result<String, 
         ));
     }
 
-    // Bind each path parameter from its decoded segment, in path order; the
-    // JSON body trails. A segment that fails to parse is the client's error,
-    // so it answers 400 rather than a server fault.
+    // Bind each parameter from its own source, in the order the handler
+    // declares them, so the call below passes them the same way. Every
+    // binding is one `let` whose initializer reads the segment or the query
+    // directly; no value is stored under a second name, so no route
+    // parameter can be shadowed by the generator's own bookkeeping.
+    //
+    // A value that is missing or does not parse is the client's error, so it
+    // answers 400 naming the parameter. An unknown extra query key is never
+    // looked up, so it is ignored.
     let mut bindings = String::new();
     let mut args: Vec<String> = Vec::new();
     for (segment_index, param) in placeholders.iter().zip(&route.path_params) {
         let rust_type = codegen.rust_type(&param.ty, false)?;
         let arg = param.name.as_str();
-        if param.ty == TypeRef::Int {
-            bindings.push_str(&format!(
-                "            let rivet_{arg}_text = rivet_percent_decode(segments[{segment_index}]);\n            let {arg}: {rust_type} = match rivet_{arg}_text.parse() {{\n                Ok(value) => value,\n                Err(_) => return Err((400, format!(\"`{{rivet_{arg}_text}}` is not a valid `{arg}`\"))),\n            }};\n"
-            ));
+        let segment = format!("rivet_percent_decode(segments[{segment_index}])");
+        let binding = if param.ty == TypeRef::Int {
+            // The message repeats the decoded segment, which costs a second
+            // decode on the error path alone: the request is malformed and
+            // the answer is a 400, so the work never reaches a served call.
+            format!(
+                "            let {arg}: {rust_type} = match {segment}.parse() {{\n                Ok(value) => value,\n                Err(_) => return Err((400, format!(\"`{{}}` is not a valid `{arg}`\", {segment}))),\n            }};\n"
+            )
         } else {
-            bindings.push_str(&format!(
-                "            let {arg}: {rust_type} = rivet_percent_decode(segments[{segment_index}]);\n"
-            ));
-        }
+            format!("            let {arg}: {rust_type} = {segment};\n")
+        };
+        bindings.push_str(&binding);
+        args.push(arg.to_string());
+    }
+    for param in &route.query_params {
+        let rust_type = codegen.rust_type(&param.ty, false)?;
+        let arg = param.name.as_str();
+        let found = format!("rivet_query_value(query, \"{arg}\")");
+        let missing = format!("\"the query parameter `{arg}` is missing\"");
+        let binding = if param.ty == TypeRef::String {
+            format!(
+                "            let {arg}: {rust_type} = match {found} {{\n                Some(value) => value,\n                None => return Err((400, {missing}.to_string())),\n            }};\n"
+            )
+        } else {
+            let label = super::type_label(&param.ty);
+            format!(
+                "            let {arg}: {rust_type} = match {found} {{\n                Some(value) => match value.parse() {{\n                    Ok(value) => value,\n                    Err(_) => return Err((400, format!(\"the query parameter `{arg}` must parse as {label}, got `{{value}}`\"))),\n                }},\n                None => return Err((400, {missing}.to_string())),\n            }};\n"
+            )
+        };
+        bindings.push_str(&binding);
         args.push(arg.to_string());
     }
 
@@ -238,5 +265,7 @@ fn allowed_for(blueprint: &ServiceBlueprint, path: &str) -> String {
     methods.join(", ")
 }
 
+#[cfg(test)]
+mod query_tests;
 #[cfg(test)]
 mod tests;

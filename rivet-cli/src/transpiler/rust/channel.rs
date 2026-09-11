@@ -26,6 +26,8 @@ struct Method {
     name: String,
     /// Path parameter `(name, Rust type)` pairs, in path order.
     path_params: Vec<(String, String)>,
+    /// Query parameter `(name, Rust type)` pairs, in declaration order.
+    query_params: Vec<(String, String)>,
     /// The JSON-body parameter `(name, Rust type)`, when the route takes one.
     request: Option<(String, String)>,
     return_ty: String,
@@ -37,6 +39,7 @@ impl Method {
         let mut params: Vec<String> = self
             .path_params
             .iter()
+            .chain(self.query_params.iter())
             .map(|(name, ty)| format!("{name}: {ty}"))
             .collect();
         if let Some((name, ty)) = &self.request {
@@ -45,13 +48,14 @@ impl Method {
         params.join(", ")
     }
 
-    /// The argument list for a call into `service`: the path variables then
-    /// the body variable. A bodyless path-param route is `get_order(id)`,
-    /// never `get_order()`.
+    /// The argument list for a call into `service`: the path variables, then
+    /// the query variables, then the body variable. A bodyless path-param
+    /// route is `get_order(id)`, never `get_order()`.
     fn call_args(&self) -> String {
         let mut args: Vec<String> = self
             .path_params
             .iter()
+            .chain(self.query_params.iter())
             .map(|(name, _)| name.clone())
             .collect();
         if let Some((name, _)) = &self.request {
@@ -60,9 +64,11 @@ impl Method {
         args.join(", ")
     }
 
-    /// The ordered argument `(name, Rust type)` pairs: path params then body.
+    /// The ordered argument `(name, Rust type)` pairs: path params, then
+    /// query params, then the body.
     fn arguments(&self) -> Vec<(String, String)> {
         let mut args: Vec<(String, String)> = self.path_params.clone();
+        args.extend(self.query_params.iter().cloned());
         if let Some(request) = &self.request {
             args.push(request.clone());
         }
@@ -95,6 +101,7 @@ pub(super) fn render_channel_module(
         methods.push(Method {
             name: route.handler_name.clone(),
             path_params: rendered.path_params,
+            query_params: rendered.query_params,
             request: rendered.request,
             return_ty: rendered.return_ty,
         });

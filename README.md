@@ -66,6 +66,9 @@ curl -X POST localhost:3000/echo \
   -H 'Content-Type: application/json' \
   -d '{"hello":"world"}'
 # {"echo":{"hello":"world"}}
+
+curl 'localhost:3000/search?page=2&size=10'
+# {"page":2,"size":10}
 ```
 
 To develop an app with a frontend, start the frontend dev server and run
@@ -127,7 +130,16 @@ def echo(request: dict) -> dict:
 @api.get("/orders/{id}", stories=["US-005"])
 def get_order(id: int) -> dict:
     return {"id": id, "status": "open"}
+
+@api.get("/search", stories=["US-006"])
+def search(page: int, size: int) -> dict:
+    return {"page": page, "size": size}
 ```
+
+`get_order` reads `{id}` from the path, and `search` reads its two values
+from the query string. A query string carries text, so only a primitive
+reads from it: declare a `dict`, a DTO, or a list and the value is the JSON
+body instead, which a handler takes at most once.
 
 A DTO field can borrow its text from the request body instead of copying it:
 
@@ -159,9 +171,11 @@ make clean-all    # the above plus the workspace cargo cache
 - `@api.get|post|put|delete|patch|options|head(path, stories=[...])` routes
 - `{name}` path parameters, for example `@api.get("/orders/{id}")` with
   `def get_order(id: int)`; a path parameter takes `str` or `int`
-- handler signatures with type hints: path parameters plus one optional
-  JSON-body parameter (`dict`, a DTO, or a primitive), and a return
-  annotation (`dict`, primitives, or `-> None`)
+- query parameters, for example `def search(page: int, size: str)`: a
+  parameter the route path does not name reads from the query string when
+  its type is a primitive (`str`, `int`, `float`, or `bool`)
+- at most one request body per handler: a `dict`, a DTO, or a list, plus a
+  return annotation (`dict`, primitives, or `-> None`)
 - annotation-only DTO classes (`class OrderCreate: sku: str`)
 - handler bodies that return literals, request values, or a single DTO
   constructor

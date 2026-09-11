@@ -56,3 +56,13 @@ def get_order(id: int) -> dict:
     The `{id}` placeholder binds to the `id` parameter, which is an int.
     """
     return {"id": id, "status": "open"}
+
+
+@api.get("/search", stories=["US-006"])
+def search(page: int, size: int) -> dict:
+    """
+    Searches a page of results.
+    Neither parameter is in the route path, and both are primitives, so both
+    read from the query string: `/search?page=2&size=10`.
+    """
+    return {"page": page, "size": size}
