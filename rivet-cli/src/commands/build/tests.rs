@@ -373,5 +373,6 @@ fn the_admin_panel_serves_the_route_table_and_the_panel() {
     assert!(ping.ends_with("{\"status\":\"pong\"}"), "{ping}");
 }
 
+mod collisions;
 mod registry;
 mod wasm;
