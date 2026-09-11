@@ -303,7 +303,7 @@ fn two_routes_cannot_share_a_handler_name() {
         Ok(_) => panic!("a duplicate handler must not parse"),
         Err(error) => error,
     };
-    assert_eq!(error.error_code, "E1010");
+    assert_eq!(error.error_code, "E1012");
     assert!(error.message.contains("ping"), "{}", error.message);
     // The decorated definition starts at its decorator, which is what makes
     // the function a route.

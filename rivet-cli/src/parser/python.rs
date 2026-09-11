@@ -35,6 +35,7 @@
 //! | E1009 | no routes found |
 //! | E1010 | return value does not match the declared response type |
 //! | E1011 | identifier is not a safe Rust identifier |
+//! | E1012 | two routes share a handler name |
 
 use crate::diagnostic::Diagnostic;
 use crate::parser::{
@@ -196,7 +197,7 @@ pub fn parse_python_module(
             let name = route.handler_name.clone();
             if let Some(first) = handler_names.get(&name) {
                 return Err(Diagnostic::blocker(
-                    "E1010",
+                    "E1012",
                     format!(
                         "duplicate handler `{name}`: it is defined at line {first} and again here, and a handler name must be unique because it becomes a Rust function name"
                     ),

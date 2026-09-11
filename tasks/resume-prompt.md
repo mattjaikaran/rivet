@@ -74,13 +74,15 @@ finish the Python-side item first.
     here has compiled.
 - GitHub Actions auto-runs are paused until the app ships (the workflow is
   `workflow_dispatch`-only). `./scripts/gate.sh` is the acceptance bar:
-  fmt, clippy `-D warnings`, **282 tests**, `cargo deny`, the example
+  fmt, clippy `-D warnings`, **287 tests**, `cargo deny`, the example
   build/audit, and the repo self-checks.
-- Tracker coherent: 6 todo items, 129 completed.
-- Recent commits: `b185a3e` (tracker hash), `927fb68` (const generics),
-  `f0654e5` (wasm fixes and etcd lease test), `ddd4d45` (WASM target),
-  `ec45c3d` (phase-4 close), `c5e79d5` (sync hardening), `7605413`
-  (`rivet sync`), `857060d` (service discovery), `0851b0d` (admin panel).
+- Tracker coherent: 6 todo items, 135 completed.
+- Recent commits: `31c3a7e` (duplicate handler names), `565f4c2` (overlapping
+  routes), `da5a91e` (resume prompt), `b185a3e` (tracker hash), `927fb68`
+  (const generics), `f0654e5` (wasm fixes and etcd lease test), `ddd4d45`
+  (WASM target), `ec45c3d` (phase-4 close), `c5e79d5` (sync hardening),
+  `7605413` (`rivet sync`), `857060d` (service discovery), `0851b0d` (admin
+  panel).
 
 ### Environment (check before you rely on it)
 
@@ -136,7 +138,10 @@ the asset test renames it.
   submodules before a file reaches the 400-line ceiling:
   `build/wasm.rs`, `build/tests/{registry,wasm}.rs`, `sync/issue.rs`,
   `sync/jira.rs`, `sync/linear.rs`, `sync/story.rs`, `sync/config.rs`,
-  `sync/http.rs`, `sync/shape.rs`, `discovery/etcd.rs`.
+  `sync/http.rs`, `sync/shape.rs`, `discovery/etcd.rs`. Two blueprint
+  checks reject shapes a target cannot serve: `E2014` (two routes on one
+  method and path, in `transpiler/rust.rs`) and `E1012` (two routes
+  sharing a handler name, in `parser/python.rs`).
 - `rivet-cli/src/transpiler/rust.rs` + `rust/` - the generator:
   `service.rs` (transport-free route logic), `handler.rs` (thin axum
   handlers), `channel.rs`, `assets.rs`, `admin.rs`, `discovery.rs`,
@@ -240,7 +245,10 @@ the asset test renames it.
   TODO-shims, speculative abstractions, duplicated logic, dead code, or
   invented facts. Fix at the source instead of papering over the symptom.
   A generator bug that surfaces as cargo's `E2009` is a generator bug: give
-  it its own diagnostic (`E2011`-`E2013` are the newest examples).
+  it its own diagnostic (`E2011`-`E2014` and `E1012` are the newest
+  examples). Put a guard where it has the most context: a check that needs a
+  file and line goes in the parser, so every command rejects the module, not
+  only the generators.
 - **Follow existing conventions.** One pattern per concern; match the
   error-code ranges (`E1xxx` parser, `E2xxx` generator/Gauntlet, `E3xxx`
   context engine and agentic commands), module layout, diagnostic, and

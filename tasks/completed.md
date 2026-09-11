@@ -747,3 +747,11 @@ exist.
 - Three generator tests cover the rejection, the wasm target's agreement,
   and the negative case: the same path on two methods is two valid routes
   (`565f4c2`).
+- A second overlap shape is rejected at the parser: two routes that share a
+  handler name. The generated `mod service`, the channel trait, and the
+  handlers each defined the name twice, and cargo reported "defined multiple
+  times" against generated code. The check sits in parser pass two beside
+  the `E1003` duplicate-DTO guard, so it carries the real file and line and
+  every parsing command rejects the module — build, audit, trace, plan, and
+  mcp — not only the two generators. The message names the first
+  definition's line (`31c3a7e`).
