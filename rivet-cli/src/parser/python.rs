@@ -36,12 +36,14 @@
 //! | E1010 | return value does not match the declared response type |
 //! | E1011 | identifier is not a safe Rust identifier |
 //! | E1012 | two routes share a handler name |
+//! | E1013 | identifier collides with a name the generated crate owns |
 
 use crate::diagnostic::Diagnostic;
 use crate::parser::{
     NamedChildren, body, decorator, is_docstring, line_of, node_text, signature, types, validate,
 };
 use rivet_core::ir::{Expr, ResponseSpec, RouteDefinition, ServiceBlueprint, StructDefinition};
+use rivet_core::reserved;
 use std::collections::HashMap;
 use std::path::Path;
 use tree_sitter::{Node, Parser};
@@ -171,6 +173,20 @@ pub fn parse_python_module(
                     "E1003",
                     "duplicate DTO definition; class names must be unique",
                     "rename one of the duplicate classes so every DTO name is unique",
+                )
+                .located(file_label, line_of(&child)));
+            }
+            if reserved::is_reserved_dto(&dto.name) {
+                return Err(Diagnostic::blocker(
+                    "E1013",
+                    format!(
+                        "DTO name `{name}` is reserved: the generated crate declares that name at its root, so the emitted crate would not compile",
+                        name = dto.name
+                    ),
+                    format!(
+                        "rename the DTO so it does not reuse a name the generated crate owns, for example `{name}Dto`",
+                        name = dto.name
+                    ),
                 )
                 .located(file_label, line_of(&child)));
             }
@@ -427,6 +443,24 @@ fn parse_route(
             "E1011",
             format!("handler name `{handler_name}` is not a safe Rust identifier"),
             "rename the handler to a snake_case Rust-safe identifier, for example `ping_handler`",
+        )
+        .located(file, line_of(&function)));
+    }
+
+    // A handler becomes a function inside the generated `mod handlers`, not
+    // a crate-root item, so only the reserved prefix is checked here: a local
+    // function shadows a glob import in silence, which is what keeps a
+    // handler named `service` legal. A DTO becomes a crate-root struct, so it
+    // takes the full reserved set above.
+    if reserved::is_reserved_handler(handler_name) {
+        return Err(Diagnostic::blocker(
+            "E1013",
+            format!(
+                "handler name `{handler_name}` carries the reserved `rivet_` prefix, which belongs to the generated crate's own helpers"
+            ),
+            format!(
+                "rename the handler so it does not start with `rivet_`, for example `{handler_name}_handler`"
+            ),
         )
         .located(file, line_of(&function)));
     }

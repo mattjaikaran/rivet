@@ -317,3 +317,68 @@ fn distinct_handler_names_on_one_shape_still_parse() {
     let module = parse_python_module(source, "app", "app.py").expect("parse");
     assert_eq!(module.blueprint.routes.len(), 2);
 }
+
+/// A DTO that reuses a name the generated crate holds is rejected with
+/// `E1013`, at a file and a line.
+#[test]
+fn a_dto_name_the_generated_crate_owns_is_rejected() {
+    for name in ["String", "State", "Router", "service", "serde_json", "main"] {
+        let source = format!(
+            "from rivet import api\n\nclass {name}:\n    value: str\n\n@api.post(\"/s\", stories=[\"US-1\"])\ndef put_s(request: {name}) -> {name}:\n    return request\n"
+        );
+        let error = match parse_python_module(&source, "app", "app.py") {
+            Ok(_) => panic!("DTO `{name}` collides with generated code and must not parse"),
+            Err(error) => error,
+        };
+        assert_eq!(error.error_code, "E1013", "DTO `{name}`: {}", error.message);
+        assert!(
+            error.message.contains(name),
+            "the diagnostic names the identifier: {}",
+            error.message
+        );
+        assert_eq!(error.file.as_deref(), Some("app.py"));
+        assert_eq!(error.line, Some(3), "the class declaration is reported");
+        assert!(!error.suggested_fix.is_empty());
+    }
+}
+
+/// A DTO whose name merely contains a reserved one is accepted: the check is
+/// an equality against a set, not a substring match.
+#[test]
+fn a_dto_name_that_only_resembles_a_reserved_one_parses() {
+    let source = "from rivet import api\n\nclass Stringify:\n    value: str\n\n@api.post(\"/s\", stories=[\"US-1\"])\ndef stringify(request: Stringify) -> Stringify:\n    return request\n";
+    let blueprint = parse(source).expect("`Stringify` is not a reserved name");
+    assert_eq!(blueprint.structs[0].name, "Stringify");
+}
+
+/// A handler that carries the reserved prefix is rejected with `E1013`.
+#[test]
+fn a_handler_name_with_the_reserved_prefix_is_rejected() {
+    let source = "from rivet import api\n\n@api.get(\"/ping\", stories=[\"US-1\"])\ndef rivet_ping() -> dict:\n    return {}\n";
+    let error = match parse_python_module(source, "app", "app.py") {
+        Ok(_) => panic!("a handler with the reserved prefix must not parse"),
+        Err(error) => error,
+    };
+    assert_eq!(error.error_code, "E1013");
+    assert!(error.message.contains("rivet_ping"), "{}", error.message);
+    assert_eq!(error.line, Some(4));
+}
+
+/// A handler may reuse a reserved *type* name.
+///
+/// The probe decides this row, and it decides for the namespace, not for
+/// taste: the native generator emits handlers inside `mod handlers`, where a
+/// local function shadows the crate root's glob import without error, so
+/// `def service()` builds. A DTO takes the full reserved set because a DTO is
+/// a crate-root struct; a handler takes the prefix alone.
+#[test]
+fn a_handler_name_the_generated_crate_owns_still_parses() {
+    for name in ["service", "String", "State", "Router", "main"] {
+        let source = format!(
+            "from rivet import api\n\n@api.get(\"/m\", stories=[\"US-1\"])\ndef {name}() -> dict:\n    return {{}}\n"
+        );
+        let module = parse_python_module(&source, "app", "app.py")
+            .unwrap_or_else(|error| panic!("handler `{name}` is legal: {}", error.message));
+        assert_eq!(module.blueprint.routes[0].handler_name, name);
+    }
+}
