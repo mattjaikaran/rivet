@@ -755,3 +755,76 @@ exist.
   every parsing command rejects the module — build, audit, trace, plan, and
   mcp — not only the two generators. The message names the first
   definition's line, and the code is `E1012` (`31c3a7e`, `08c8b1a`).
+
+### The generated-crate name collisions
+
+- `rivet-core/src/reserved.rs` holds the names the generated crate owns and
+  the constants the generator emits, so a rename cannot drift from the
+  check. The reserved set covers the generated modules, the entry point
+  `main`, the types the emitter writes (`String`, `Vec`, `Json`, `State`,
+  `Router`, `bool`, `i64`, `f64`, `Option`), and the crate paths the
+  generated code names (`serde`, `serde_json`, `axum`, `tokio`, `tracing`,
+  `std`). A unit test asserts the set holds every module constant, so adding
+  a module without reserving it fails a test instead of shipping
+  (`c605370`).
+- The native handlers moved into `mod handlers`, and the router registers
+  `handlers::ping::<channel::InProcess>`. A handler is now a local function,
+  and a local item shadows the crate root's glob import without error, so
+  `def service()` builds. The two references that still reach the crate root
+  are written `super::…`, because a local item does outrank an explicit
+  path: `def State` failed cargo with `E0532` until the extractor pattern
+  was qualified (`9edacd1`).
+- Every generator-owned symbol carries the `rivet_` prefix —
+  `rivet_json_obj`, `rivet_channel_error`, `rivet_dispatch`,
+  `rivet_answer`, `rivet_body_text`, `rivet_json_error`,
+  `rivet_allowed_methods`, `RIVET_DECLARED_PATHS`, `mod rivet_executor`,
+  `mod rivet_fixed_array` — while the public surface stays readable:
+  `mod service`, `mod channel`, `mod admin`, the DTO structs, and `fn main`.
+  Both generators emit the module names from `reserved::*` (`9edacd1`).
+- Each item carrying a user-chosen name takes `#[allow(non_snake_case)]`. A
+  legal handler named `String` otherwise made the generated crate warn six
+  times about code the user cannot change, and a blueprint with no
+  body-taking route warned about the WASM dispatch's unused `body`. Both
+  targets now compile the probes with no warnings (`9edacd1`).
+- `E1013` is raised in `parser/python.rs`, so `build`, `audit`, `trace`,
+  `plan`, and `mcp` all reject the module, not only the two generators. The
+  check is scoped by namespace: the full reserved set for a DTO, the `rivet_`
+  prefix alone for a handler, and nothing for a field (`5b3976b`).
+- Pillars 02 and 08 describe the handler module, the reserved prefix, and
+  the scoped rule, and the README names the reserved names in the
+  `rivet-core/` layout line (`f4ceb97`).
+
+### Verification: the collision class
+
+- Reproduced every claimed row by building it before the fix. Handler
+  `main`, `json_obj`, `json_number`, `channel_error`, and `State` failed the
+  native target; handler `json_obj` and `State` failed the WASM target;
+  handler `service` built on both. DTO `String`, `Vec`, `service`, and
+  `serde_json` failed both targets; DTO `Json`, `State`, and `Router` failed
+  native and built WASM, which is the divergence the class test now pins.
+- Two rows in the handoff were wrong and the probe corrected them. Handler
+  `json_obj` fails on **both** targets, not only native, and handler `State`
+  fails native with `E0532` — the `State(channel)` pattern resolving to the
+  user's own function — so the extractor pattern had to be qualified, which
+  the earlier plan did not call for.
+- After the fix, both targets answer `E1013` for every name in `RESERVED`,
+  for a `rivet_`-prefixed DTO, and for a `rivet_`-prefixed handler. Both
+  targets build all 24 legal names, and both build DTO `fixed_array` and DTO
+  `executor`, whose modules are prefixed now.
+- Runtime proof, not just compilation: the native binary for a handler named
+  `State` answered `200 {}` on its route and `404` on an unknown path, and
+  the WASM module for a handler named `json_obj` answered
+  `{"body":{},"status":200}` and `{"body":{"error":"no route serves
+  /other"},"status":404}` under `wasmtime run`.
+- `commands/build/tests/collisions.rs` drives every `RESERVED` name through
+  both targets and builds one aggregate crate of all 24 legal names per
+  target, asserting on both that the targets agree. The aggregate fixture
+  gives each handler a distinct body, because the Gauntlet's duplicate-code
+  rule rejects one body repeated across routes and that rule is not what the
+  test asks about (`1c297f9`).
+- `rivet trace` still resolves a route's logic: the service block still
+  emits before the handler block, and the trace test asserts the service
+  function and the new registration (`9edacd1`).
+- `./scripts/gate.sh` passes over the union: fmt, clippy `-D warnings`, 302
+  tests (was 287), `cargo deny`, the example build and audit, and the repo
+  self-checks.
