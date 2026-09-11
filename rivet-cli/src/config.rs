@@ -181,9 +181,10 @@ pub struct Admin {
 ///
 /// Each flag is `false` by default, and a flag the generator does not
 /// implement stays `false`: the section advertises what the generator does,
-/// and a config must never over-claim. `const_generics` is the first to
-/// land — it renders `List[T, N]` as a fixed-size array instead of failing
-/// with `E2003`.
+/// and a config must never over-claim. `const_generics` landed first — it
+/// renders `List[T, N]` as a fixed-size array instead of failing with
+/// `E2003` — and `zero_copy_deserialization` followed it, rendering a
+/// `borrowed[str]` field as a `&str` slice of the request body.
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(default)]
 pub struct RustNativeFeatures {
@@ -208,7 +209,6 @@ impl RustNativeFeatures {
     /// reader of that file.
     pub fn unimplemented(&self) -> Option<&'static str> {
         [
-            ("zero_copy_deserialization", self.zero_copy_deserialization),
             ("raii_connections", self.raii_connections),
             ("compile_time_rbac", self.compile_time_rbac),
         ]

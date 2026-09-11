@@ -50,6 +50,7 @@ pub fn generate_wasm_project(
 ) -> Result<WasmProject, Diagnostic> {
     super::check_features(config)?;
     super::check_routes(blueprint)?;
+    super::borrow::check(blueprint, config)?;
     let package_name = super::crate_name(&config.project.name);
     let codegen = Codegen {
         structs: &blueprint.structs,
@@ -150,6 +151,9 @@ fn render_arm(codegen: &Codegen<'_>, route: &RouteDefinition) -> Result<String, 
             // below passes the deserialized value. `let x = match x { … }`
             // reads the outer `body` and then shadows it, which is what lets
             // a parameter named `body` work here.
+            //
+            // A borrowed DTO decodes from the body text itself, so its
+            // `&'a str` fields point into `body` and no string is copied.
             let binding = format!(
                 "            let {var}: {rust_type} = match body {{\n                Some(body) => serde_json::from_str(body)\n                    .map_err(|err| (400, format!(\"cannot read the request body: {{err}}\")))?,\n                None => return Err((400, \"this route requires a JSON body\".to_string())),\n            }};\n"
             );

@@ -20,8 +20,10 @@ use std::path::Path;
 
 mod admin;
 mod assets;
+mod borrow;
 mod channel;
 mod discovery;
+mod expression;
 mod handler;
 mod helpers;
 mod main_file;
@@ -112,6 +114,7 @@ pub fn generate_project(
 ) -> Result<GeneratedProject, Diagnostic> {
     check_features(config)?;
     check_routes(blueprint)?;
+    borrow::check(blueprint, config)?;
     let package_name = crate_name(&config.project.name);
     let plugins = plugin::resolve(config, project_dir)?;
     let mode = config.transport.mode;
@@ -251,13 +254,22 @@ impl<'a> Codegen<'a> {
         Ok(out)
     }
 
+    /// Render one DTO struct.
+    ///
+    /// A DTO with a `borrowed[str]` field takes [`borrow::LIFETIME`], because
+    /// that field is a `&'a str` pointing into the request body.
     fn render_struct(&self, struct_def: &StructDefinition) -> Result<String, Diagnostic> {
+        let lifetime = if borrow::has_borrowed_field(struct_def) {
+            format!("<{}>", borrow::LIFETIME)
+        } else {
+            String::new()
+        };
         let mut out = format!(
-            "#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\npub struct {} {{\n",
+            "#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\npub struct {}{lifetime} {{\n",
             struct_def.name
         );
         for field in &struct_def.fields {
-            let ty = self.rust_type(&field.type_ref, field.is_optional)?;
+            let ty = self.field_type(field)?;
             out.push_str(&self.field_attrs(field)?);
             out.push_str(&format!("    pub {}: {ty},\n", field.name));
         }
@@ -265,11 +277,28 @@ impl<'a> Codegen<'a> {
         Ok(out)
     }
 
+    /// The Rust type of one DTO field.
+    ///
+    /// A borrowed field is a slice of the request body, so it renders as
+    /// `&'a str` rather than the owned `String` its [`TypeRef`] names. The
+    /// parser rejects `Optional[borrowed[str]]`, so the borrow never needs an
+    /// `Option` wrapper.
+    fn field_type(&self, field: &FieldDefinition) -> Result<String, Diagnostic> {
+        if field.is_borrowed {
+            return Ok(format!("&{} str", borrow::LIFETIME));
+        }
+        self.rust_type(&field.type_ref, field.is_optional)
+    }
+
     /// The serde attributes a field needs.
     ///
     /// serde derives `Serialize` and `Deserialize` for arrays up to 32
     /// elements, so a fixed-size array field takes the generated bridge that
     /// goes through a slice and a `Vec`. The field's Rust type stays `[T; N]`.
+    ///
+    /// A borrowed field takes `#[serde(borrow)]`, so `Deserialize` reads the
+    /// text as a `&'a str` slice of the request body instead of allocating a
+    /// `String`.
     fn field_attrs(&self, field: &FieldDefinition) -> Result<String, Diagnostic> {
         let mut attrs = String::new();
         if let Some(size) = fixed_array_len(&field.type_ref) {
@@ -293,6 +322,9 @@ impl<'a> Codegen<'a> {
         }
         if field.is_optional {
             attrs.push_str("    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n");
+        }
+        if field.is_borrowed {
+            attrs.push_str("    #[serde(borrow)]\n");
         }
         Ok(attrs)
     }
@@ -327,6 +359,10 @@ impl<'a> Codegen<'a> {
                 )
                 .located("<generated>", 1));
             }
+            // A borrowed DTO is written with an elided lifetime: every legal
+            // position is a parameter or a local, where the borrow comes from
+            // the request body the caller holds.
+            TypeRef::Named(name) if self.is_borrowed_dto(name) => format!("{name}<'_>"),
             TypeRef::Named(name) => name.clone(),
         };
         Ok(if is_optional {
@@ -367,225 +403,25 @@ impl<'a> Codegen<'a> {
             .located("<generated>", 1)
         })
     }
-}
 
-impl Emitter<'_> {
-    /// Render a named (DTO) response: a construction or a parameter.
-    fn render_named(
-        &self,
-        expr: &Expr,
-        struct_def: &StructDefinition,
-    ) -> Result<String, Diagnostic> {
-        match expr {
-            Expr::Construct { args, .. } => self.render_struct_expr(struct_def, args),
-            Expr::Ident(var) => Ok(self.owned_ident(var)),
-            _ => Err(Diagnostic::blocker(
-                "E2002",
-                format!(
-                    "handler must return a `{}` construction or a parameter of that type",
-                    struct_def.name
-                ),
-                format!(
-                    "return the `{}` DTO as a construction, or return a request parameter of type `{}`",
-                    struct_def.name, struct_def.name
-                ),
-            )
-            .located("<generated>", 1)),
-        }
+    /// Whether the DTO `name` borrows from the request body.
+    fn is_borrowed_dto(&self, name: &str) -> bool {
+        self.structs
+            .iter()
+            .any(|struct_def| struct_def.name == name && borrow::has_borrowed_field(struct_def))
     }
 
-    /// Render a struct literal for a DTO construction.
-    fn render_struct_expr(
-        &self,
-        struct_def: &StructDefinition,
-        args: &[(String, Expr)],
-    ) -> Result<String, Diagnostic> {
-        let mut fields = String::new();
-        for field in &struct_def.fields {
-            let value = match args.iter().find(|(name, _)| name == &field.name) {
-                Some((_, expr)) => self.render_field(expr, field)?,
-                None if field.is_optional => "None".to_string(),
-                None => {
-                    return Err(Diagnostic::blocker(
-                        "E2002",
-                        format!(
-                            "missing required field `{}` for `{}`",
-                            field.name, struct_def.name
-                        ),
-                        format!(
-                            "add the missing `{}=...` argument to the `{}` construction in the handler body",
-                            field.name, struct_def.name
-                        ),
-                    )
-                    .located("<generated>", 1));
-                }
-            };
-            fields.push_str(&format!("        {}: {value},\n", field.name));
-        }
-        Ok(format!("{} {{\n{fields}    }}", struct_def.name))
-    }
-
-    /// Render one field value with the exact Rust type of the field.
-    fn render_field(&self, expr: &Expr, field: &FieldDefinition) -> Result<String, Diagnostic> {
-        if field.is_optional {
-            if matches!(expr, Expr::Null) {
-                return Ok("None".to_string());
-            }
-            let value = self.render_typed(expr, &field.type_ref)?;
-            return Ok(format!("Some({value})"));
-        }
-        self.render_typed(expr, &field.type_ref)
-    }
-
-    /// Render an expression into the Rust type named by `ty`.
-    fn render_typed(&self, expr: &Expr, ty: &TypeRef) -> Result<String, Diagnostic> {
+    /// Whether the type `ty` carries a borrow, so a handler that extracts it
+    /// must take the raw body instead of `Json`.
+    ///
+    /// An array counts: `Vec<Note<'_>>` borrows from the same buffer, and
+    /// axum's `Json` extractor requires `DeserializeOwned` either way.
+    fn borrows(&self, ty: &TypeRef) -> bool {
         match ty {
-            TypeRef::Json => self.render_value(expr),
-            TypeRef::String => match expr {
-                Expr::Str(value) => Ok(format!("{}.to_owned()", rust_str(value))),
-                Expr::Ident(var) => Ok(self.owned_ident(var)),
-                _ => Err(self.type_error(expr, ty)),
-            },
-            TypeRef::Int => match expr {
-                Expr::Int(value) => Ok(format!("{value}i64")),
-                Expr::Ident(var) => Ok(var.clone()), // i64 is Copy
-                _ => Err(self.type_error(expr, ty)),
-            },
-            TypeRef::Float => match expr {
-                Expr::Int(value) => Ok(value.to_string()), // literal widens to f64
-                Expr::Float(value) => Ok(value.to_string()),
-                Expr::Ident(var) => match self.params.get(var) {
-                    Some(TypeRef::Int) => Ok(format!("{var} as f64")),
-                    _ => Ok(var.clone()),
-                },
-                _ => Err(self.type_error(expr, ty)),
-            },
-            TypeRef::Bool => match expr {
-                Expr::Bool(value) => Ok(value.to_string()),
-                Expr::Ident(var) => Ok(var.clone()),
-                _ => Err(self.type_error(expr, ty)),
-            },
-            TypeRef::Array { element, len } => match expr {
-                Expr::Array(items) => {
-                    let rendered = items
-                        .iter()
-                        .map(|item| self.render_typed(item, element))
-                        .collect::<Result<Vec<_>, _>>()?;
-                    match len {
-                        // A fixed-size target takes an array literal, and
-                        // its length has to match the declaration exactly:
-                        // Rust would report the mismatch as a type error in
-                        // the generated crate, which reads as a generator
-                        // fault instead of a body mistake.
-                        Some(size) if items.len() != *size => Err(Diagnostic::blocker(
-                            "E2011",
-                            format!(
-                                "the list literal holds {} value(s); the fixed-size array is declared as `List[_, {size}]`",
-                                items.len()
-                            ),
-                            format!(
-                                "give the literal exactly {size} values, or declare the field as a plain `List[...]` without a size"
-                            ),
-                        )
-                        .located("<generated>", 1)),
-                        Some(_) => Ok(format!("[{}]", rendered.join(", "))),
-                        None => Ok(format!("vec![{}]", rendered.join(", "))),
-                    }
-                }
-                Expr::Ident(var) => Ok(self.owned_ident(var)),
-                _ => Err(self.type_error(expr, ty)),
-            },
-            TypeRef::Named(name) => match expr {
-                Expr::Construct { args, .. } => {
-                    let struct_def = self.codegen.find_struct(name)?;
-                    self.render_struct_expr(struct_def, args)
-                }
-                Expr::Ident(var) => Ok(self.owned_ident(var)),
-                _ => Err(self.type_error(expr, ty)),
-            },
+            TypeRef::Named(name) => self.is_borrowed_dto(name),
+            TypeRef::Array { element, .. } => self.borrows(element),
+            _ => false,
         }
-    }
-
-    /// Render an expression of type `serde_json::Value`.
-    fn render_value(&self, expr: &Expr) -> Result<String, Diagnostic> {
-        match expr {
-            Expr::Null => Ok("serde_json::Value::Null".to_string()),
-            Expr::Bool(value) => Ok(format!("serde_json::Value::Bool({value})")),
-            Expr::Int(value) => Ok(format!("serde_json::Value::from({value}i64)")),
-            Expr::Float(value) => Ok(format!("{}json_number({value})", reserved::PREFIX)),
-            Expr::Str(value) => Ok(format!("serde_json::Value::from({})", rust_str(value))),
-            Expr::Array(items) => {
-                let rendered = items
-                    .iter()
-                    .map(|item| self.render_value(item))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(format!(
-                    "serde_json::Value::Array(vec![{}])",
-                    rendered.join(", ")
-                ))
-            }
-            Expr::Object(entries) => {
-                let rendered = entries
-                    .iter()
-                    .map(|(key, value)| {
-                        Ok(format!(
-                            "({}, {})",
-                            rust_str(key),
-                            self.render_value(value)?
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, Diagnostic>>()?;
-                Ok(format!("{}json_obj(vec![{}])", reserved::PREFIX, rendered.join(", ")))
-            }
-            Expr::Ident(var) => match self.params.get(var) {
-                Some(TypeRef::Json) => Ok(self.owned_ident(var)),
-                Some(_) => {
-                    // Borrow and serialize: works for DTOs and primitives and
-                    // is safe under repeated use.
-                    Ok(format!(
-                        "serde_json::to_value(&{var}).expect(\"request value serialization cannot fail\")"
-                    ))
-                }
-                None => Err(Diagnostic::blocker(
-                    "E2002",
-                    format!("`{var}` is not a parameter of this handler"),
-                    format!("make `{var}` a request parameter of the handler, or replace the reference with a literal"),
-                )
-                .located("<generated>", 1)),
-            },
-            Expr::Construct { .. } => Err(Diagnostic::blocker(
-                "E2002",
-                "DTO construction nested inside a JSON value is not supported yet",
-                "return the DTO construction as the handler's declared response type instead of nesting it inside the JSON value",
-            )
-            .located("<generated>", 1)),
-        }
-    }
-
-    /// A parameter of a non-`Copy` type is moved on its first use; render a
-    /// clone on every use when the handler body references it more than once.
-    fn owned_ident(&self, var: &str) -> String {
-        if self.counts.get(var).copied().unwrap_or(0) > 1 {
-            format!("{var}.clone()")
-        } else {
-            var.to_string()
-        }
-    }
-
-    fn type_error(&self, expr: &Expr, ty: &TypeRef) -> Diagnostic {
-        Diagnostic::blocker(
-            "E2002",
-            format!(
-                "a {} value cannot satisfy a field of type `{}`",
-                expr_kind(expr),
-                type_label(ty)
-            ),
-            format!(
-                "return a value of the field's declared type `{}` (a literal, a request parameter of that type, or a DTO construction)",
-                type_label(ty)
-            ),
-        )
-        .located("<generated>", 1)
     }
 }
 

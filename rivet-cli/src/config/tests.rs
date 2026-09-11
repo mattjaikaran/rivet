@@ -66,6 +66,25 @@ fn the_rust_native_features_section_parses_the_opt_in() {
 }
 
 #[test]
+fn a_landed_flag_is_no_longer_unimplemented() {
+    for set in [
+        RustNativeFeatures {
+            const_generics: true,
+            ..RustNativeFeatures::default()
+        },
+        RustNativeFeatures {
+            zero_copy_deserialization: true,
+            ..RustNativeFeatures::default()
+        },
+    ] {
+        assert!(
+            set.unimplemented().is_none(),
+            "a flag whose feature has landed must not block the build"
+        );
+    }
+}
+
+#[test]
 fn gauntlet_section_parses_thresholds_and_severities() {
     let raw = r#"
 [gauntlet]

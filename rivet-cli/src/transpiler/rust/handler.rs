@@ -21,6 +21,13 @@
 //! generated function and the crate would not compile. Every such reference
 //! is therefore written `super::…`, which a local item cannot shadow — a
 //! local item outranks a glob import, but not an explicit path.
+//!
+//! A route whose request body borrows from its own bytes takes
+//! `axum::body::Bytes` rather than `Json`: the `Json` extractor needs
+//! `DeserializeOwned`, and a `&'a str` field is the opposite of owned. The
+//! handler decodes the bytes itself, so the borrow has a buffer to point
+//! into. That type is written as a full path, for the same reason `Json` and
+//! `State` are: a local item cannot shadow an explicit path.
 
 use super::Codegen;
 use super::service::render_route;
@@ -54,17 +61,31 @@ fn render_handler(codegen: &Codegen<'_>, route: &RouteDefinition) -> Result<Stri
     let rendered = render_route(codegen, route)?;
 
     // `super::Json` and `super::State` are spelled out so a handler named
-    // after either extractor cannot capture its own pattern.
-    let (extraction, argument) = match &route.request {
+    // after either extractor cannot capture its own pattern. `Bytes` is
+    // written as its full path for the same reason: it is an opaque struct,
+    // so it binds by name and its type is `axum::body::Bytes`.
+    let (extraction, binding, argument) = match &route.request {
         RequestSpec::None => (
             "super::State(channel): super::State<C>".to_string(),
             String::new(),
+            String::new(),
         ),
+        RequestSpec::Json { var, ty } if codegen.borrows(ty) => {
+            let rust_type = codegen.rust_type(ty, false)?;
+            (
+                "super::State(channel): super::State<C>, bytes: axum::body::Bytes".to_string(),
+                format!(
+                    "    let {var}: {rust_type} = match serde_json::from_slice(&bytes) {{\n        Ok(value) => value,\n        Err(err) => return Err((axum::http::StatusCode::BAD_REQUEST, format!(\"cannot read the request body: {{err}}\"))),\n    }};\n"
+                ),
+                var.clone(),
+            )
+        }
         RequestSpec::Json { var, ty } => (
             format!(
                 "super::State(channel): super::State<C>, super::Json({var}): super::Json<{}>",
                 codegen.rust_type(ty, false)?
             ),
+            String::new(),
             var.clone(),
         ),
     };
@@ -101,7 +122,7 @@ fn render_handler(codegen: &Codegen<'_>, route: &RouteDefinition) -> Result<Stri
     // lint against generated code is noise the user cannot act on. The front
     // end owns identifier policy.
     Ok(format!(
-        "/// Serves `{method} {path}`{stories}.\n///\n/// Calls the service layer over the configured channel.\n#[allow(non_snake_case)]\npub async fn {name}<C: channel::Channel>({extraction}) -> {return_ty} {{\n    {call}\n}}\n",
+        "/// Serves `{method} {path}`{stories}.\n///\n/// Calls the service layer over the configured channel.\n#[allow(non_snake_case)]\npub async fn {name}<C: channel::Channel>({extraction}) -> {return_ty} {{\n{binding}    {call}\n}}\n",
         method = route.method.as_str(),
         path = route.path,
         name = route.handler_name,

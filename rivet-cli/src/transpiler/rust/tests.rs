@@ -6,6 +6,7 @@ use std::fs;
 
 mod features;
 mod fixtures;
+mod zero_copy;
 
 use fixtures::*;
 
@@ -107,6 +108,26 @@ fn a_user_chosen_name_never_triggers_a_cargo_style_lint() {
             project.main_rs
         );
     }
+}
+
+/// A topology that does not construct a transport still emits it, and the
+/// emission carries an allow so the generated crate stays warning-free.
+///
+/// The trait and the monolith transport are the app's own route table, so
+/// both topologies emit them. In `grpc` mode the router holds a `Grpc`, so
+/// nothing constructs `InProcess` and cargo warns about generated code the
+/// user never wrote.
+#[test]
+fn an_unconstructed_transport_carries_a_dead_code_allow() {
+    let project =
+        generate_project(&ping_blueprint(), &grpc_config(), Path::new(".")).expect("generate");
+    assert!(
+        project
+            .main_rs
+            .contains("#[allow(dead_code)]\n    pub struct InProcess;"),
+        "the unused transport takes the allow:\n{}",
+        project.main_rs
+    );
 }
 
 #[test]
