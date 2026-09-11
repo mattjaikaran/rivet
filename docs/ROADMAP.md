@@ -164,13 +164,16 @@ SDK, `uniffi-bindgen`, and Xcode's command-line tools, none of which this
 repository has. The tracker records the toolchain each one needs.
 
 **Rust-native features**: `[rust_native_features]` advertises four flags and
-the example config flips one of them. `const_generics` is met: a DTO with
+the example config flips two of them. `const_generics` is met: a DTO with
 `List[float, 768]` generates `pub values: [f64; 768]`, with the generated
 serde bridge that a derive past 32 elements needs, and the example app
-round-trips all 768 values on both the native and the WASI target. The other
-three flags stay false, because each needs a layer the DSL does not have yet
-(a database surface, a route-protection decorator, and borrowed-field
-plumbing). See the cross-phase section in `tasks/todo.md`.
+round-trips all 768 values on both the native and the WASI target.
+`zero_copy_deserialization` is met: a `borrowed[str]` DTO field generates
+`pub text: &'a str` behind `#[serde(borrow)]`, the native handler decodes
+the request bytes in place, and the example app answers the borrowed route on
+both targets. The other two flags stay false, because each needs a layer the
+DSL does not have yet (a database surface and a route-protection decorator).
+See the cross-phase section in `tasks/todo.md`.
 
 **Scope note**: this project finishes the Python front end before it starts
 any TypeScript work. The TypeScript (React Native) binding stays deferred

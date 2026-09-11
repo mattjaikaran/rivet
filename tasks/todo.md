@@ -77,16 +77,10 @@ A task is done when all of the following hold:
 until its feature is actually implemented, and the example config flips a
 flag only then, so the config never over-claims.
 
-`const_generics` has landed and its flag is true in the example config; see
-`tasks/completed.md`. The other three stay false, because each needs a layer
-the generator does not have yet:
+`const_generics` and `zero_copy_deserialization` have landed, and both flags
+are true in the example config; see `tasks/completed.md`. The remaining two
+stay false, because each needs a layer the DSL does not have yet:
 
-- [ ] `zero_copy_deserialization`: borrowed request bodies (`&str` fields via
-  `#[serde(borrow)]`). The IR tracks `FieldDefinition::is_borrowed`, but the
-  parser never sets it and no renderer emits a lifetime, so the flag would
-  claim a plumbing the IR does not carry.
-  Acceptance: a DTO with a borrowed `str` field builds and a request round-trips
-  without owned copies; `rivet.toml` flag true.
 - [ ] `raii_connections`: pooled connections released automatically at handler
   exit. The DSL has no database surface at all yet, so there is no
   connection to pool.
@@ -97,7 +91,8 @@ the generator does not have yet:
   `path` and `stories`, so there is no way to mark a route protected.
   Acceptance: a route flagged protected fails to compile without an
   authentication layer; the generated code has no runtime role lookup; flag true.
-- The completed `const_generics` line is in `tasks/completed.md`.
+- The completed `const_generics` and `zero_copy_deserialization` lines are in
+  `tasks/completed.md`.
 
 ---
 

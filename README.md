@@ -38,7 +38,10 @@ Protocol, and every JSON diagnostic carries a `suggested_fix`.
 
 Phase 5 starts: `rivet build --target wasm` compiles the same blueprint to a
 `wasm32-wasip1` module for an edge host, reusing the native target's DTOs and
-service layer, so a route's logic has one implementation.
+service layer, so a route's logic has one implementation. Two
+`[rust_native_features]` flags have landed: `const_generics` renders
+`List[T, N]` as a Rust array, and `zero_copy_deserialization` renders a
+`borrowed[str]` DTO field as a `&str` slice of the request body.
 
 ## Try it
 
@@ -119,6 +122,22 @@ def echo(request: dict) -> dict:
     return {"echo": request}
 ```
 
+A DTO field can borrow its text from the request body instead of copying it:
+
+```python
+class Note:
+    text: borrowed[str]
+
+@api.post("/notes", stories=["US-004"])
+def create_note(request: Note) -> dict:
+    return {"echo": request}
+```
+
+Set `zero_copy_deserialization = true` in `[rust_native_features]` and the
+generated field is `pub text: &'a str` behind `#[serde(borrow)]`. See
+[pillar 8](docs/pillars/08-wasm-mobile-sdk-support.md) for the borrow rules
+and the diagnostics that hold them.
+
 Each `rivet build` writes a crate with its own cargo `target/` (about
 140 MB). Remove the generated crates and the test fixtures when you do
 not need them:
@@ -137,6 +156,9 @@ make clean-all    # the above plus the workspace cargo cache
 - annotation-only DTO classes (`class OrderCreate: sku: str`)
 - handler bodies that return literals, request values, or a single DTO
   constructor
+- `borrowed[str]` DTO fields (a slice of the request body) under the
+  `zero_copy_deserialization` flag, and `List[T, N]` fixed-size arrays under
+  `const_generics`
 
 Anything outside the subset fails the build with a structured, machine-readable
 JSON error instead of a silent mistranslation. Full Python semantics are the

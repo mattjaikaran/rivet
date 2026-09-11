@@ -86,6 +86,30 @@ it lives inside its struct, so `pub main: String` inside `pub struct Foo`
 compiles.
 ```
 
+## Borrowed fields
+
+A DTO field annotated `borrowed[str]` renders as a `&'a str` slice of the
+request body, behind `#[serde(borrow)]`, when the project sets
+`[rust_native_features] zero_copy_deserialization = true`. The DTO takes a
+lifetime, so the borrow needs a buffer that outlives the value.
+
+That buffer exists in exactly one place — the request body — so the generator
+accepts a borrowed DTO only as a route's request body. A response type, or a
+field of another DTO, has no such buffer: the generator rejects both with
+`E2016` before any crate is written. A borrowed field in a project that has
+not set the flag is `E2015`, whose fix names the flag.
+
+The parser rejects the shapes that cannot borrow at all
+(`Optional[borrowed[str]]`, `borrowed[int]`, and an array of borrowed values)
+with `E1014`, at the offending line. Between the three diagnostics, no borrow
+reaches cargo as an error against generated code.
+
+The native handler takes `axum::body::Bytes` rather than the `Json` extractor
+for such a route, because `Json<T>` requires `T: DeserializeOwned` and a
+borrowed DTO is the opposite of owned. The handler calls
+`serde_json::from_slice` itself, so the field points into the extractor's
+buffer for the length of the call.
+
 ## The channel
 
 An internal channel is the app's route table as typed async methods:

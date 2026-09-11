@@ -46,6 +46,19 @@ the module's namespace either. Read
 [pillar 02](02-multi-service-architecture.md) for the reserved-name rule and
 the `E1013` diagnostic that holds it.
 
+### The `rust_native_features` flags
+
+Flip each flag as its feature lands, and stop generating the error path it
+replaces:
+
+- `const_generics` — **landed**: `List[T, N]` renders `[T; N]` instead of
+  `E2003`.
+- `zero_copy_deserialization` — **landed**: a `borrowed[str]` field renders as
+  a `&'a str` slice of the request body, behind `#[serde(borrow)]`.
+- `raii_connections` — blocked: the DSL has no database surface to pool.
+- `compile_time_rbac` — blocked: the route decorator has no way to mark a
+  route protected.
+
 ### The request protocol
 
 A module is an edge handler, not a server: the host runs one instance per
@@ -148,6 +161,51 @@ and deserializing builds the array from a `Vec` and rejects a length that
 does not match the declaration. The bridge is emitted only when a DTO
 declares such a field, and both targets carry it, so a 768-element embedding
 round-trips as a real array with no `Vec` in the struct.
+
+
+## Borrowed request bodies
+
+`[rust_native_features] zero_copy_deserialization = true` renders a
+`borrowed[str]` DTO field as a slice of the request body:
+
+```python
+class Note:
+    text: borrowed[str]
+```
+
+```rust
+#[serde(borrow)]
+pub text: &'a str,
+```
+
+The DTO takes a lifetime, and `Deserialize` reads the text as a `&'a str`
+pointing into the buffer that holds the request. No `String` is allocated for
+the field.
+
+The borrow has exactly one place to live, so the generator accepts a borrowed
+DTO only as a route's **request body**. A response type or a field of another
+DTO would need the borrow and the value to share one lifetime, which the
+generator does not render: it rejects both with `E2016` before writing a
+crate. A field that borrows in a project that has not set the flag is `E2015`,
+whose fix names the flag.
+
+One JSON shape cannot borrow: a string that contains an escape, such as
+`{"text":"a\nb"}`. The value only exists after unescaping, so it has no
+contiguous slice in the body to point at, and `serde_json` reports it. The
+route answers `400` with the decode error rather than copying the text, which
+keeps the borrow promise honest. A client that sends such a body gets a
+problem detail, not a silent allocation.
+
+The native handler cannot use axum's `Json` extractor for such a route:
+`Json<T>` requires `T: DeserializeOwned`, and a borrowed DTO is the opposite.
+The handler therefore takes `Bytes` and calls `serde_json::from_slice` itself,
+so the borrow points into the extractor's buffer for the length of the call.
+The module decodes from the body text it already holds, so both targets read
+the field without a copy.
+
+`Optional[borrowed[str]]`, `borrowed[int]`, and an array of borrowed values
+are rejected in the parser with `E1014`, so the user reads a located
+diagnostic rather than a cargo error against generated code.
 
 ### Toolchain status
 
