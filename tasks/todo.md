@@ -20,6 +20,24 @@ start TypeScript work.
 - The phase-4 admin panel is not TypeScript work: it ships as one static
   file, with no React or Solid build step.
 
+
+## Python front-end completion
+
+The Python DSL front end is a subset. Finish it before any other language.
+Each item below is Python-side front-end work, ordered by what it unblocks.
+
+- [ ] Query parameters, read from the query string. Acceptance: a handler
+  parameter the route path does not name is read from the query string on
+  both targets.
+- [ ] More than one non-path parameter. Acceptance: a handler declares
+  several typed parameters and the generated router extracts each one.
+- [ ] Assignment, control flow (`if`, `for`, `match`), and more than one
+  `return` in a handler body. Acceptance: a handler that assigns a local and
+  branches on it builds and answers on both targets.
+- [ ] Calls, attribute access, arithmetic, f-strings, and comprehensions.
+  Acceptance: a handler that calls a helper or formats a string builds and
+  answers on both targets.
+
 ## How to use this file
 
 - Keep `tasks/todo.md` authoritative for outstanding work.

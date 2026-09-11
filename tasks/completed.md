@@ -915,3 +915,34 @@ exist.
 - `./scripts/gate.sh` passes over the union: fmt, clippy `-D warnings`, 284
   in-process tests in `rivet-cli` plus the workspace suite, `cargo deny`, the
   example build and audit on both targets, and the repo self-checks.
+
+---
+
+## Python front-end completion
+
+### Path parameters
+
+- Path parameters (`/orders/{id}`). `RouteDefinition` gained `path_params`
+  (`PathParam { name, ty }`, in path order), the parser binds a `{name}`
+  placeholder to the handler parameter of the same name and rejects a
+  missing, duplicate, malformed, or unparseable one with `E1015`, and both
+  generators carry the value: the native target as leading arguments of the
+  service function and the channel method with axum's `Path` extractor, the
+  WASI target with its own segment matcher and percent decoder
+  (`0c79659`).
+- Measured end to end on both targets: `/orders/42` answers `200`,
+  `/orders/abc` `400`, `/orders` and `/orders/42/` `404`, and
+  `POST /orders/42` `405` naming the allowed method. The native rows were
+  probed over HTTP in-process and over gRPC; the WASI rows ran under
+  Wasmtime. A percent-encoded slash stays inside one segment and `+` is not
+  decoded (`0c79659`).
+- The gate caught the split the feature forced: four files crossed the
+  400-line ceiling, so the parser and generator path-parameter tests moved to
+  `tests/path_params.rs` siblings, the gRPC transport to
+  `transpiler/rust/channel/grpc.rs`, and the WASI crate template to
+  `transpiler/rust/wasm/template.rs`. Clippy's `type_complexity` replaced
+  `parse_parameters`' tuple return with `ParsedParameters` (`0c79659`).
+- `./scripts/gate.sh` passes over the union: fmt, clippy `-D warnings`, 300
+  in-process tests in `rivet-cli` plus the workspace suite, `cargo deny`, the
+  example build and audit on both targets, and the repo self-checks
+  (`0c79659`).
