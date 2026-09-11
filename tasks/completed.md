@@ -754,4 +754,4 @@ exist.
   the `E1003` duplicate-DTO guard, so it carries the real file and line and
   every parsing command rejects the module — build, audit, trace, plan, and
   mcp — not only the two generators. The message names the first
-  definition's line (`31c3a7e`).
+  definition's line, and the code is `E1012` (`31c3a7e`, `08c8b1a`).
