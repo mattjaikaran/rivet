@@ -946,3 +946,29 @@ exist.
   in-process tests in `rivet-cli` plus the workspace suite, `cargo deny`, the
   example build and audit on both targets, and the repo self-checks
   (`0c79659`).
+
+### Query parameters
+
+- A handler parameter the route path does not name reads from the query
+  string when its type is a primitive, and stays the JSON body otherwise
+  (`dict`, a DTO, or a list). `RouteDefinition` gained `query_params`, and
+  `PathParam` became `RouteParam` because both sources describe the same pair
+  (`b88b71a`).
+- The native target extracts with axum's `Query` and binds each parameter in
+  declaration order; the WASI target splits the query off the path before
+  matching and decodes it with form rules. Measured on both targets:
+  `/search?page=2&size=10` answers `200`, `/search` `400` naming the missing
+  parameter, an unparseable value `400`, an unknown extra key `200`, and
+  `/nope?page=2` `404` (`b88b71a`).
+- A probe caught a divergence the unit tests could not: a repeated key
+  answered the first value on WASI and the last on native. Both targets now
+  keep the last value, which is the form decoder's rule, and the WASI
+  protocol test asserts that row (`b88b71a`).
+- A parameter value is never stored under a second generated name, so the
+  generator adds no prefix and no route parameter can be shadowed. The two
+  names Rust forbids as parameters, `channel` and `bytes`, are reserved with
+  `E1013`; `reserved::HANDLER_PARAMETERS` records the rule and the `E0415`
+  reason behind it (`b88b71a`).
+- `./scripts/gate.sh` passes: fmt, clippy `-D warnings`, 316 in-process tests
+  in `rivet-cli` plus the workspace suite, `cargo deny`, the example build
+  and audit on both targets, and the repo self-checks (`b88b71a`).
