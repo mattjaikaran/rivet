@@ -9,11 +9,18 @@ You are the senior engineer continuing work on **Rivet**, a public open-source
 Rust repository at `~/dev/rivet` (branch `main`). Mission: turn a Python DSL
 into a compiled, memory-safe Rust API server, and publish it.
 
-**The generated-crate name-collision defect class is closed** at `d134335`.
-The generator no longer accepts a DSL identifier that collides with a name
-the generated crate owns, both targets agree on every input, and a class test
-holds the invariant. Do not reopen it — but read "What the probe changed" so
-you do not rebuild a wrong model of it.
+**Two defect classes are closed, and you must not reopen either.**
+
+The generated-crate name-collision class closed at `d134335`: the generator
+no longer accepts a DSL identifier that collides with a name the generated
+crate owns, both targets agree on every input, and a class test holds the
+invariant.
+
+The `zero_copy_deserialization` flag landed at `df7eb2e`. A `borrowed[str]`
+DTO field renders as `&'a str` behind `#[serde(borrow)]`, the parser sets the
+IR marker, and three diagnostics (`E1014`, `E2015`, `E2016`) hold the rule
+that a borrow is legal only as a route's request body. Read the section on it
+below before you touch the borrowed path. Do not reopen it either.
 
 **This session's priority: the remaining Python-side roadmap work.** The
 Python front end is the only front end; finish every Python-side item before
@@ -37,15 +44,16 @@ file with no React or Solid build step. Keep it that way.
 
 ## What landed in the last session
 
-Five commits, plus the tracker:
+Six commits, plus the tracker:
 
 | Commit | What |
 | :--- | :--- |
-| `c605370` | `rivet-core/src/reserved.rs`: the reserved names and the constants the generator emits, in one place |
-| `9edacd1` | Handlers moved into `mod handlers`; every generator-owned symbol prefixed `rivet_`; `#[allow(non_snake_case)]` on items carrying a user name |
-| `5b3976b` | `E1013` in `parser/python.rs`, scoped per namespace |
-| `1c297f9` | `commands/build/tests/collisions.rs`: the class test, both targets |
-| `f4ceb97` | Pillars 02 and 08 and the README layout line |
+| `753e9f8` | `parser/annotation.rs`: `ParsedType` and the `borrowed[str]` parse |
+| `27d3f04` | The borrowed render, the `Bytes` handler, and the borrow rules |
+| `b45b3c5` | `#[allow(dead_code)]` on the unused monolith transport |
+| `65a24ea` | The example route and the end-to-end proof on both targets |
+| `daaab00` | Pillars 02 and 08, the README, and the roadmap paragraph |
+| `df7eb2e` | The tracker entry with the probe's results |
 
 ### The invariant
 
@@ -89,10 +97,45 @@ and must stay legal. A DTO with any of those names is rejected. Read
 `rivet-core/src/reserved.rs` before changing the rule; the scoping comments
 there explain the namespace argument.
 
-## What the probe changed — do not rebuild the wrong model
+### The borrowed-body invariant
 
-The previous handoff was wrong in both directions, twice. The probe is the
-authority; a table you are handed is not.
+> A `borrowed[str]` field is a slice of the request body, so it has exactly
+> one buffer to point into. It is legal only as a route's request body, and
+> only when the project sets `zero_copy_deserialization`.
+
+Four layers hold it:
+
+1. **The parser marks the field.** `parse_type_text` returns a `ParsedType`
+   carrying `is_borrowed`, and `parse_dto_class` writes it to
+   `FieldDefinition`. The annotation parser lives in `parser/annotation.rs`;
+   `parser/types.rs` holds only the DTO class walk now.
+2. **`E1014` rejects an annotation that cannot borrow** — a bare
+   `borrowed[str]` parameter, a borrowed return type, `Optional[borrowed[
+   str]]`, `borrowed[int]`, and `List[borrowed[str]]`. It is raised in the
+   parser, so every command rejects the module.
+3. **`E2015` rejects the borrow without the flag**, and **`E2016` rejects it
+   outside a request body** (a response type, or a field of another DTO).
+   Both live in `transpiler/rust/borrow.rs` and both generators call them.
+4. **The native handler takes `Bytes`, not `Json`.** `Json<T>` requires
+   `T: DeserializeOwned`; a borrowed DTO is the opposite, and a probe proved
+   `Json<Note<'_>>` does not compile at all. The handler calls
+   `serde_json::from_slice` itself. **Do not "simplify" that back to the
+   `Json` extractor.** The WASM module decodes from the body text it already
+   holds.
+
+The lifetime is one elided `'_` at every use site, because every legal
+position is a parameter or a local. A JSON string that carries an escape
+cannot borrow, and the route answers `400`; that is the promise holding, not
+a defect.
+
+## What the probes changed — do not rebuild the wrong model
+
+A table you are handed is not the authority. Two probes have corrected a
+handoff in this project, and both corrections are recorded below.
+
+### The collision probe
+
+The previous handoff was wrong in both directions, twice.
 
 | Claim in the old document | What the probe showed |
 | :--- | :--- |
@@ -113,6 +156,26 @@ the native binary for a handler named `State` answers `200 {}` and `404`; the
 WASM module for a handler named `json_obj` answers
 `{"body":{},"status":200}` under `wasmtime run`.
 
+### The zero-copy probe
+
+The plan for `zero_copy_deserialization` was "render `Json<Dto<'a>>` and be
+done". That does not compile: axum's `Json<T>` extractor requires
+`T: DeserializeOwned`, and a borrowed DTO is the opposite. The probe's exact
+message was `implementation of Deserialize is not general enough`. The fix is
+`Bytes` plus `serde_json::from_slice`, and the same probe proved the field
+points inside the extracted buffer.
+
+Two more rows the plan did not predict. `Optional[borrowed[str]]` and
+`List[borrowed[str]]` cannot be rendered, because the borrow and the wrapper
+would have to share one lifetime, so the parser rejects them. And a DTO
+carrying both a borrowed field and `List[float, 4]` answers `E2003` until the
+config also sets `const_generics`: the two flags are independent, not
+subsumed, and a test pins the composition.
+
+The parallel probe of all 16 input rows is the model to copy. One row per
+shape the user controls, every row in the background at once, one verdict
+line each.
+
 ## What is verified working — do not break it
 
 - **Phases 0-4 complete.** Phase 4 closed 2026-09-10: compile-time plugins, the
@@ -121,17 +184,24 @@ WASM module for a handler named `json_obj` answers
   Linear).
 - **Phase 5 started.** `rivet build --target wasm` emits a `wasm32-wasip1`
   command module sharing the native target's `mod service` and DTO structs,
-  carrying no axum/tokio/gRPC/plugins/assets, verified under Wasmtime. The
-  `const_generics` flag renders `List[float, 768]` as `[f64; 768]` with a
-  generated serde bridge, because the derive stops at 32 elements.
-- **Four checks already landed**, and they are the pattern to follow:
+  carrying no axum/tokio/gRPC/plugins/assets, verified under Wasmtime. Two of
+  the four `[rust_native_features]` flags have landed: `const_generics`
+  renders `List[float, 768]` as `[f64; 768]` with a generated serde bridge
+  (the derive stops at 32 elements), and `zero_copy_deserialization` renders
+  `borrowed[str]` as `&'a str`.
+- **Seven checks already landed**, and they are the pattern to follow:
   `E2013` (a feature flag set without its feature), `E2014` (two routes on one
-  method and path), `E1012` (two routes sharing a handler name), and `E1013`
-  (an identifier colliding with a generated name).
-- `./scripts/gate.sh` is the acceptance bar: fmt, clippy `-D warnings`, **302
-  tests**, `cargo deny`, the example build and audit, repo self-checks. Green
-  at `d134335`.
-- Tracker coherent: 6 todo items, 148 completed.
+  method and path), `E1012` (two routes sharing a handler name), `E1013`
+  (an identifier colliding with a generated name), `E1014` (a borrow
+  annotation that cannot work), `E2015` (a borrow without the flag), and
+  `E2016` (a borrow outside a request body).
+- `./scripts/gate.sh` is the acceptance bar: fmt, clippy `-D warnings`, **284
+  tests** in `rivet-cli` plus the workspace suite, `cargo deny`, the example
+  build and audit on both targets, repo self-checks. Green at `df7eb2e`.
+- Tracker coherent: 5 todo items, 163 completed.
+- **The file ceiling is 400 lines and it bites.** Three new-code additions
+  pushed files over it in one session, so put new code in a sibling module
+  from the start rather than discovering it in the gate.
 
 ### Environment
 
@@ -142,22 +212,28 @@ WASM module for a handler named `json_obj` answers
 
 ## Next up
 
-1. **The remaining three `rust_native_features` flags.** Each needs its layer:
-   - `zero_copy_deserialization` — teach the parser to set
-     `FieldDefinition::is_borrowed` and render a borrowed `&str` with a
-     lifetime; then flip the flag. This is the only one that is reachable now.
-   - `raii_connections` — needs a database surface in the DSL. Blocked.
-   - `compile_time_rbac` — needs a way to mark a route protected; the
-     decorator accepts only `path` and `stories`. The decorator must grow a
-     keyword first.
-   A flag set without its feature is already `E2013`.
+1. **The two remaining `rust_native_features` flags, both blocked on a layer
+   the DSL does not have.** Do not flip either flag until its layer exists; a
+   flag set without its feature is already `E2013`.
+   - `raii_connections` — needs a database surface in the DSL. There is no
+     connection to pool today, so this one has no reachable entry point.
+   - `compile_time_rbac` — needs a way to mark a route protected. The route
+     decorator accepts only `path` and `stories`, so the decorator must grow
+     a keyword first, and then the generated crate needs a typestate layer
+     with no runtime role lookup.
 2. **The mobile deliverables**, blocked on toolchains: UniFFI bindings for
    Kotlin and Swift, then `rivet mobile init --platforms ios,android`. If the
    toolchains appear, build them over `mod service` so the binding surface and
    the HTTP surface cannot drift. Record each as blocked with the toolchain it
    needs rather than ticking it.
-3. **Phase-5 docs and tracker close**, once the reachable work is done and the
-   mobile lines are landed or recorded as blocked.
+   Because both flag layers and the mobile bindings need something that does
+   not exist in this repository yet, **the reachable Python-side work is
+   done.** The honest next step is the phase-5 close below, not a search for
+   filler: if you cannot name the missing layer a task needs, say so and
+   record it rather than building a stub.
+3. **Phase-5 docs and tracker close**, once the mobile lines are landed or
+   recorded as blocked. `docs/ROADMAP.md` and the tracker both carry the
+   phase-5 boxes; check them against the code before you tick anything.
 
 ## How to work: tokens and `rtk`
 
@@ -279,13 +355,15 @@ Three habits follow, for the rest of the roadmap:
 ## First steps in the session
 
 1. `git status` and `rtk git log --oneline -10` to confirm the checkout.
-2. `rtk ./scripts/gate.sh` — expect green, 302 tests, 6 todo, 148 completed.
+2. `rtk ./scripts/gate.sh` — expect green, 284 tests in `rivet-cli`, 5 todo,
+   163 completed.
 3. Read `rivet-core/src/reserved.rs` in full, then
    `rivet-cli/src/transpiler/rust/handler.rs`. Those two files hold the
    invariant; the rest of the generator follows from them.
-4. Pick the next roadmap item. `zero_copy_deserialization` is the reachable
-   one: it needs `FieldDefinition::is_borrowed` set by the parser and a
-   borrowed render with a lifetime, then the flag flips.
+4. Pick the next roadmap item. The reachable Python-side work is done, so
+   read "Next up" and confirm that against the code before you start
+   anything: the two remaining flags and the mobile bindings each need a
+   layer this repository does not have yet.
 5. Probe the new capability's edges before you trust it, and record the probe
    in the commit body.
 
