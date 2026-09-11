@@ -133,6 +133,23 @@ enum Command {
         #[command(subcommand)]
         action: SessionAction,
     },
+    /// Reconcile the blueprint's story IDs with Jira or Linear (phase 4,
+    /// pillar 05).
+    Sync {
+        /// Path to the app module (defaults to `app.py`).
+        #[arg(default_value = "app.py")]
+        app: PathBuf,
+        /// Report the diff and write nothing; the default behavior.
+        #[arg(long, conflicts_with = "apply")]
+        dry_run: bool,
+        /// Create the issues the blueprint declares and the tracker lacks.
+        #[arg(long)]
+        apply: bool,
+        /// Read a captured tracker payload from this file instead of
+        /// calling the tracker, so the diff is deterministic and offline.
+        #[arg(long, conflicts_with = "apply")]
+        from: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -201,6 +218,7 @@ impl Command {
             Command::Fix { .. } => "fix".into(),
             Command::Trace { .. } => "trace".into(),
             Command::Mcp => "mcp".into(),
+            Command::Sync { .. } => "sync".into(),
             Command::Session { action, .. } => match action {
                 SessionAction::Save { .. } => "session save".into(),
                 SessionAction::Resume { .. } => "session resume".into(),
@@ -224,6 +242,7 @@ impl Command {
                 app.clone()
             }
             Command::Mcp => PathBuf::new(),
+            Command::Sync { app, .. } => app.clone(),
             Command::Session { action } => match action {
                 SessionAction::Save { app, .. }
                 | SessionAction::Resume { app, .. }
@@ -300,6 +319,12 @@ fn main() -> ExitCode {
         Command::Fix { app } => commands::fix::run_fix(&app),
         Command::Trace { symptom, app } => commands::trace::run_trace(&symptom, &app),
         Command::Mcp => mcp::run_stdio().map_err(|diagnostic| vec![diagnostic]),
+        Command::Sync {
+            app,
+            dry_run: _,
+            apply,
+            from,
+        } => commands::sync::run_sync(&app, from.as_deref(), apply),
         Command::Session { action } => match action {
             SessionAction::Save { name, app } => commands::session::run_session_save(&app, &name),
             SessionAction::Resume { name, app } => {

@@ -99,7 +99,7 @@ commit, and every JSON diagnostic carries a `suggested_fix`. See
 - [x] Static assets embedded in the binary (`rust-embed`).
 - [x] Service discovery (Consul and etcd).
 - [x] Built-in admin panel: one embedded HTML file, no build step.
-- [ ] Story-to-Jira/Linear sync (`rivet sync`).
+- [x] Story-to-Jira/Linear sync (`rivet sync`).
 - [x] Multi-service architecture (monolith → microservices via config).
 
 **Success Metric**: `rivet add plugin auth-token --path
@@ -131,6 +131,12 @@ and never lets a registry outage stop the app. An integration test runs the
 registration against a stub registry and asserts the payload names the
 service and its port, then sends SIGINT and asserts the deregistration.
 See `docs/pillars/02-multi-service-architecture.md`.
+
+Story sync is met: `rivet sync --dry-run` reports the diff between the
+blueprint's story IDs and the tracker's issues — missing, orphan, title
+drift, and state drift — and writes nothing without `--apply`. An
+end-to-end test drives a fixture app and a captured tracker payload through
+the command. See `docs/pillars/05-story-to-code-traceability.md`.
 
 ---
 

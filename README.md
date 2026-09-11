@@ -30,10 +30,11 @@ runs the API and a frontend dev server behind one origin and tunnels the
 frontend's HMR socket, and `[frontend] dist` compiles the production
 frontend build into the binary, so a shipped app serves its assets from
 its own memory. `[admin] enabled = true` compiles a route-table panel into
-that binary at `/__rivet/`, and `[discovery]` registers the app with
-Consul or etcd and removes it again on shutdown. `rivet mcp` serves the
-parser, audit, vector, and context-store tools to AI agents over the Model
-Context Protocol, and every JSON diagnostic carries a `suggested_fix`.
+that binary at `/__rivet/`, `[discovery]` registers the app with Consul or
+etcd and removes it again on shutdown, and `rivet sync` reconciles the
+blueprint's story IDs with Jira or Linear. `rivet mcp` serves the parser,
+audit, vector, and context-store tools to AI agents over the Model Context
+Protocol, and every JSON diagnostic carries a `suggested_fix`.
 
 ## Try it
 
