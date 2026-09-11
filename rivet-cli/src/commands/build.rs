@@ -13,7 +13,18 @@ use crate::parser::python::parse_python_file;
 use crate::transpiler::rust::{AssetEmbedding, generate_project};
 use std::path::Path;
 
-pub fn run_build(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
+mod wasm;
+
+/// Which artifact `rivet build` produces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum BuildTarget {
+    /// A native binary: the axum server (the default).
+    Native,
+    /// A `wasm32-wasip1` core module that answers the same routes.
+    Wasm,
+}
+
+pub fn run_build(app_file: &Path, target: BuildTarget) -> Result<(), Vec<Diagnostic>> {
     let project_dir = app_file
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -57,6 +68,10 @@ pub fn run_build(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
     }
     if !blockers.is_empty() {
         return Err(blockers);
+    }
+
+    if target == BuildTarget::Wasm {
+        return wasm::run(&project_dir, &module.blueprint, &config);
     }
 
     let generated = generate_project(&module.blueprint, &config, &project_dir)

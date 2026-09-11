@@ -7,6 +7,7 @@
 //! frontend dev server, whose HMR socket the proxy tunnels. An upstream that
 //! does not answer returns `502` with the reason, never a hang.
 
+use crate::commands::build::BuildTarget;
 use crate::config::RivetConfig;
 use crate::diagnostic::Diagnostic;
 use crate::parser::python::parse_python_file;
@@ -124,7 +125,7 @@ pub fn run_dev(
         ),
     }
 
-    crate::commands::build::run_build(app_file)?;
+    crate::commands::build::run_build(app_file, BuildTarget::Native)?;
 
     let binary = project_dir
         .join("generated")

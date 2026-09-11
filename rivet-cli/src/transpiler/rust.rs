@@ -22,11 +22,14 @@ mod assets;
 mod channel;
 mod discovery;
 mod handler;
+mod helpers;
 mod main_file;
 mod service;
+mod wasm;
 
 pub use assets::AssetEmbedding;
 use main_file::{MainBlocks, MainParts, assemble, render_manifest, used_router_fns};
+pub use wasm::{WASM_TARGET, generate_wasm_project};
 
 /// A complete, ready-to-write generated crate, with what became of the
 /// project's static assets.

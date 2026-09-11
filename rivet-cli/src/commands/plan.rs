@@ -7,7 +7,7 @@
 //! Codes: E1008 file/config, E3012 provider/env, E3014 converge-or-verify, E3015 git.
 
 use crate::commands::audit::audit_json;
-use crate::commands::build::run_build;
+use crate::commands::build::{BuildTarget, run_build};
 use crate::commands::session::render_context;
 use crate::config::RivetConfig;
 use crate::diagnostic::Diagnostic;
@@ -159,7 +159,7 @@ async fn plan_async(
     };
 
     write_text(app_file, &source)?;
-    if let Err(build_diagnostics) = run_build(app_file) {
+    if let Err(build_diagnostics) = run_build(app_file, BuildTarget::Native) {
         if from.is_some() {
             return Err(failed("compile", build_diagnostics));
         }
@@ -180,7 +180,7 @@ async fn plan_async(
             return Err(failed("compile", blockers));
         }
         write_text(app_file, &source)?;
-        if let Err(build_diagnostics) = run_build(app_file) {
+        if let Err(build_diagnostics) = run_build(app_file, BuildTarget::Native) {
             return Err(failed("compile", build_diagnostics));
         }
         module = revised;

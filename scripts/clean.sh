@@ -19,8 +19,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# Transpiled crates: one per example app, each with a nested cargo target.
-for generated in examples/*/generated; do
+# Transpiled crates: one per example app per target, each with a nested cargo
+# target. `--target wasm` writes `generated-wasm/` beside `generated/`.
+for generated in examples/*/generated examples/*/generated-wasm; do
     if [ -d "$generated" ]; then
         echo "clean: removing $generated"
         rm -rf "$generated"

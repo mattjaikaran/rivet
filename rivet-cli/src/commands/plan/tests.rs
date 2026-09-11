@@ -58,7 +58,7 @@ fn from_file_converges_commits_and_compiles() {
     assert!(spec.contains("Plan: add a health route US-42"), "{spec}");
     let subject = git_ok(&repo, &["log", "--oneline", "-1"]);
     assert!(subject.contains("plan: add a health route"), "{subject}");
-    run_build(&app).expect("the generated crate compiles");
+    run_build(&app, BuildTarget::Native).expect("the generated crate compiles");
 }
 
 #[test]

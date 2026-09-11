@@ -53,6 +53,10 @@ enum Command {
         /// Path to the app module (defaults to `app.py`).
         #[arg(default_value = "app.py")]
         app: PathBuf,
+        /// The artifact to produce (phase 5): the native server, or a
+        /// `wasm32-wasip1` module that answers the same routes.
+        #[arg(long, value_enum, default_value_t = commands::build::BuildTarget::Native)]
+        target: commands::build::BuildTarget,
     },
     /// Serve the Rust backend and the frontend dev server behind one origin
     /// (phase 4, pillar 03).
@@ -233,7 +237,7 @@ impl Command {
             Command::Add { action } => match action {
                 AddAction::Plugin { app, .. } => app.clone(),
             },
-            Command::Build { app } | Command::Audit { app, .. } | Command::History { app } => {
+            Command::Build { app, .. } | Command::Audit { app, .. } | Command::History { app } => {
                 app.clone()
             }
             Command::Dev { app, .. } => app.clone(),
@@ -301,7 +305,7 @@ fn main() -> ExitCode {
                 version.as_deref(),
             ),
         },
-        Command::Build { app } => commands::build::run_build(&app),
+        Command::Build { app, target } => commands::build::run_build(&app, target),
         Command::Audit { app, json } => commands::audit::run_audit(&app, json),
         Command::Dev {
             app,

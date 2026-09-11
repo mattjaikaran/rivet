@@ -125,7 +125,7 @@ fn the_app_registers_with_the_registry_and_leaves_it_on_shutdown() {
     )
     .expect("write rivet.toml");
 
-    run_build(&app).expect("the fixture must build");
+    run_build(&app, BuildTarget::Native).expect("the fixture must build");
 
     let mut server = Server(
         Command::new(dir.join("generated/target/release/orders"))
@@ -203,7 +203,7 @@ fn a_registry_that_never_answers_does_not_hold_startup() {
     )
     .expect("write rivet.toml");
 
-    run_build(&app).expect("the fixture must build");
+    run_build(&app, BuildTarget::Native).expect("the fixture must build");
 
     let started = Instant::now();
     let _server = Server(

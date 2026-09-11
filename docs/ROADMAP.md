@@ -145,11 +145,23 @@ the command. See `docs/pillars/05-story-to-code-traceability.md`.
 **Goal**: Edge and native distribution.
 
 **Deliverables**:
-- [ ] WASM compile target (`wasm32-wasi`).
+- [x] WASM compile target (`wasm32-wasip1`).
 - [ ] UniFFI bindings for Kotlin (Android), Swift (iOS), and TypeScript (React Native).
 - [ ] Mobile SDK generation (`rivet mobile init`).
 
 **Success Metric**: `rivet mobile init --platforms ios,android` generates SDKs that compile and pass tests.
+
+The WASM target is met: `rivet build --target wasm` writes a crate that
+carries the native target's own DTO structs and `mod service`, compiles it to
+`wasm32-wasip1`, and answers the blueprint's routes as a per-request edge
+handler. Two integration tests drive it: one runs the crate for the host and
+asserts the request protocol (`200`, `404`, `405`, `400`, and a body
+round-trip), and one runs the compiled module under Wasmtime and asserts the
+same. See `docs/pillars/08-wasm-mobile-sdk-support.md`.
+
+The mobile deliverables stay open: they need a JDK, `kotlinc`, the Android
+SDK, `uniffi-bindgen`, and Xcode's command-line tools, none of which this
+repository has. The tracker records the toolchain each one needs.
 
 **Scope note**: this project finishes the Python front end before it starts
 any TypeScript work. The TypeScript (React Native) binding stays deferred

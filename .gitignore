@@ -8,8 +8,10 @@
 *.rlib
 *.rmeta
 
-# Generated code (the transpiled Rust server)
+# Generated code (the transpiled Rust server, and the WASI module phase 5
+# writes beside it).
 generated/
+generated-wasm/
 
 # Local context engine (SQLite + LanceDB), one store per project dir
 .rivet/

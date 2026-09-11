@@ -617,3 +617,68 @@ tracker lines finish; the section closes when the phase does.
   panel, discovery — was untracked and a fresh clone ran the gate without
   them. `dist/` still covers a frontend's production output (`4263fc3`).
 - Every finished phase-4 line moved to this file with its commit hash.
+
+## Phase 5 - WASM and mobile
+
+Served by `prompts/prompt-08-wasm-mobile.md`, authored before the phase
+started the way every phase before it was. Entries land here as their tracker
+lines finish; the mobile lines stay open until their platform toolchains
+exist.
+
+### The phase-5 seed
+
+- `prompts/prompt-08-wasm-mobile.md` names the four deliverables, the
+  verification each one needs, and the repository rules that hold: the
+  WASM target reuses the native service layer rather than copying it, a
+  platform this repository cannot build is recorded as blocked with the
+  toolchain it needs, and generator output no toolchain here has compiled
+  does not ship (`ec45c3d`).
+
+### The WASM target
+
+- `rivet build --target wasm` renders the blueprint as a WASI command module
+  and compiles it for `wasm32-wasip1`. The crate carries the same DTO structs
+  and the same `mod service` as the native target, so a route's business
+  logic has one implementation; what it drops is everything that needs a
+  server. The manifest depends on serde and serde_json alone — no axum, no
+  tokio, no gRPC, no plugins, and no embedded assets (`<pending>`).
+- The module is an edge handler, not a server: it reads one request as JSON
+  on stdin (`{"method": "GET", "path": "/ping"}`), dispatches it through a
+  `match` rendered at build time, and writes one envelope to stdout
+  (`{"status": 200, "body": {...}}`). A path no route declares answers `404`;
+  a declared path with a method it does not serve answers `405` and names the
+  methods it allows; a body that does not match the declared type, or an
+  unreadable request, answers `400` (`<pending>`).
+- The executor is one poll with `Waker::noop()`. Every generated route is an
+  `async fn` that never awaits — the parser's subset is literals, request
+  parameters, and one DTO construction — so the module carries no runtime and
+  no reactor (`<pending>`).
+- `rivet build` gained `--target native|wasm` and defaults to `native`, so
+  every existing invocation behaves as before. A missing `wasm32-wasip1`
+  target is `E2010` with the `rustup target add` command that fixes it, not a
+  wall of cargo output (`<pending>`).
+- `docs/pillars/08-wasm-mobile-sdk-support.md` documents the target matrix,
+  the request protocol, why the module has no reactor, what the target
+  deliberately omits (WASI sockets, `[frontend] dist`, plugins, and
+  discovery), and which toolchain each mobile deliverable still needs.
+  `docs/ROADMAP.md` ticks the WASM box and leaves the two mobile boxes open
+  (`<pending>`).
+
+### Verification: the WASM target
+
+- Built `examples/basic/app.py` for the target and ran the module on its real
+  platform: `wasmtime run` with `{"method":"GET","path":"/ping"}` answers
+  `{"body":{"status":"pong"},"status":200}`; `POST /echo` with
+  `{"hello":"world"}` answers `{"body":{"echo":{"hello":"world"}},"status":200}`;
+  `GET /nope` answers `404`; `DELETE /ping` answers
+  `{"body":{"error":"DELETE is not served by /ping; it allows GET"},"status":405}`;
+  and a non-JSON request answers `400` (`<pending>`).
+- Two integration tests drive the same protocol. One builds the crate for the
+  host and runs it, which proves the dispatch, the four statuses, and the
+  envelope without a WASI host; the other builds the module and runs it under
+  Wasmtime, and reports the missing host instead of passing silently when
+  `wasmtime` is absent (`<pending>`).
+- Five renderer tests assert the wasm manifest carries no native dependency,
+  the crate reuses `mod service` and the DTO structs, the dispatch names
+  every route, a body route deserializes its declared type, and every
+  template token is substituted (`<pending>`).

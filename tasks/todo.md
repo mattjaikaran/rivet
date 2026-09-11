@@ -160,21 +160,30 @@ shipped.
 
 Goal: edge and native distribution, per
 `docs/pillars/08-wasm-mobile-sdk-support.md` and
-`docs/pillars/data-structured-under-the-hood.md` (WASM-friendly core).
+`docs/pillars/data-structured-under-the-hood.md` (WASM-friendly core). Seed:
+`prompts/prompt-08-wasm-mobile.md`.
 
-- [ ] `rivet build --target wasm` compiling to `wasm32-wasi`.
-  Acceptance: a generated app runs under Wasmtime and answers the ping route.
 - [ ] UniFFI bindings for Kotlin and Swift from the core. The TypeScript
   (React Native) binding stays deferred until the Python front end is done
   (see the scope section).
   Acceptance: each generated binding compiles against the fixture core.
+  Blocked: no JDK, `kotlinc`, Android SDK, `uniffi-bindgen`, or Xcode
+  command-line tools in this repository.
 - [ ] `rivet mobile init --platforms ios,android` producing SDKs that compile
   and pass tests.
   Acceptance: the generated projects build in the platform toolchains in CI.
+  Blocked: the same toolchains as the bindings above.
 - [ ] Flip the cross-phase `rust_native_features` flags as their features land
   (see the cross-phase section).
   Acceptance: all four flags are true in the example config and no generator
   error path for them remains.
+
+Toolchain note: the WASM target is verifiable in this repository —
+`rustup target add wasm32-wasip1` and `wasmtime` are installed, and the gate
+runs the generated module. The mobile lines are not: they need a JDK,
+`kotlinc`, the Android SDK, `uniffi-bindgen`, and Xcode's command-line tools.
+Record a mobile line as blocked with the toolchain it needs rather than
+ticking it.
 
 ---
 

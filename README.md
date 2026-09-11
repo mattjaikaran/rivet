@@ -36,6 +36,10 @@ blueprint's story IDs with Jira or Linear. `rivet mcp` serves the parser,
 audit, vector, and context-store tools to AI agents over the Model Context
 Protocol, and every JSON diagnostic carries a `suggested_fix`.
 
+Phase 5 starts: `rivet build --target wasm` compiles the same blueprint to a
+`wasm32-wasip1` module for an edge host, reusing the native target's DTOs and
+service layer, so a route's logic has one implementation.
+
 ## Try it
 
 ```bash
@@ -83,6 +87,23 @@ curl localhost:3000/          # the embedded index.html
 
 See [pillar 3](docs/pillars/03-polyglot-frontend-support.md) for the
 detection table, the routing rules, and the embedded-asset rules.
+
+For an edge host, build the same blueprint as a WASI module and run it with
+Wasmtime:
+
+```bash
+rustup target add wasm32-wasip1
+./target/release/rivet build --target wasm examples/basic/app.py
+
+echo '{"method":"GET","path":"/ping"}' \
+  | wasmtime run examples/basic/generated-wasm/target/wasm32-wasip1/release/basic.wasm
+# {"body":{"status":"pong"},"status":200}
+```
+
+The module is a per-request edge handler: one JSON request in, one JSON
+envelope out. See
+[pillar 8](docs/pillars/08-wasm-mobile-sdk-support.md) for the protocol and
+what the target omits.
 
 The example app is a plain Python file:
 
