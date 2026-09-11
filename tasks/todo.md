@@ -142,22 +142,17 @@ generation and required `suggested_fix` diagnostics.
 
 ---
 
-## Phase 4 - Ecosystem and multi-service
+## Phase 4 - Ecosystem and multi-service (complete 2026-09-10)
 
-Goal: production readiness, per pillars 01, 02, and 03. Seed:
+Goal: production readiness, per pillars 01, 02, 03, and 05. Seed:
 `prompts/prompt-07-ecosystem.md`.
 
-- [ ] Service discovery (Consul/etcd) and the built-in admin panel.
-  Acceptance: registration posts the service and port to a stub registry in
-  a test, and `/__rivet/routes` lists the routes the app serves.
-- [ ] Story-to-Jira/Linear sync (`rivet sync`), closing pillar 05's loop.
-  Acceptance: `rivet sync --dry-run` reports the expected story diff from a
-  captured tracker payload and writes nothing.
-- [ ] Phase-4 docs and tracker: finish pillars 01-03, tick the ROADMAP
-  boxes, refresh the README, and move finished lines.
-  Acceptance: the pillar docs describe what shipped, the ROADMAP phase-4
-  boxes are ticked, and every finished line sits in `tasks/completed.md`
-  with its commit hash.
+All seven deliverables are done: the compile-time plugin system, the
+multi-service transport switch, the polyglot `rivet dev` proxy, the embedded
+static assets, the admin panel, service discovery (Consul and etcd), and
+`rivet sync` (Jira and Linear). See `tasks/completed.md`; the phase-4
+ROADMAP boxes are ticked, and pillars 01, 02, 03, and 05 describe what
+shipped.
 
 ---
 

@@ -469,3 +469,151 @@ tracker lines finish; the section closes when the phase does.
   `Allow: GET, HEAD`, and the index drops from 494 bytes to 276 bytes on
   the wire under `Accept-Encoding: br` while decoding byte-for-byte
   identical to the file (`7a3646f`).
+
+### Admin panel
+
+- `[admin] enabled = true` renders the blueprint's route table at build
+  time and mounts two read-only endpoints: `GET /__rivet/routes` answers
+  the table as JSON (`method`, `path`, `handler`, and the route's story
+  IDs), and `GET /__rivet/` answers a one-file HTML panel that renders it.
+  The table is a static string, so the request path does no serialization
+  and holds no state, and the module is emitted only when the opt-in is set
+  (`0851b0d`).
+- The panel is one embedded HTML file with no dependencies. Rivet has no
+  Node toolchain in its build, so there is no React or Solid step; the
+  decision is recorded in pillar 03 rather than promised in a config key
+  (`0851b0d`).
+- `rivet build` rejects a blueprint route on either panel path with `E2006`
+  and a fix, instead of generating a router that panics on an overlapping
+  route at startup (`0851b0d`).
+- The example project enables the panel, so the gate builds and audits it
+  (`0851b0d`).
+
+### Verification: admin panel
+
+- End to end on `examples/basic`: `GET /__rivet/routes` answers
+  `[{"handler":"ping","method":"GET","path":"/ping","stories":["US-001"]},
+  {"handler":"echo","method":"POST","path":"/echo","stories":["US-002"]}]`
+  with `content-type: application/json`, `GET /__rivet/` answers the 1581
+  byte panel with `text/html; charset=utf-8`, and `GET /ping` and
+  `GET /auth/check` still answer from the compiled app and plugin
+  (`0851b0d`).
+- An integration test builds a panel-enabled fixture, starts the binary,
+  asserts the route table names both routes with their stories, asserts the
+  panel answers `text/html` and contains its own fetch path, and asserts
+  the app's own routes still answer (`0851b0d`).
+
+### Service discovery
+
+- `[discovery] backend = "consul" | "etcd"` registers the generated app at
+  startup and removes it on shutdown. Consul posts the service `ID`, `Name`,
+  and `Port` to `/v1/agent/service/register` and removes it through
+  `/v1/agent/service/deregister/<name>`; etcd puts a base64 key at
+  `/rivet/services/<name>` on a 60-second lease and re-grants it every 20
+  seconds, so a process that dies without deregistering expires on its own
+  (`857060d`).
+- The client is a hand-written HTTP/1.1 client in the generated crate, one
+  connection per request, plain `http://` only: registering happens once, so
+  an HTTP stack would cost more than it saves, and a generated app must
+  build with rustc and cargo alone. Every request carries a five-second
+  deadline, connect included (`857060d`).
+- Registration never stops the app: a registry that refuses, errs, or does
+  not answer within the deadline warns, and the app serves. `rivet build`
+  rejects only a service name that cannot go into a registry path or key,
+  with `E2005` and a fix (`857060d`).
+- Shutdown is graceful: `main` serves the app with
+  `with_graceful_shutdown`, and the generated manifest gains the `signal`,
+  `time`, and `io-util` tokio features only when discovery is configured
+  (`857060d`).
+
+### Verification: service discovery
+
+- An integration test runs the generated binary against a stub registry and
+  asserts the wire format the client sends: the request line is
+  `PUT /v1/agent/service/register HTTP/1.1`, `host` names the stub, the
+  `content-type` is `application/json`, the `content-length` matches the
+  body, and the body reads `"Name":"orders-api"` and `"Port":4333`. It then
+  sends SIGINT and asserts a second request to
+  `PUT /v1/agent/service/deregister/orders-api`, proving the graceful
+  shutdown path leaves the registry (`857060d`).
+- A second integration test runs a registry that accepts the connection and
+  never answers: the run waits the five-second deadline, warns, and the app
+  still answers `GET /ping` (`857060d`).
+- The unit tests assert the generated wiring for both backends, the etcd
+  base64 key against the RFC 4648 vectors, and the `E2005` rejection of a
+  service name that cannot go into a registry path (`857060d`).
+
+### Story-to-tracker sync
+
+- `rivet sync [app.py] [--dry-run] [--apply] [--from FILE]` reconciles the
+  blueprint's story IDs with Jira or Linear and reports four differences:
+  a story with no issue, an issue with no story, a title that no longer
+  matches the routes the story covers, and an issue the tracker closed while
+  the blueprint still serves it. Nothing is written without `--apply`, and
+  `--apply` only creates the missing issues (`7605413`, `c5e79d5`).
+- An issue binds to a story through its title — `<id>: <METHOD> <path>[; ...]`
+  — and the binding is exact: tracking compares the title's prefix before
+  the first colon to the story ID, so every ID the decorator accepts
+  round-trips. Only the orphan check uses a shape heuristic, so an ordinary
+  issue such as `Fix the flaky test: again` contributes no noise. A story ID
+  the title cannot carry, such as one holding a colon, fails with `E3023`
+  (`c5e79d5`).
+- Both readers page to the end of the tracker: Jira on `nextPageToken` from
+  `GET /rest/api/3/search/jql` (the classic `/search` is marked "Currently
+  being removed" in the REST v3 reference), Linear on `pageInfo` cursors. A
+  tracker whose paging never converges fails with `E3020` after a bounded
+  number of pages, so `--apply` cannot file duplicates on every run
+  (`c5e79d5`).
+- Linear's `issueCreate` takes a team ID while the configuration names a
+  team key, so the creation path resolves one into the other with a `teams`
+  query first. Jira's creation posts to `/rest/api/3/issue` (`c5e79d5`).
+- Configuration comes from the environment only, never from the repository:
+  `RIVET_JIRA_BASE_URL`/`RIVET_JIRA_TOKEN`/`RIVET_JIRA_PROJECT` or
+  `RIVET_LINEAR_TOKEN`/`RIVET_LINEAR_TEAM`. Neither, or both, is `E3019`; a
+  failed read is `E3020`, a failed write is `E3021`, and a diff that
+  survives the run is `E3022` (`7605413`, `c5e79d5`).
+- `--from FILE` reads a captured payload instead of calling the tracker, and
+  with no credentials it reads the payload's own shape to pick the parser,
+  so the offline path needs no secrets (`c5e79d5`).
+- Pillar 05 documents the check the Gauntlet makes (`E2045`) and the
+  reconciliation `rivet sync` adds, including the binding rule, the wire
+  format, and paging (`7605413`, `c5e79d5`).
+
+### Verification: story-to-tracker sync
+
+- 47 sync tests green, covering the diff computation (missing, orphan, title
+  drift, state drift, both drifts on one issue, and an unrelated issue
+  ignored), both providers' request builders and response parsers against
+  captured payloads, the command end to end against a fixture app, and the
+  `E3023` rejection (`7605413`, `c5e79d5`).
+- A stub tracker is the oracle for the client: the paging test asserts both
+  pages are requested and that the second request carries the token the
+  first answer named; a repeated-token test asserts `E3020`; a
+  token-alternating test asserts the page cap bounds the loop; and the
+  `--apply` test asserts one read plus one `POST /rest/api/3/issue`, an
+  agreeing outcome, and exit 0 (`c5e79d5`).
+- Offline smoke test with no credentials:
+  `rivet sync examples/basic/app.py --dry-run --from captured.json` reports
+  `0 missing, 0 orphan, 1 drifted` and exits 1 with `E3022`; the same app
+  against an agreeing payload prints `diff: the blueprint and the tracker
+  agree` and exits 0; an app whose story holds a colon exits 1 with `E3023`
+  pointing at the module path (`c5e79d5`).
+
+### Phase-4 docs and tracker close
+
+- Pillars 01-03 describe what shipped: plugin composition (01), the
+  transport switch with service discovery (02), and `rivet dev`, the
+  embedded assets, and the admin panel (03). Pillar 05 gained the sync
+  design (`0851b0d`, `857060d`, `7605413`, `c5e79d5`).
+- `docs/ROADMAP.md` phase 4 is closed: every deliverable box is ticked, with
+  the success metric and each feature's evidence recorded under it
+  (`0851b0d`, `857060d`, `7605413`, `c5e79d5`).
+- The README status paragraph names the plugin system, the transport switch,
+  `rivet dev`, the embedded assets, the admin panel, service discovery, and
+  `rivet sync`.
+- Fixed a repository defect the close surfaced: `.gitignore` held a bare
+  `build/`, which also matched `rivet-cli/src/commands/build/`, so every
+  integration test in that directory — transport, embedded assets, the admin
+  panel, discovery — was untracked and a fresh clone ran the gate without
+  them. `dist/` still covers a frontend's production output (`4263fc3`).
+- Every finished phase-4 line moved to this file with its commit hash.
