@@ -26,12 +26,17 @@ start TypeScript work.
 The Python DSL front end is a subset. Finish it before any other language.
 Each item below is Python-side front-end work, ordered by what it unblocks.
 
-- [ ] Assignment, control flow (`if`, `for`, `match`), and more than one
-  `return` in a handler body. Acceptance: a handler that assigns a local and
-  branches on it builds and answers on both targets.
-- [ ] Calls, attribute access, arithmetic, f-strings, and comprehensions.
-  Acceptance: a handler that calls a helper or formats a string builds and
+- [ ] `for` and `match` in a handler body. Assignment, `if`/`elif`/`else`,
+  and several `return`s have landed; the other two statement kinds have not.
+  Acceptance: a handler that loops over a list and one that matches a value
+  build and answer on both targets.
+- [ ] Calls, attribute access, f-strings, and comprehensions. The arithmetic,
+  comparison, and boolean operators have landed; these have not.
+  Acceptance: a handler that formats a string and reads a field builds and
   answers on both targets.
+- [ ] `//` and `%`, which need a rendering that floors like Python rather
+  than truncating like Rust. Acceptance: `-7 // 2` answers `-4` and
+  `-7 % 3` answers `2` on both targets.
 
 ## How to use this file
 

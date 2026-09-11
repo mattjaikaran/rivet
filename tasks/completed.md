@@ -972,3 +972,35 @@ exist.
 - `./scripts/gate.sh` passes: fmt, clippy `-D warnings`, 316 in-process tests
   in `rivet-cli` plus the workspace suite, `cargo deny`, the example build
   and audit on both targets, and the repo self-checks (`b88b71a`).
+
+### Handler bodies with branches
+
+- A handler body is a statement list: `name = <expr>` binds a local,
+  `if`/`elif`/`else` branches, and any branch may `return`.
+  `RouteDefinition.returns` became `body: Vec<Stmt>` with `Stmt::Return`,
+  `Stmt::Assign`, and `Stmt::If` (`849461a`).
+- The expression language gained `+ - * /`, the six comparisons, `and`, `or`,
+  and `not`. `//` and `%` are rejected with `E1007` rather than translated:
+  Python floors toward negative infinity and gives the remainder the divisor's
+  sign, Rust truncates and gives it the dividend's, so the two disagree for
+  every negative operand (`849461a`).
+- A chained comparison lowers to a conjunction, so `1 < qty < 10` becomes
+  `1 < qty and qty < 10` and not `(1 < qty) < 10` (`849461a`).
+- `rivet_core::infer` is the single type rule, shared by the parser that
+  records a local's type and the generator that renders it. `TypeRef::label`
+  replaced the two copies of the type label (`849461a`).
+- Guards: a condition must be a `bool` (`E1010`), a concrete response type
+  must return on every path, a `dict` or `None` handler may fall off its end,
+  and an assignment target must be a plain name (`E1007`) (`849461a`).
+- Measured on both targets: `GET /orders/10/total?quantity=5` answers `200`
+  with `"tier":"single"` and `?quantity=50` answers `"tier":"bulk"`, so the
+  branch and the computed local reach the response. A missing query parameter
+  still answers `400` (`849461a`).
+- The gate's file ceiling forced four splits: `rivet-core/src/ir/` and
+  `rivet-cli/src/parser/expr/{operator,strings}.rs`, plus
+  `rivet-cli/src/parser/validate/{reach,dto}.rs`. `validate.rs` had been a
+  frozen ratchet at 444 lines; it is now 275, so its
+  `GRANDFATHERED` entry is gone (`849461a`).
+- `./scripts/gate.sh` passes: fmt, clippy `-D warnings`, 331 in-process tests
+  in `rivet-cli` plus the workspace suite, `cargo deny`, the example build
+  and audit on both targets, and the repo self-checks (`849461a`).
