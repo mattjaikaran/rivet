@@ -38,7 +38,7 @@ fn renders_the_service_layer_the_channel_and_the_router() {
     assert!(
         project
             .main_rs
-            .contains("json_obj(vec![(\"status\", serde_json::Value::from(\"pong\"))])"),
+            .contains("rivet_json_obj(vec![(\"status\", serde_json::Value::from(\"pong\"))])"),
         "main_rs:\n{}",
         project.main_rs
     );
@@ -50,22 +50,63 @@ fn renders_the_service_layer_the_channel_and_the_router() {
             .main_rs
             .contains("fn ping(&self) -> impl std::future::Future<Output = Result<serde_json::Value, String>> + Send;")
     );
+    // The handler is a `pub` function inside `mod handlers`, and every name
+    // it takes from the crate root is written `super::…`, so a handler named
+    // `State` cannot capture its own extractor pattern.
     assert!(
-        project
-            .main_rs
-            .contains("async fn ping<C: channel::Channel>(State(channel): State<C>)")
+        project.main_rs.contains("mod handlers {"),
+        "main_rs:\n{}",
+        project.main_rs
+    );
+    assert!(
+        project.main_rs.contains(
+            "pub async fn ping<C: channel::Channel>(super::State(channel): super::State<C>)"
+        ),
+        "main_rs:\n{}",
+        project.main_rs
     );
 
-    // The router registers the concrete transport the config selected.
+    // The router registers the concrete transport the config selected, and it
+    // reaches the handler through the module, never at crate root.
     assert!(
         project
             .main_rs
-            .contains(".route(\"/ping\", get(ping::<channel::InProcess>))"),
+            .contains(".route(\"/ping\", get(handlers::ping::<channel::InProcess>))"),
         "main_rs:\n{}",
         project.main_rs
     );
     assert!(project.main_rs.contains(".with_state(channel::InProcess);"));
     assert!(project.cargo_toml.contains("name = \"app\""));
+}
+
+/// Every place a user-chosen name becomes a Rust item carries
+/// `#[allow(non_snake_case)]`.
+///
+/// The parser accepts a handler named `String` or `Json` — those are legal,
+/// because a handler lives inside `mod handlers`. Without the attribute the
+/// generated crate then warns six times about code the user never wrote and
+/// cannot fix, so the emission is part of the contract.
+#[test]
+fn a_user_chosen_name_never_triggers_a_cargo_style_lint() {
+    let mut blueprint = ping_blueprint();
+    blueprint.routes[0].handler_name = "String".to_string();
+
+    for (config, label) in [
+        (RivetConfig::default(), "in_process"),
+        (grpc_config(), "grpc"),
+    ] {
+        let project = generate_project(&blueprint, &config, Path::new(".")).expect("generate");
+        // The service function, the channel trait method, and every channel
+        // implementation carry the name.
+        let sites = project.main_rs.matches("fn String").count();
+        assert!(sites >= 3, "the name reaches {sites} sites in {label}");
+        assert_eq!(
+            project.main_rs.matches("#[allow(non_snake_case)]").count(),
+            sites,
+            "every `fn String` needs the attribute in {label} mode:\n{}",
+            project.main_rs
+        );
+    }
 }
 
 #[test]
@@ -144,7 +185,7 @@ fn renders_a_dto_response_through_the_service_layer() {
     assert!(
         project
             .main_rs
-            .contains("Result<Json<OrderResponse>, (axum::http::StatusCode, String)>"),
+            .contains("Result<super::Json<OrderResponse>, (axum::http::StatusCode, String)>"),
         "dto main_rs:\n{}",
         project.main_rs
     );

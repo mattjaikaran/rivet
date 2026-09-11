@@ -5,12 +5,18 @@
 //! `InProcess` monomorphizes to a direct call, and `Grpc` sends the same
 //! payload over a gRPC channel that the app also serves. Both are concrete
 //! types, so nothing in the request path looks a transport up.
+//!
+//! Every method here carries a user-chosen name, so each one takes
+//! `#[allow(non_snake_case)]`: the DSL decides the name, and a cargo style
+//! lint against generated code is noise the user cannot act on. The front end
+//! owns identifier policy.
 
 use super::service::render_route;
 use super::{Codegen, rust_str};
 use crate::config::TransportMode;
 use crate::diagnostic::Diagnostic;
 use rivet_core::ir::ServiceBlueprint;
+use rivet_core::reserved;
 
 /// The gRPC service name; the client path is `/rivet.Channel/<method>`.
 const SERVICE_NAME: &str = "rivet.Channel";
@@ -72,8 +78,9 @@ pub(super) fn render_channel_module(
         });
     }
 
-    let mut out = String::from(
-        "/// The app's internal channel: one method per route, typed.\nmod channel {\n    use super::*;\n\n",
+    let mut out = format!(
+        "/// The app's internal channel: one method per route, typed.\nmod {} {{\n    use super::*;\n\n",
+        reserved::CHANNEL_MODULE
     );
     out.push_str(&render_trait(&methods));
     out.push_str(&render_in_process(&methods));
@@ -94,7 +101,7 @@ fn render_trait(methods: &[Method]) -> String {
         String::from("    /// Every route of this app, typed.\n    pub trait Channel {\n");
     for method in methods {
         out.push_str(&format!(
-            "        fn {name}(&self{params}) -> impl std::future::Future<Output = Result<{ret}, String>> + Send;\n",
+            "        #[allow(non_snake_case)]\n        fn {name}(&self{params}) -> impl std::future::Future<Output = Result<{ret}, String>> + Send;\n",
             name = method.name,
             params = if method.params().is_empty() {
                 String::new()
@@ -128,7 +135,7 @@ fn render_in_process(methods: &[Method]) -> String {
             )
         };
         out.push_str(&format!(
-            "        async fn {name}(&self{params}) -> Result<{ret}, String> {{\n{body}        }}\n",
+            "        #[allow(non_snake_case)]\n        async fn {name}(&self{params}) -> Result<{ret}, String> {{\n{body}        }}\n",
             name = method.name,
             params = if method.params().is_empty() {
                 String::new()
@@ -163,7 +170,7 @@ fn render_grpc_impl(methods: &[Method]) -> String {
             )
         };
         out.push_str(&format!(
-            "        async fn {name}(&self{params}) -> Result<{ret}, String> {{\n            let path = {path};\n{payload}{decode}        }}\n",
+            "        #[allow(non_snake_case)]\n        async fn {name}(&self{params}) -> Result<{ret}, String> {{\n            let path = {path};\n{payload}{decode}        }}\n",
             name = method.name,
             params = if method.params().is_empty() {
                 String::new()

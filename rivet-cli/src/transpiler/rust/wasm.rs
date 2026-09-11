@@ -75,7 +75,7 @@ pub fn generate_wasm_project(
     })
 }
 
-/// The declared paths, as the `DECLARED_PATHS` literal.
+/// The declared paths, as the `RIVET_DECLARED_PATHS` literal.
 fn render_paths(blueprint: &ServiceBlueprint) -> String {
     let mut paths: Vec<String> = Vec::new();
     for route in &blueprint.routes {
@@ -145,6 +145,11 @@ fn render_arm(codegen: &Codegen<'_>, route: &RouteDefinition) -> Result<String, 
             let rust_type = codegen.rust_type(ty, false)?;
             // A body that does not match the declared type is the client's
             // error, so it answers 400 rather than a server fault.
+            //
+            // The binding is the route's own parameter name, so the call
+            // below passes the deserialized value. `let x = match x { … }`
+            // reads the outer `body` and then shadows it, which is what lets
+            // a parameter named `body` work here.
             let binding = format!(
                 "            let {var}: {rust_type} = match body {{\n                Some(body) => serde_json::from_str(body)\n                    .map_err(|err| (400, format!(\"cannot read the request body: {{err}}\")))?,\n                None => return Err((400, \"this route requires a JSON body\".to_string())),\n            }};\n"
             );
@@ -157,7 +162,7 @@ fn render_arm(codegen: &Codegen<'_>, route: &RouteDefinition) -> Result<String, 
     ))
 }
 
-/// Render the `allowed_methods` function: one arm per declared path.
+/// Render the `rivet_allowed_methods` function: one arm per declared path.
 fn render_allowed(blueprint: &ServiceBlueprint) -> String {
     let mut arms = String::new();
     for route in &blueprint.routes {
@@ -205,7 +210,7 @@ use std::io::{Read, Write};
 /// subset holds literals, request parameters, and one DTO construction, so a
 /// future is ready on its first poll. One poll with a no-op waker is the
 /// whole executor, and the module carries no async runtime.
-mod executor {
+mod rivet_executor {
     use std::future::Future;
     use std::pin::pin;
     use std::task::{Context, Poll, Waker};
@@ -229,10 +234,10 @@ mod executor {
 
 /// The paths this module serves, so an unknown path answers `404` and a known
 /// path with the wrong method answers `405`.
-const DECLARED_PATHS: &[&str] = &[@@PATHS@@];
+const RIVET_DECLARED_PATHS: &[&str] = &[@@PATHS@@];
 
 /// The methods one path answers.
-fn allowed_methods(path: &str) -> &'static str {
+fn rivet_allowed_methods(path: &str) -> &'static str {
     match path {
 @@ALLOWED@@
         _ => "",
@@ -243,13 +248,18 @@ fn allowed_methods(path: &str) -> &'static str {
 /// a `400`, `404`, or `405`.
 ///
 /// The function is `async` because the service layer is: the executor polls
-/// it inside `answer`.
-async fn dispatch(
+/// it inside `rivet_answer`.
+///
+/// `body` is unused when no route takes a JSON body, which is a blueprint
+/// shape and not a defect, so the parameter carries an allow rather than a
+/// renamed binding the dispatch arms would have to match.
+#[allow(unused_variables)]
+async fn rivet_dispatch(
     method: &str,
     path: &str,
     body: Option<&str>,
 ) -> Result<serde_json::Value, (u16, String)> {
-    if !DECLARED_PATHS.contains(&path) {
+    if !RIVET_DECLARED_PATHS.contains(&path) {
         return Err((404, format!("no route serves {path}")));
     }
     match (method, path) {
@@ -258,14 +268,14 @@ async fn dispatch(
             405,
             format!(
                 "{method} is not served by {path}; it allows {}",
-                allowed_methods(path)
+                rivet_allowed_methods(path)
             ),
         )),
     }
 }
 
 /// Answer an error body: `{"error": "..."}`.
-fn json_error(message: &str) -> serde_json::Value {
+fn rivet_json_error(message: &str) -> serde_json::Value {
     let mut object = serde_json::Map::new();
     object.insert(
         "error".to_string(),
@@ -284,8 +294,8 @@ fn main() {
     let mut raw = String::new();
     let read = std::io::stdin().read_to_string(&mut raw);
     let (status, body) = match read {
-        Ok(_) => answer(&raw),
-        Err(err) => (400, json_error(&format!("cannot read the request: {err}"))),
+        Ok(_) => rivet_answer(&raw),
+        Err(err) => (400, rivet_json_error(&format!("cannot read the request: {err}"))),
     };
 
     let mut envelope = serde_json::Map::new();
@@ -305,7 +315,7 @@ fn main() {
 /// JSON value (the parsed body). Both mean the same request, so a value is
 /// re-serialized rather than rejected: answering 400 because a body arrived
 /// parsed would blame the client for a shape it cannot know about.
-fn body_text(request: &serde_json::Value) -> Option<String> {
+fn rivet_body_text(request: &serde_json::Value) -> Option<String> {
     match request.get("body") {
         Some(serde_json::Value::String(text)) => Some(text.clone()),
         Some(value) if !value.is_null() => Some(value.to_string()),
@@ -314,20 +324,20 @@ fn body_text(request: &serde_json::Value) -> Option<String> {
 }
 
 /// Parse one request and answer its envelope body.
-fn answer(raw: &str) -> (u16, serde_json::Value) {
+fn rivet_answer(raw: &str) -> (u16, serde_json::Value) {
     let request: serde_json::Value = match serde_json::from_str(raw) {
         Ok(request) => request,
-        Err(err) => return (400, json_error(&format!("cannot read the request: {err}"))),
+        Err(err) => return (400, rivet_json_error(&format!("cannot read the request: {err}"))),
     };
     let method = request.get("method").and_then(serde_json::Value::as_str);
     let path = request.get("path").and_then(serde_json::Value::as_str);
     let (Some(method), Some(path)) = (method, path) else {
-        return (400, json_error("the request names no method or path"));
+        return (400, rivet_json_error("the request names no method or path"));
     };
-    let body = body_text(&request);
-    match executor::block_on(dispatch(method, path, body.as_deref())) {
+    let body = rivet_body_text(&request);
+    match rivet_executor::block_on(rivet_dispatch(method, path, body.as_deref())) {
         Ok(value) => (200, value),
-        Err((status, message)) => (status, json_error(&message)),
+        Err((status, message)) => (status, rivet_json_error(&message)),
     }
 }
 "#;

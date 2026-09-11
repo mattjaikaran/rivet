@@ -67,11 +67,11 @@ fn const_generics_renders_a_fixed_size_array_with_its_serde_bridge() {
     assert!(
         project
             .main_rs
-            .contains("#[serde(with = \"fixed_array\")]\n    pub values: [f64; 768],"),
+            .contains("#[serde(with = \"rivet_fixed_array\")]\n    pub values: [f64; 768],"),
         "main_rs:\n{}",
         project.main_rs
     );
-    assert!(project.main_rs.contains("mod fixed_array {"));
+    assert!(project.main_rs.contains("mod rivet_fixed_array {"));
     assert!(
         project.main_rs.contains("values.try_into()"),
         "the bridge rejects a length that does not match"
@@ -109,7 +109,7 @@ fn a_plain_array_needs_no_bridge() {
     let project = generate_project(&ping_blueprint(), &const_generics_config(), Path::new("."))
         .expect("generate");
     assert!(
-        !project.main_rs.contains("mod fixed_array"),
+        !project.main_rs.contains("mod rivet_fixed_array"),
         "the bridge is emitted only when a DTO declares one"
     );
 }
@@ -251,6 +251,6 @@ fn the_same_path_on_two_methods_is_not_a_duplicate() {
     assert!(
         project
             .main_rs
-            .contains("post(create_ping::<channel::InProcess>)")
+            .contains("post(handlers::create_ping::<channel::InProcess>)")
     );
 }

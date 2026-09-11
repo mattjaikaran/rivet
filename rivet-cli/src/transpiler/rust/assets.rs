@@ -11,6 +11,7 @@
 //! readable as Rust.
 
 use crate::config::RivetConfig;
+use rivet_core::reserved;
 use std::path::{Path, PathBuf};
 
 /// What `rivet build` did with the project's static assets.
@@ -56,7 +57,7 @@ fn embed_folder(dist: &Path) -> String {
 }
 
 /// The router line that mounts the embedded build as the fallback.
-const FALLBACK: &str = "\n        .fallback(assets::serve)";
+const FALLBACK: &str = "\n        .fallback(@@MODULE@@::serve)";
 
 /// The line that compresses every response, applied after the plugins
 /// install so their routes are compressed too.
@@ -95,9 +96,10 @@ pub(super) fn render(embedding: &AssetEmbedding, spa: bool) -> Wiring {
     let fallback = if spa { SPA_FALLBACK } else { "" };
     Wiring {
         module: MODULE
+            .replace("@@MODULE@@", reserved::ASSETS_MODULE)
             .replace("@@FOLDER@@", &super::rust_str(folder))
             .replace("@@SPA@@", fallback),
-        fallback: FALLBACK.to_string(),
+        fallback: FALLBACK.replace("@@MODULE@@", reserved::ASSETS_MODULE),
         compression: COMPRESSION.to_string(),
     }
 }
@@ -119,7 +121,7 @@ const MODULE: &str = r#"/// The embedded frontend build (pillar 03).
 /// keeps that true for debug builds too, so no build reads the directory at
 /// run time. The router calls `serve` only when no route matched, so a
 /// blueprint route always wins.
-mod assets {
+mod @@MODULE@@ {
     use axum::body::Body;
     use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode, Uri};
     use axum::response::Response;

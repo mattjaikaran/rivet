@@ -14,6 +14,7 @@ use rivet_core::ir::{
     Expr, FieldDefinition, RequestSpec, RouteDefinition, ServiceBlueprint, StructDefinition,
     TypeRef,
 };
+use rivet_core::reserved;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -285,7 +286,10 @@ impl<'a> Codegen<'a> {
                 )
                 .located("<generated>", 1));
             }
-            attrs.push_str("    #[serde(with = \"fixed_array\")]\n");
+            attrs.push_str(&format!(
+                "    #[serde(with = \"{}fixed_array\")]\n",
+                reserved::PREFIX
+            ));
         }
         if field.is_optional {
             attrs.push_str("    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n");
@@ -334,13 +338,19 @@ impl<'a> Codegen<'a> {
 
     /// Register every route with the concrete channel the config selected,
     /// so the compiler monomorphizes each handler for that transport.
+    ///
+    /// The path names [`reserved::HANDLERS_MODULE`] rather than the crate
+    /// root, because that is where the handlers live. A handler name
+    /// therefore never reaches the crate root, where it could collide with a
+    /// generated module, helper, or import.
     fn render_router(&self, blueprint: &ServiceBlueprint, channel_type: &str) -> String {
         let mut lines = Vec::new();
         for route in &blueprint.routes {
             let router_fn = route.method.axum_router_fn();
             lines.push(format!(
-                "        .route({}, {router_fn}({}::<{channel_type}>))",
+                "        .route({}, {router_fn}({}::{}::<{channel_type}>))",
                 rust_str(&route.path),
+                reserved::HANDLERS_MODULE,
                 route.handler_name
             ));
         }
@@ -502,7 +512,7 @@ impl Emitter<'_> {
             Expr::Null => Ok("serde_json::Value::Null".to_string()),
             Expr::Bool(value) => Ok(format!("serde_json::Value::Bool({value})")),
             Expr::Int(value) => Ok(format!("serde_json::Value::from({value}i64)")),
-            Expr::Float(value) => Ok(format!("json_number({value})")),
+            Expr::Float(value) => Ok(format!("{}json_number({value})", reserved::PREFIX)),
             Expr::Str(value) => Ok(format!("serde_json::Value::from({})", rust_str(value))),
             Expr::Array(items) => {
                 let rendered = items
@@ -525,7 +535,7 @@ impl Emitter<'_> {
                         ))
                     })
                     .collect::<Result<Vec<_>, Diagnostic>>()?;
-                Ok(format!("json_obj(vec![{}])", rendered.join(", ")))
+                Ok(format!("{}json_obj(vec![{}])", reserved::PREFIX, rendered.join(", ")))
             }
             Expr::Ident(var) => match self.params.get(var) {
                 Some(TypeRef::Json) => Ok(self.owned_ident(var)),

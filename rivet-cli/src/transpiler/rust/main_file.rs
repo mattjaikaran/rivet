@@ -142,11 +142,19 @@ pub(super) fn used_router_fns(blueprint: &ServiceBlueprint, admin: bool) -> Vec<
 }
 
 /// Assemble the final `main.rs` from its parts.
+///
+/// The block order is a contract, not a preference: `{service}` emits before
+/// `{handlers}`, because `rivet trace` resolves a route's logic by scanning
+/// the generated source for the first `fn {handler}(` line. Emitting the
+/// handlers first would make the trace report the axum wrapper instead of the
+/// service function. `{handlers}` also has to come before `{admin}` and
+/// `{discovery}`, which name the modules they call.
+///
+/// The helpers are always emitted and annotated so unused ones do not warn in
+/// the generated crate. The two the service layer calls are shared with the
+/// WebAssembly target; `rivet_channel_error` is native-only, because it names
+/// the axum status type.
 pub(super) fn assemble(blocks: &MainBlocks<'_>, parts: &MainParts) -> Result<String, Diagnostic> {
-    // The helpers are always emitted and annotated so unused ones do not
-    // warn in the generated crate. The two the service layer calls are
-    // shared with the WebAssembly target; `channel_error` is native-only,
-    // because it names the axum status type.
     let helpers = format!(
         "{}{}",
         super::helpers::SHARED,

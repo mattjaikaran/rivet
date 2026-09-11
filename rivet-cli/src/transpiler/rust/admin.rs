@@ -16,6 +16,7 @@
 
 use crate::diagnostic::Diagnostic;
 use rivet_core::ir::ServiceBlueprint;
+use rivet_core::reserved;
 use serde_json::Value;
 
 /// The generated admin wiring for `main.rs`.
@@ -54,8 +55,10 @@ pub(super) fn render(blueprint: &ServiceBlueprint, enabled: bool) -> Result<Wiri
         .located("rivet.toml", 1));
     }
     Ok(Wiring {
-        module: MODULE.replace("@@ROUTES@@", &super::rust_str(&route_table(blueprint))),
-        routes: ROUTES.to_string(),
+        module: MODULE
+            .replace("@@MODULE@@", reserved::ADMIN_MODULE)
+            .replace("@@ROUTES@@", &super::rust_str(&route_table(blueprint))),
+        routes: ROUTES.replace("@@MODULE@@", reserved::ADMIN_MODULE),
     })
 }
 
@@ -64,7 +67,7 @@ pub(super) fn render(blueprint: &ServiceBlueprint, enabled: bool) -> Result<Wiri
 const PANEL_PATHS: &[&str] = &["/__rivet/routes", "/__rivet/"];
 
 /// The router lines that mount the panel.
-const ROUTES: &str = "\n        .route(\"/__rivet/routes\", get(admin::routes))\n        .route(\"/__rivet/\", get(admin::panel))";
+const ROUTES: &str = "\n        .route(\"/__rivet/routes\", get(@@MODULE@@::routes))\n        .route(\"/__rivet/\", get(@@MODULE@@::panel))";
 
 /// The blueprint's route table as a JSON array: method, path, handler, and
 /// the story IDs the route answers to.
@@ -102,7 +105,7 @@ const MODULE: &str = r##"/// The built-in admin panel (phase 4, pillar 03).
 /// The route table is rendered from the blueprint at build time, so the
 /// endpoint answers one static string the compiler put in the binary. The
 /// panel is a single embedded HTML file: no dependencies, no build step.
-mod admin {
+mod @@MODULE@@ {
     use axum::body::Body;
     use axum::http::{header, HeaderValue};
     use axum::response::Response;

@@ -277,13 +277,18 @@ mod tests {
             "trace text:\n{text}"
         );
         // The generated service function, as the generator renders a
-        // `-> dict` route: async fn orders() -> serde_json::Value.
+        // `-> dict` route: async fn orders() -> serde_json::Value. The trace
+        // scans for it before the handler module, so this also proves the
+        // block order `{service}` then `{handlers}` still holds.
         assert!(
             text.contains("async fn orders() -> serde_json::Value {"),
             "trace text:\n{text}"
         );
+        // The router reaches the handler through the module (pillar 02), so
+        // the registration names `handlers::` — the change that keeps every
+        // handler name out of the crate root.
         assert!(
-            text.contains(".route(\"/orders\", get(orders::<channel::InProcess>))"),
+            text.contains(".route(\"/orders\", get(handlers::orders::<channel::InProcess>))"),
             "trace text:\n{text}"
         );
         assert!(text.contains("Current commit "), "trace text:\n{text}");

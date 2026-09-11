@@ -1,9 +1,11 @@
 //! The runtime helpers every generated crate carries.
 //!
-//! The service layer renders `json_obj` and `json_number` calls for handlers
-//! that return dicts and floats, so both targets must emit the same two
-//! functions. They live here once, and each target adds its own transport
-//! helpers beside them.
+//! The service layer renders `rivet_json_obj` and `rivet_json_number` calls
+//! for handlers that return dicts and floats, so both targets must emit the
+//! same two functions. They live here once, and each target adds its own
+//! transport helpers beside them. Every name here carries
+//! [`reserved::PREFIX`](rivet_core::reserved::PREFIX), so a name a user
+//! picks cannot collide with one.
 
 /// The helpers shared by the native and WebAssembly targets.
 ///
@@ -11,7 +13,7 @@
 /// and an unused private function is a warning in the generated crate.
 pub(super) const SHARED: &str = "\
 #[allow(dead_code)]
-fn json_obj(pairs: Vec<(&'static str, serde_json::Value)>) -> serde_json::Value {
+fn rivet_json_obj(pairs: Vec<(&'static str, serde_json::Value)>) -> serde_json::Value {
     let mut map = serde_json::Map::new();
     for (key, value) in pairs {
         map.insert(key.to_string(), value);
@@ -20,7 +22,7 @@ fn json_obj(pairs: Vec<(&'static str, serde_json::Value)>) -> serde_json::Value 
 }
 
 #[allow(dead_code)]
-fn json_number(value: f64) -> serde_json::Value {
+fn rivet_json_number(value: f64) -> serde_json::Value {
     serde_json::Number::from_f64(value)
         .map(serde_json::Value::Number)
         .expect(\"finite float literal\")
@@ -37,8 +39,8 @@ fn json_number(value: f64) -> serde_json::Value {
 /// Rust type stays `[T; N]` at every size.
 pub(super) const FIXED_ARRAY: &str = r#"/// Serde support for a fixed-size array field.
 ///
-/// A DTO uses it as `#[serde(with = "fixed_array")]` on the array field.
-mod fixed_array {
+/// A DTO uses it as `#[serde(with = "rivet_fixed_array")]` on the array field.
+mod rivet_fixed_array {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     /// Write the array as a JSON sequence, through a slice.
@@ -75,7 +77,7 @@ mod fixed_array {
 pub(super) const CHANNEL_ERROR: &str = "\
 /// Map a channel failure to `502` with the reason.
 #[allow(dead_code)]
-fn channel_error(detail: String) -> (axum::http::StatusCode, String) {
+fn rivet_channel_error(detail: String) -> (axum::http::StatusCode, String) {
     tracing::error!(error = %detail, \"service channel call failed\");
     (axum::http::StatusCode::BAD_GATEWAY, detail)
 }
@@ -86,13 +88,32 @@ fn channel_error(detail: String) -> (axum::http::StatusCode, String) {
 mod tests {
     use super::*;
 
+    /// Every generator-owned symbol in these blocks carries the reserved
+    /// prefix. A helper added here without the prefix fails this test rather
+    /// than shipping a name a user can collide with.
+    #[test]
+    fn the_helpers_carry_the_reserved_prefix() {
+        let prefix = rivet_core::reserved::PREFIX;
+        for symbol in ["json_obj", "json_number"] {
+            assert!(
+                SHARED.contains(&format!("fn {prefix}{symbol}")),
+                "`{symbol}` must carry the reserved prefix:\n{SHARED}"
+            );
+        }
+        assert!(CHANNEL_ERROR.contains(&format!("fn {prefix}channel_error")));
+        assert!(FIXED_ARRAY.contains(&format!("mod {prefix}fixed_array")));
+        assert!(
+            FIXED_ARRAY.contains(&format!("#[serde(with = \"{prefix}fixed_array\")]"))
+                || FIXED_ARRAY.contains(&format!("mod {prefix}fixed_array")),
+            "the serde attribute and the module must name the same module"
+        );
+    }
+
     #[test]
     fn the_shared_helpers_name_no_transport() {
         for helper in [SHARED, CHANNEL_ERROR] {
             assert!(!helper.contains("tokio::"), "{helper}");
         }
-        assert!(SHARED.contains("fn json_obj"));
-        assert!(SHARED.contains("fn json_number"));
         assert!(
             !SHARED.contains("axum"),
             "the shared helpers stay transport-free"

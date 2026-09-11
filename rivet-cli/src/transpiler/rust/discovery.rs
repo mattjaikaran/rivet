@@ -16,6 +16,7 @@
 
 use crate::config::{DiscoveryBackend, RivetConfig};
 use crate::diagnostic::Diagnostic;
+use rivet_core::reserved;
 use serde_json::Value;
 
 mod etcd;
@@ -41,10 +42,10 @@ pub(super) struct Wiring {
 const PLAIN_SERVE: &str = "    axum::serve(listener, app).await.expect(\"server error\");\n";
 
 /// The statements that join the registry before the app serves.
-const REGISTER: &str = "\n    // Join the service registry. A registry that does not answer must\n    // not stop the app, so a failure only warns.\n    if let Err(err) = discovery::register().await {\n        eprintln!(\"service registration failed: {err}\");\n    }\n\n";
+const REGISTER: &str = "\n    // Join the service registry. A registry that does not answer must\n    // not stop the app, so a failure only warns.\n    if let Err(err) = @@MODULE@@::register().await {\n        eprintln!(\"service registration failed: {err}\");\n    }\n\n";
 
 /// The statements that serve until Ctrl-C and then leave the registry.
-const SERVE: &str = "    let shutdown = async {\n        let _ = tokio::signal::ctrl_c().await;\n    };\n    axum::serve(listener, app)\n        .with_graceful_shutdown(shutdown)\n        .await\n        .expect(\"server error\");\n\n    // Leave the registry on the way out.\n    if let Err(err) = discovery::deregister().await {\n        eprintln!(\"service deregistration failed: {err}\");\n    }\n";
+const SERVE: &str = "    let shutdown = async {\n        let _ = tokio::signal::ctrl_c().await;\n    };\n    axum::serve(listener, app)\n        .with_graceful_shutdown(shutdown)\n        .await\n        .expect(\"server error\");\n\n    // Leave the registry on the way out.\n    if let Err(err) = @@MODULE@@::deregister().await {\n        eprintln!(\"service deregistration failed: {err}\");\n    }\n";
 
 /// Render the generated discovery wiring for the project's configuration.
 ///
@@ -75,17 +76,24 @@ pub(super) fn render(config: &RivetConfig) -> Result<Wiring, Diagnostic> {
         DiscoveryBackend::Etcd => etcd::parts(&name, port),
     };
 
+    let module = MODULE
+        .replace("@@MODULE@@", reserved::DISCOVERY_MODULE)
+        .replace("@@SERVICE@@", &super::rust_str(&name))
+        .replace("@@PORT@@", &port.to_string())
+        .replace("@@REGISTRY@@", &super::rust_str(&url))
+        .replace("@@REGISTER@@", &register)
+        .replace("@@DEREGISTER@@", &deregister)
+        .replace("@@HELPERS@@", &helpers);
     Ok(Wiring {
-        module: MODULE
-            .replace("@@SERVICE@@", &super::rust_str(&name))
-            .replace("@@PORT@@", &port.to_string())
-            .replace("@@REGISTRY@@", &super::rust_str(&url))
-            .replace("@@REGISTER@@", &register)
-            .replace("@@DEREGISTER@@", &deregister)
-            .replace("@@HELPERS@@", &helpers),
-        register: REGISTER.to_string(),
-        serve: SERVE.to_string(),
+        module,
+        register: with_module(REGISTER),
+        serve: with_module(SERVE),
     })
+}
+
+/// Point one template at [`reserved::DISCOVERY_MODULE`].
+fn with_module(template: &str) -> String {
+    template.replace("@@MODULE@@", reserved::DISCOVERY_MODULE)
 }
 
 /// The Consul registration, deregistration, and helpers for one service.
@@ -120,7 +128,7 @@ const MODULE: &str = r#"/// Service registration for the configured registry (ph
 /// The app joins the registry once, at startup, and leaves it on the way
 /// out. A registry that does not answer only warns: the server starts
 /// either way, because a discovery outage must not take the app down.
-mod discovery {
+mod @@MODULE@@ {
     /// The name this app registers under.
     const SERVICE_NAME: &str = @@SERVICE@@;
 

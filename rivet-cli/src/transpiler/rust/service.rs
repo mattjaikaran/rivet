@@ -8,6 +8,7 @@
 use super::{Codegen, Emitter, count_idents_in, param_types};
 use crate::diagnostic::Diagnostic;
 use rivet_core::ir::{RequestSpec, ResponseSpec, RouteDefinition, ServiceBlueprint, TypeRef};
+use rivet_core::reserved;
 
 /// Render `mod service`: one function per route, in blueprint order.
 pub(super) fn render_service_module(
@@ -18,8 +19,9 @@ pub(super) fn render_service_module(
     for route in &blueprint.routes {
         body.push_str(&render_fn(codegen, route)?);
     }
-    let mut out = String::from(
-        "/// Transport-free route logic. The channel calls these functions.\nmod service {\n    use super::*;\n\n",
+    let mut out = format!(
+        "/// Transport-free route logic. The channel calls these functions.\nmod {} {{\n    use super::*;\n\n",
+        reserved::SERVICE_MODULE
     );
     out.push_str(body.trim_end());
     out.push_str("\n}\n");
@@ -48,8 +50,12 @@ fn render_fn(codegen: &Codegen<'_>, route: &RouteDefinition) -> Result<String, D
     } else {
         format!("\n        {}", rendered.body)
     };
+    // The function carries a user-chosen name, so it takes
+    // `#[allow(non_snake_case)]`: the DSL decides the name, and a cargo style
+    // lint against generated code is noise the user cannot act on. The front
+    // end owns identifier policy.
     Ok(format!(
-        "    // {method} {path}\n    pub {signature}{return_clause} {{{body}\n    }}\n\n",
+        "    // {method} {path}\n    #[allow(non_snake_case)]\n    pub {signature}{return_clause} {{{body}\n    }}\n\n",
         method = route.method.as_str(),
         path = route.path,
     ))
