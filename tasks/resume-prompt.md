@@ -19,9 +19,8 @@ today.** Complete all Python-side work before you start any TypeScript work.
 In scope now:
 
 - The Python DSL front end and everything that completes it.
-- The rest of phase 4, and the phase-5 work that exports a Python-authored
-  app: the WASM target, the native (Kotlin/Swift) bindings, and the
-  `rust_native_features` flags.
+- Phase 5's Python-side work: the WASM target (landed), the native
+  (Kotlin/Swift) bindings, and the `rust_native_features` flags.
 
 Deferred until the Python work is done:
 
@@ -40,135 +39,147 @@ finish the Python-side item first.
 
 ## Where the project stands
 
-- Phases 0-3 are complete and pushed. `rivet-core` defines the serializable
-  IR; `rivet-cli` parses `app.py` with tree-sitter, validates it against the
-  Gauntlet rules, generates a standalone axum crate, and compiles it.
-- Phase 1 is closed except the mutation tester (blocked on the generated-code
-  test story, pillar 06 `not_scored`).
-- Phase 2 ships the context engine: `.rivet/` SQLite store, `rivet history`,
-  `rivet session save`/`resume`/`list`, the LanceDB blueprint index, and
-  `rivet explain "<symptom>"`.
-- Phase 3 ships first-class AI integration: `rivet mcp` (six tools over stdio
-  on `rmcp`), the slash commands `rivet /plan`, `/fix`, `/trace`, and a
-  required `suggested_fix` on every JSON diagnostic.
-- Phase 4 is in progress and four of its deliverables have landed:
-  - **Plugin system** (`53242fd`): `rivet-plugin-api` holds the `Plugin`
-    trait and a monomorphized `install`; `rivet add plugin` writes the
-    `[plugins]` table; `generate_project` adds one dependency and one install
-    call per plugin. Reference plugin: `examples/basic/plugins/auth-token`.
-  - **Multi-service transport** (`a675668`): the generated crate splits into a
-    transport-free service layer and an internal channel; `[transport] mode`
-    selects an in-process direct call or gRPC.
-  - **Polyglot dev proxy** (`44345fd`): `rivet dev` detects Vite, Rsbuild,
-    Next.js, or Webpack from the config file, serves the blueprint's routes
-    and `/api/*` from the backend (prefix stripped), sends every other path to
-    the frontend dev server, and tunnels the frontend's HMR upgrade.
-  - **Embedded static assets** (`7a3646f`): `[frontend] dist` compiles the
-    production build into the generated crate with `rust-embed`; the router
-    mounts it as the fallback, so a blueprint route wins. The single-page rule
-    mirrors the dev server's rewrite (a `GET`/`HEAD` whose path names no file,
-    from a client that accepts `text/html`), so an `XHR` miss keeps its `404`.
-    Every asset carries a strong `ETag`; `If-None-Match` answers `304`. A
-    missing `dist` warns with `E2004` and still builds. `tower-http` Brotli
-    compresses every response.
+- Phases 0-3 are complete and pushed.
+- **Phase 4 is complete** (closed 2026-09-10). All seven deliverables landed:
+  the compile-time plugin system (`53242fd`), the multi-service transport
+  switch (`a675668`), the polyglot `rivet dev` proxy (`44345fd`), the
+  embedded static assets (`7a3646f`), the admin panel (`0851b0d`), service
+  discovery for Consul and etcd (`857060d`), and `rivet sync` for Jira and
+  Linear (`7605413`, `c5e79d5`). Pillars 01, 02, 03, and 05 describe what
+  shipped; the ROADMAP phase-4 boxes are ticked.
+- **Phase 5 has started.** The phase seed is
+  `prompts/prompt-08-wasm-mobile.md`, and its checklist is in the phase-5
+  section of `tasks/todo.md`. Two deliverables landed:
+  - **WASM target** (`ddd4d45`, `f0654e5`): `rivet build --target wasm`
+    renders the blueprint as a WASI command module and compiles it for
+    `wasm32-wasip1`. The crate carries the native target's own DTO structs
+    and `mod service`; it has no axum, tokio, gRPC, plugins, or assets, and
+    its manifest depends on serde and serde_json alone. It reads one request
+    as JSON on stdin, dispatches through a build-time `match`, and writes one
+    envelope on stdout. Verified under Wasmtime.
+  - **`const_generics`** (`927fb68`): `List[T, N]` renders `[T; N]`, with a
+    generated serde bridge because the derive stops at 32 elements. The
+    example sets the flag and round-trips 768 values on both targets.
+- Remaining phase-5 work:
+  - The other three `rust_native_features` flags. Each stays `false` because
+    its feature needs a layer the DSL does not have: no database surface
+    (`raii_connections`), no route-protection decorator
+    (`compile_time_rbac`), and `FieldDefinition::is_borrowed` is never set by
+    the parser (`zero_copy_deserialization`). A flag set without its feature
+    is now `E2013`.
+  - The UniFFI Kotlin/Swift bindings, `rivet mobile init`, and the React
+    Native binding (deferred). **These are blocked on toolchains**: no JDK,
+    no `kotlinc`, no Android SDK, no `uniffi-bindgen`, and no Xcode
+    command-line tools. Record this rather than generating code no toolchain
+    here has compiled.
 - GitHub Actions auto-runs are paused until the app ships (the workflow is
   `workflow_dispatch`-only). `./scripts/gate.sh` is the acceptance bar:
-  fmt, clippy `-D warnings`, **198 tests**, `cargo deny`, the example
+  fmt, clippy `-D warnings`, **282 tests**, `cargo deny`, the example
   build/audit, and the repo self-checks.
-- Tracker coherent: 11 todo items, 84 completed.
-- Recent commits: `484cd78` (asset tracker move), `7a3646f` (embedded
-  assets), `6e0c6e0` (resume prompt), `44345fd` (`rivet dev`), `a675668`
-  (transport switch), `53242fd` (plugin system).
+- Tracker coherent: 6 todo items, 129 completed.
+- Recent commits: `b185a3e` (tracker hash), `927fb68` (const generics),
+  `f0654e5` (wasm fixes and etcd lease test), `ddd4d45` (WASM target),
+  `ec45c3d` (phase-4 close), `c5e79d5` (sync hardening), `7605413`
+  (`rivet sync`), `857060d` (service discovery), `0851b0d` (admin panel).
+
+### Environment (check before you rely on it)
+
+- `wasm32-wasip1` and `wasmtime` (Homebrew) are installed. Both are needed
+  for the WASM acceptance; the module's real platform check reports a
+  missing host instead of passing silently.
+- Mobile toolchains are absent. `swiftc` and Xcode exist; `java` and
+  `kotlinc` do not.
 
 ## Disk hygiene (do this)
 
 `rivet build` writes a generated crate with its own cargo `target/` (about
-140 MB per app), and `./scripts/gate.sh` regenerates `examples/basic/generated`.
-The workspace `target/` grows to about 12 GiB. Clean up when you finish a work
-session or before you push:
+140 MB per app), and `rivet build --target wasm` writes a second one beside
+it. `./scripts/gate.sh` regenerates `examples/basic/generated`. The workspace
+`target/` grows to about 12 GiB. Clean up when you finish a work session or
+before you push:
 
 ```bash
-make clean        # examples/*/generated + Rivet test fixtures in the temp dir
+make clean        # examples/*/generated, examples/*/generated-wasm, temp fixtures
 make clean-all    # the above plus `cargo clean` (about 12 GiB)
 ```
 
-The cargo cache is warm, so `./scripts/gate.sh` takes about a minute. After a
-`make clean-all` the first release build costs about 7 minutes and the first
-test build about 4; prefer `target/debug/rivet` while you iterate.
+The cargo cache is warm, so `./scripts/gate.sh` takes about 100 seconds.
+After a `make clean-all` the first release build costs about 7 minutes; the
+WASM build adds a small target-specific compile. Prefer `target/debug/rivet`
+while you iterate.
 
 Tests clean up after themselves: `rivet-cli/src/test_support.rs` defines a
 `ScratchDir` guard that removes each fixture on drop (success and panic). Do
 not reintroduce pid-suffixed temp paths or hand-rolled `remove_dir_all`.
 
-Never commit build output. `.gitignore` covers `target/` and
-`examples/*/generated/`; verify with `git status --short` before every commit.
-The example fixture build under `examples/basic/dist/` is committed on
-purpose: the asset test renames it.
+Never commit build output. `.gitignore` covers `target/`, `generated/`, and
+`generated-wasm/`; verify with `git status --short` before every commit. The
+example fixture build under `examples/basic/dist/` is committed on purpose:
+the asset test renames it.
 
 ## Repo map
 
 - `rivet-core/src/ir.rs` - the IR contract; change it only with care.
+- `rivet-cli/src/config.rs` - `rivet.toml` (plus `config/tests.rs`):
+  `[gauntlet]`, `[plugins]`, `[transport]`, `[frontend]`, `[admin]`,
+  `[discovery]`, `[rust_native_features]`.
 - `rivet-cli/src/parser/` - modular front end (`decorator`, `signature`,
-  `body`, `expr`, `types`, `validate`, `python`). `python.rs` owns
-  `ParsedModule`, `Declaration`, and `DeclKind`.
+  `body`, `expr`, `types`, `validate`, `python`).
 - `rivet-cli/src/gauntlet/` - the quality rules: `mod.rs` holds the `Rule`
-  trait, `Finding`, `run_gauntlet`, and the severity policy; one module per
-  rule.
+  trait, `Finding`, `run_gauntlet`, and the severity policy.
 - `rivet-cli/src/diagnostic.rs` - structured JSON diagnostics.
   `suggested_fix` is a required `String`; do not make it optional again.
-  `blocker` and `warning` are the two constructors.
-- `rivet-cli/src/store/` - `.rivet/` SQLite store (history, sessions,
-  fingerprints) plus `vector.rs`, the LanceDB index over blueprints.
+- `rivet-cli/src/store/` - `.rivet/` SQLite store plus `vector.rs`.
 - `rivet-cli/src/commands/` - one module per command (`build`, `audit`,
-  `history`, `session`, `explain`, `fix`, `trace`, `plan`, `add`, `dev`).
-  Big modules put tests in a sibling `tests.rs` and split submodules before a
-  file reaches the 400-line ceiling: `plan/deliver.rs`, `plan/provider.rs`,
-  `dev/routing.rs`, `dev/tunnel.rs`.
-- `rivet-cli/src/transpiler/rust.rs` + `rust/` - the generator: `handler.rs`
-  (thin axum handlers over the channel), `service.rs` (transport-free route
-  logic), `channel.rs` (the typed in-process/gRPC channel), `assets.rs` (the
-  embedded frontend build, its router fallback, and the compression layer).
-- `rivet-cli/src/mcp/` - MCP server (`mod.rs` transport + probe test,
-  `tools.rs` tool router, `tools/tests.rs` payload tests). Tools are thin
-  wrappers; never grow pipeline logic here.
+  `history`, `session`, `explain`, `fix`, `trace`, `plan`, `add`, `dev`,
+  `sync`). Big modules put tests in a sibling `tests.rs` and split
+  submodules before a file reaches the 400-line ceiling:
+  `build/wasm.rs`, `build/tests/{registry,wasm}.rs`, `sync/issue.rs`,
+  `sync/jira.rs`, `sync/linear.rs`, `sync/story.rs`, `sync/config.rs`,
+  `sync/http.rs`, `sync/shape.rs`, `discovery/etcd.rs`.
+- `rivet-cli/src/transpiler/rust.rs` + `rust/` - the generator:
+  `service.rs` (transport-free route logic), `handler.rs` (thin axum
+  handlers), `channel.rs`, `assets.rs`, `admin.rs`, `discovery.rs`,
+  `main_file.rs` (native assembly and manifest), `helpers.rs` (the runtime
+  helpers both targets emit), `wasm.rs` + `wasm/tests.rs` (the WASI target),
+  `tests.rs` + `tests/{fixtures,features}.rs`.
 - `rivet-cli/src/test_support.rs` - the shared `ScratchDir` test guard.
-- `constraint-tools/` + `scripts/gate.sh` - self-checks (file length, rule
-  modules, tracker) and the gate. `scripts/clean.sh` is the cleanup entry
-  point.
-- `docs/` - roadmap, nine pillars, phase notes. Pillar 03 documents `rivet
-  dev` and the embedded assets; pillar 09 documents the MCP tools and slash
-  commands.
+- `constraint-tools/` + `scripts/gate.sh` - self-checks and the gate.
+- `docs/` - roadmap, nine pillars, phase notes. Pillar 08 documents the WASM
+  target and the flag; pillar 05 documents `rivet sync`.
 - `tasks/todo.md` is **the source of truth**; `tasks/completed.md` holds
   finished lines with commit refs.
 
 ## Decisions already made (do not relitigate)
 
 - **Python front end first; no TypeScript work yet.** See the scope section.
-- MCP SDK: `rmcp` 3.x, features `server` + `macros` + `transport-io`. Tool
-  parameter schemas are hand-written JSON because the schemars derive expands
-  to banned `unwrap` calls.
-- `/plan` is spec-driven, modeled on `github/spec-kit` (MIT). The provider is
-  any OpenAI-compatible endpoint; `--from` is the deterministic offline path.
-- `/fix` repairs only what is deterministic and safe, and never deletes a
-  route.
+- **The WASM target is a WASI command module, not a server.** `wasm32-wasip1`
+  with a `fn main` that reads one request on stdin and writes one envelope on
+  stdout. `axum::serve` has no path on WASI: `tokio`'s `net` and
+  `rt-multi-thread` features do not compile there, and WASI creates no
+  socket. Do not "fix" the target by adding them.
+- **The wasm crate shares `mod service` and the DTO structs, and nothing
+  else.** No plugins, no `[admin]`, no `[discovery]`, no `[frontend]`. The
+  build prints a note naming each configured feature the module omits, so a
+  capability is never dropped in silence.
+- **The request `body` travels as a JSON string** (or a JSON value, which the
+  module re-serializes); the response `body` is always a value. Both are
+  documented in pillar 08.
+- **A `[rust_native_features]` flag is true only when its feature is
+  implemented.** A set flag with no implementation is `E2013`, because the
+  section is a claim about what the generator does.
 - `suggested_fix` is required on `Diagnostic` and `Finding`.
-- The generated backend mounts the blueprint's own route paths and nothing
-  else. `/api` is a proxy-level convenience only: `rivet dev` strips it before
-  the request goes upstream. Do not add an `/api` mount to the generator.
-- The dev proxy tunnels upgrades over a raw connection (hyper `on_upgrade` +
-  `copy_bidirectional`); an HTTP client cannot carry a websocket handshake.
+- The generated backend mounts the blueprint's own route paths. `/api` is a
+  proxy-level convenience only; do not add an `/api` mount to the generator.
 - `[frontend]` owns the production build (`dist`, `spa`), not a separate
-  `[assets]` table: `rivet dev` already owns the frontend, and the phase-4
-  seed's original `[assets] dir` shape is superseded.
+  `[assets]` table.
 - The embedded single-page fallback stays a *navigation* rule (no file
-  extension, `Accept: text/html`). The generated binary also runs as the
-  `rivet dev` backend, so a blanket `index.html` fallback would answer API
-  typos with HTML.
-- The generated router compresses responses with `tower-http`'s
-  `CompressionLayer` and the Brotli feature. Keep it: pillar 03 promised
-  Brotli, and wire compression costs no binary size.
+  extension, `Accept: text/html`).
 - The admin panel ships as one static file; do not add a React or Solid
   build.
+- `rivet sync` binds an issue to a story through the issue title's prefix
+  before the first colon, compared to the story ID exactly. Only the orphan
+  check uses a shape heuristic. Never write to the tracker without `--apply`.
 - Rule severities, the complexity metric, duplicate fingerprinting, dead-code
   liveness, the type-strictness contract, and the MQI grade scale are
   unchanged from phases 1-2.
@@ -177,40 +188,36 @@ purpose: the asset test renames it.
 
 ## Next up, in order
 
-Finish phase 4, then the Python-side part of phase 5, per `docs/ROADMAP.md`
-and `tasks/todo.md`. Work the checklist in order; each line carries its
-acceptance criterion.
-
-1. **Service discovery (Consul/etcd) and the admin panel.** Acceptance:
-   registration posts the service and port to a stub registry in a test, and
-   `/__rivet/routes` lists the routes the app serves. The route list is
-   generator work beside `mod assets`; the registry client is new. Read
-   `prompts/prompt-07-ecosystem.md` for the `[discovery]` shape and the
-   single-file panel decision.
-2. **Story-to-Jira/Linear sync (`rivet sync`).** Acceptance:
-   `rivet sync --dry-run` reports the expected story diff from a captured
-   tracker payload and writes nothing. Closes pillar 05's loop.
-3. **Phase-4 docs and tracker close.** Finish pillars 01-03, tick the ROADMAP
-   phase-4 boxes, refresh the README, and move every finished line to
-   `tasks/completed.md` with its commit hash.
-4. **Author `prompts/prompt-08-wasm-mobile.md`**, then draft its checklist
-   into the phase-5 section of `tasks/todo.md`. Phase 5 starts by authoring
-   its seed, the way every phase before it did.
-5. **Phase 5, Python side only:** `rivet build --target wasm` under Wasmtime,
-   the UniFFI bindings for Kotlin and Swift, `rivet mobile init --platforms
-   ios,android`, and the four `rust_native_features` flags. Leave the
-   TypeScript binding alone.
+1. **The remaining three `rust_native_features` flags.** Each needs its layer
+   first, and the order is the order of the layers:
+   - `zero_copy_deserialization`: teach the parser to set
+     `FieldDefinition::is_borrowed` and render a borrowed `&str` with a
+     lifetime; then flip the flag. Acceptance: a DTO with a borrowed `str`
+     field builds and a request round-trips without owned copies.
+   - `raii_connections`: needs a database surface in the DSL, which does not
+     exist. Treat as blocked until a database story is in scope.
+   - `compile_time_rbac`: needs a way to mark a route protected. The
+     decorator accepts only `path` and `stories` today.
+2. **The phase-5 WASM follow-ups, if any land from review**: the module's
+   integration fixture now covers a fixed-size array and both body shapes.
+   Keep the module's real-platform check (`wasmtime run`) green.
+3. **The mobile deliverables** (blocked): UniFFI bindings for Kotlin and
+   Swift, then `rivet mobile init --platforms ios,android`. These need a JDK,
+   `kotlinc`, the Android SDK, `uniffi-bindgen`, and Xcode's command-line
+   tools. If the toolchains appear, build the bindings over `mod service` so
+   the binding surface and the HTTP surface cannot drift.
+4. **Phase-5 docs and tracker close** once the phase's reachable work is
+   done and the mobile lines are either landed or recorded as blocked.
 
 ## How to work (house rules)
 
 - **Use subagents.** Fan out with the `task` tool for parallel, file-disjoint
   work: give each subagent a role, explicit file paths, exact acceptance
   criteria, and a `local://` spec when the change is large. A read-only
-  question about unfamiliar code goes to a `scout` subagent instead of a chain
-  of reads. Never let a subagent make a design decision, and never let one run
-  the gate. If a spawn fails with `No model selected`, that is an environment
-  fault, not a task fault: work the slices inline and keep the same file
-  discipline.
+  question about unfamiliar code goes to a `scout` subagent. Never let a
+  subagent make a design decision, and never let one run the gate. If a spawn
+  fails with `No model selected`, that is an environment fault, not a task
+  fault: work the slices inline and keep the same file discipline.
 - **Save context with `rtk`.** Route long output through it:
   `rtk cargo test --workspace`, `rtk cargo clippy -- -D warnings`,
   `rtk ./scripts/gate.sh`, `rtk git log`. Use surgical reads
@@ -218,21 +225,26 @@ acceptance criterion.
 - **Commit in small, coherent units, and commit when you finish one.** One
   commit per unit (feature, docs, tracker move), Conventional Commits prefix,
   capitalized imperative subject, 50 characters or fewer, body wrapped at 72.
-  Commit the feature first, then the tracker move, so the hash exists when the
-  tracker line records it.
+  Commit the feature first, then the tracker move, so the hash exists when
+  the tracker line records it. Never commit a literal placeholder such as
+  `<pending>` while staging the feature: fill the hash in the follow-up
+  tracker commit.
 - **Verify before you commit.** Run the specific test or smoke test that
   covers the change; run `./scripts/gate.sh` once over the union of the
-  session's changes, not per file.
+  session's changes, not per file. For the WASM target, run the module under
+  `wasmtime` — a unit test on generated text is not proof.
 - **Clean up generated output before you stop** (`make clean`, or
-  `make clean-all` when disk is tight). Never leave `target/` or
-  `examples/*/generated/` in a commit.
+  `make clean-all` when disk is tight). Never leave `target/`,
+  `examples/*/generated/`, or `examples/*/generated-wasm/` in a commit.
 - **Reject bad code, not just failing tests.** No stubs, placeholders,
   TODO-shims, speculative abstractions, duplicated logic, dead code, or
   invented facts. Fix at the source instead of papering over the symptom.
+  A generator bug that surfaces as cargo's `E2009` is a generator bug: give
+  it its own diagnostic (`E2011`-`E2013` are the newest examples).
 - **Follow existing conventions.** One pattern per concern; match the
   error-code ranges (`E1xxx` parser, `E2xxx` generator/Gauntlet, `E3xxx`
-  context engine and agentic commands), module layout, diagnostic, and naming
-  idioms.
+  context engine and agentic commands), module layout, diagnostic, and
+  naming idioms.
 - **Rust best practices.** Idiomatic ownership over clones; small fallible
   functions; `Result` with structured errors; no panics in library paths; no
   `unsafe` without a soundness comment; no `unwrap`/`expect` outside tests;
@@ -244,15 +256,18 @@ acceptance criterion.
 
 1. `git status` and `rtk git log --oneline -10` to confirm the checkout.
 2. `rtk ./scripts/gate.sh` to confirm the baseline is green.
-3. Read `tasks/todo.md` (source of truth) and `docs/ROADMAP.md` phase 4.
-4. Start item 1 (service discovery and the admin panel): read the generated
-   route table and pillar 02 first, design it, then decompose it into
-   subagent-sized, file-disjoint tasks.
-5. Mark tracker items `[~]` while in progress, then move the finished line to
+3. Read `tasks/todo.md` (source of truth), `docs/ROADMAP.md` phase 5, and
+   `prompts/prompt-08-wasm-mobile.md`.
+4. Check the environment before planning phase-5 work:
+   `rustup target list --installed | grep wasip1`, `wasmtime --version`,
+   `which kotlinc java`.
+5. Start at "Next up" item 1. Decompose it into subagent-sized,
+   file-disjoint tasks.
+6. Mark tracker items `[~]` while in progress, then move the finished line to
    `tasks/completed.md` with its commit hash in a follow-up commit.
    `check-tracker` rejects any `[x]` left in `todo.md`, so never tick a line
    in place.
-6. Do not pull parking-lot items (end of `tasks/todo.md`) without explicit
+7. Do not pull parking-lot items (end of `tasks/todo.md`) without explicit
    scope. A TypeScript front end is one of them; leave it.
 
 ## Definition of done (every change)
@@ -260,7 +275,8 @@ acceptance criterion.
 - `./scripts/gate.sh` passes (fmt, clippy `-D warnings`, tests,
   `cargo deny check`, the example build and audit, repo self-checks).
 - Pipeline changes are verified end to end: rebuild `examples/basic`, run the
-  binary, and `curl` the affected routes.
+  binary, and `curl` the affected routes. WASM changes also run the module
+  under `wasmtime`.
 - Affected docs are updated (pillar doc, ROADMAP boxes, README).
 - Task tracker lines are moved from `todo.md` to `completed.md`.
 - `make clean` has been run if the session generated large build output.
