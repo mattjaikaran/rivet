@@ -9,13 +9,15 @@
 
 use super::*;
 
-/// A fixture app with a parameterless route, a body-taking route, and a DTO
-/// that carries a fixed-size array.
+/// A fixture app with a parameterless route, a body-taking route, a DTO that
+/// carries a fixed-size array, and a route whose DTO borrows from the body.
 ///
 /// The array field proves the serde bridge travels into the wasm crate too:
 /// the DTO renderer is shared, so a bridge emitted for one target and not the
-/// other would fail to compile here.
-const FIXTURE_APP: &str = "from typing import List\n\nfrom rivet import api\n\n@api.get(\"/ping\", stories=[\"US-001\"])\ndef ping() -> dict:\n    return {\"status\": \"pong\"}\n\n@api.post(\"/echo\", stories=[\"US-002\"])\ndef echo(request: dict) -> dict:\n    return {\"echo\": request}\n\nclass Embedding:\n    values: List[float, 4]\n\n@api.post(\"/embed\", stories=[\"US-003\"])\ndef embed(request: Embedding) -> Embedding:\n    return request\n";
+/// other would fail to compile here. The borrowed field proves the same for
+/// `#[serde(borrow)]`: the module decodes from the body text, so no string is
+/// copied on the way in.
+const FIXTURE_APP: &str = "from typing import List\n\nfrom rivet import api\n\n@api.get(\"/ping\", stories=[\"US-001\"])\ndef ping() -> dict:\n    return {\"status\": \"pong\"}\n\n@api.post(\"/echo\", stories=[\"US-002\"])\ndef echo(request: dict) -> dict:\n    return {\"echo\": request}\n\nclass Embedding:\n    values: List[float, 4]\n\n@api.post(\"/embed\", stories=[\"US-003\"])\ndef embed(request: Embedding) -> Embedding:\n    return request\n\nclass Note:\n    text: borrowed[str]\n\n@api.post(\"/notes\", stories=[\"US-004\"])\ndef create_note(request: Note) -> dict:\n    return {\"echo\": request}\n";
 
 /// Build the fixture for the wasm target and answer the module path.
 fn build_wasm(dir: &ScratchDir, name: &str) -> std::path::PathBuf {
@@ -23,7 +25,9 @@ fn build_wasm(dir: &ScratchDir, name: &str) -> std::path::PathBuf {
     fs::write(&app, FIXTURE_APP).expect("write app.py");
     fs::write(
         dir.join("rivet.toml"),
-        format!("[project]\nname = \"{name}\"\n\n[rust_native_features]\nconst_generics = true\n"),
+        format!(
+            "[project]\nname = \"{name}\"\n\n[rust_native_features]\nconst_generics = true\nzero_copy_deserialization = true\n"
+        ),
     )
     .expect("write rivet.toml");
     run_build(&app, BuildTarget::Wasm).expect("the wasm fixture must build");
@@ -133,6 +137,21 @@ fn assert_protocol(run: impl Fn(&str) -> String) {
             .and_then(serde_json::Value::as_str),
         Some("world"),
         "a parsed body round-trips: {parsed}"
+    );
+
+    // The borrowed DTO reads its text straight out of the body text, so the
+    // round-trip proves `#[serde(borrow)]` works on the module's own target.
+    let borrowed = run(
+        "{\"method\":\"POST\",\"path\":\"/notes\",\"body\":\"{\\\"text\\\":\\\"borrowed\\\"}\"}",
+    );
+    assert_eq!(status(&borrowed), 200, "{borrowed}");
+    assert_eq!(
+        body(&borrowed)
+            .get("echo")
+            .and_then(|echo| echo.get("text"))
+            .and_then(serde_json::Value::as_str),
+        Some("borrowed"),
+        "the borrowed field round-trips: {borrowed}"
     );
 
     let missing = run("{\"method\":\"GET\",\"path\":\"/nope\"}");

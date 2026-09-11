@@ -24,8 +24,10 @@ dist = "dist"
 enabled = true
 
 # Phase 5: the Rust capabilities this project opts into. `const_generics`
-# renders `List[T, N]` as a fixed-size array; the other three are not
-# implemented yet, so their flags stay false and the config over-claims
-# nothing.
+# renders `List[T, N]` as a fixed-size array, and
+# `zero_copy_deserialization` renders a `borrowed[str]` field as a `&str`
+# slice of the request body. The remaining two are not implemented yet, so
+# their flags stay false and the config over-claims nothing.
 [rust_native_features]
 const_generics = true
+zero_copy_deserialization = true
