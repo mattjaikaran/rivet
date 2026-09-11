@@ -96,6 +96,21 @@ pub struct StructDefinition {
     pub fields: Vec<FieldDefinition>,
 }
 
+/// One `{name}` placeholder in a route path, with the type its handler
+/// declares for it.
+///
+/// The order matches the placeholders in [`RouteDefinition::path`], because
+/// the generated router binds them positionally. The parser resolves the type
+/// from the handler signature and rejects a placeholder the handler does not
+/// declare, so every entry here has a matching parameter.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PathParam {
+    /// The placeholder name, without the braces.
+    pub name: String,
+    /// The type the handler declares for it.
+    pub ty: TypeRef,
+}
+
 /// How a route receives its request. Phase 0 supports an optional JSON body.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RequestSpec {
@@ -143,6 +158,10 @@ pub enum Expr {
 pub struct RouteDefinition {
     pub method: HttpMethod,
     pub path: String,
+    /// `{name}` placeholders in `path`, in path order, with the type the
+    /// handler declares for each. Empty for a path with no placeholders.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path_params: Vec<PathParam>,
     /// Rust-safe handler name, identical to the DSL function name.
     pub handler_name: String,
     /// User-story IDs; the Gauntlet requires at least one per endpoint.
@@ -201,6 +220,7 @@ mod tests {
             routes: vec![RouteDefinition {
                 method: HttpMethod::Post,
                 path: "/orders".to_string(),
+                path_params: vec![],
                 handler_name: "create_order".to_string(),
                 stories: vec!["US-123".to_string()],
                 middlewares: vec![],

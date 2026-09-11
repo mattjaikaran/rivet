@@ -375,5 +375,6 @@ fn the_admin_panel_serves_the_route_table_and_the_panel() {
 
 mod borrow;
 mod collisions;
+mod path_params;
 mod registry;
 mod wasm;

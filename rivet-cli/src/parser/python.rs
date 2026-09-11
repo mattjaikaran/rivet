@@ -37,6 +37,7 @@
 //! | E1011 | identifier is not a safe Rust identifier |
 //! | E1012 | two routes share a handler name |
 //! | E1013 | identifier collides with a name the generated crate owns |
+//! | E1015 | invalid path parameter |
 
 use crate::diagnostic::Diagnostic;
 use crate::parser::{
@@ -464,9 +465,13 @@ fn parse_route(
         )
         .located(file, line_of(&function)));
     }
-    decorator::validate_path(&path, file, line_of(&function))?;
+    let placeholders = decorator::validate_path(&path, file, line_of(&function))?;
 
-    let (request, param_types) = signature::parse_parameters(&function, source, file)?;
+    let signature::ParsedParameters {
+        path_params,
+        request,
+        types: param_types,
+    } = signature::parse_parameters(&function, source, file, &placeholders)?;
     let response = signature::parse_return_type(&function, source, file)?;
     let body_returns = body::parse_handler_body(&function, source, file)?;
 
@@ -483,6 +488,7 @@ fn parse_route(
     let route = RouteDefinition {
         method,
         path,
+        path_params,
         handler_name: handler_name.to_string(),
         stories,
         middlewares: vec![],

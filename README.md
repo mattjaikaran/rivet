@@ -59,6 +59,9 @@ cargo build --release --bin rivet
 curl localhost:3000/ping
 # {"status":"pong"}
 
+curl localhost:3000/orders/42
+# {"id":42,"status":"open"}
+
 curl -X POST localhost:3000/echo \
   -H 'Content-Type: application/json' \
   -d '{"hello":"world"}'
@@ -72,7 +75,7 @@ the frontend's HMR socket:
 
 ```bash
 ./target/release/rivet dev examples/basic/app.py
-# Detected vite: the backend keeps 2 route(s) and /api/*, port Some(5173) serves the rest
+# Detected vite: the backend keeps 5 route(s) and /api/*, port Some(5173) serves the rest
 # rivet dev listening on http://127.0.0.1:3000
 ```
 
@@ -120,6 +123,10 @@ def ping() -> dict:
 @api.post("/echo", stories=["US-002"])
 def echo(request: dict) -> dict:
     return {"echo": request}
+
+@api.get("/orders/{id}", stories=["US-005"])
+def get_order(id: int) -> dict:
+    return {"id": id, "status": "open"}
 ```
 
 A DTO field can borrow its text from the request body instead of copying it:
@@ -150,9 +157,11 @@ make clean-all    # the above plus the workspace cargo cache
 ## What Rivet transpiles
 
 - `@api.get|post|put|delete|patch|options|head(path, stories=[...])` routes
-- handler signatures with type hints: one optional JSON-body parameter
-  (`dict`, a DTO, or a primitive) and a return annotation (`dict`,
-  primitives, or `-> None`)
+- `{name}` path parameters, for example `@api.get("/orders/{id}")` with
+  `def get_order(id: int)`; a path parameter takes `str` or `int`
+- handler signatures with type hints: path parameters plus one optional
+  JSON-body parameter (`dict`, a DTO, or a primitive), and a return
+  annotation (`dict`, primitives, or `-> None`)
 - annotation-only DTO classes (`class OrderCreate: sku: str`)
 - handler bodies that return literals, request values, or a single DTO
   constructor

@@ -6,8 +6,8 @@ use std::fs;
 
 mod features;
 mod fixtures;
+mod path_params;
 mod zero_copy;
-
 use fixtures::*;
 
 #[test]

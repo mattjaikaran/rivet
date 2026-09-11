@@ -26,6 +26,7 @@ fn borrowed_blueprint() -> ServiceBlueprint {
         routes: vec![RouteDefinition {
             method: HttpMethod::Post,
             path: "/notes".to_string(),
+            path_params: vec![],
             handler_name: "create_note".to_string(),
             stories: vec!["US-004".to_string()],
             middlewares: vec![],

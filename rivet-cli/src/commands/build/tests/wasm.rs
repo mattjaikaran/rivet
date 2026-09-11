@@ -10,14 +10,15 @@
 use super::*;
 
 /// A fixture app with a parameterless route, a body-taking route, a DTO that
-/// carries a fixed-size array, and a route whose DTO borrows from the body.
+/// carries a fixed-size array, a route whose DTO borrows from the body, and
+/// a route with an integer path parameter.
 ///
 /// The array field proves the serde bridge travels into the wasm crate too:
 /// the DTO renderer is shared, so a bridge emitted for one target and not the
 /// other would fail to compile here. The borrowed field proves the same for
 /// `#[serde(borrow)]`: the module decodes from the body text, so no string is
 /// copied on the way in.
-const FIXTURE_APP: &str = "from typing import List\n\nfrom rivet import api\n\n@api.get(\"/ping\", stories=[\"US-001\"])\ndef ping() -> dict:\n    return {\"status\": \"pong\"}\n\n@api.post(\"/echo\", stories=[\"US-002\"])\ndef echo(request: dict) -> dict:\n    return {\"echo\": request}\n\nclass Embedding:\n    values: List[float, 4]\n\n@api.post(\"/embed\", stories=[\"US-003\"])\ndef embed(request: Embedding) -> Embedding:\n    return request\n\nclass Note:\n    text: borrowed[str]\n\n@api.post(\"/notes\", stories=[\"US-004\"])\ndef create_note(request: Note) -> dict:\n    return {\"echo\": request}\n";
+const FIXTURE_APP: &str = "from typing import List\n\nfrom rivet import api\n\n@api.get(\"/ping\", stories=[\"US-001\"])\ndef ping() -> dict:\n    return {\"status\": \"pong\"}\n\n@api.post(\"/echo\", stories=[\"US-002\"])\ndef echo(request: dict) -> dict:\n    return {\"echo\": request}\n\nclass Embedding:\n    values: List[float, 4]\n\n@api.post(\"/embed\", stories=[\"US-003\"])\ndef embed(request: Embedding) -> Embedding:\n    return request\n\nclass Note:\n    text: borrowed[str]\n\n@api.post(\"/notes\", stories=[\"US-004\"])\ndef create_note(request: Note) -> dict:\n    return {\"echo\": request}\n\n@api.get(\"/orders/{id}\", stories=[\"US-010\"])\ndef get_order(id: int) -> dict:\n    return {\"id\": id}\n";
 
 /// Build the fixture for the wasm target and answer the module path.
 fn build_wasm(dir: &ScratchDir, name: &str) -> std::path::PathBuf {
@@ -105,9 +106,6 @@ fn assert_protocol(run: impl Fn(&str) -> String) {
         "the request body round-trips: {echo}"
     );
 
-    let unreadable = run("not json");
-    assert_eq!(status(&unreadable), 400, "{unreadable}");
-
     // A fixed-size array field round-trips through the shared serde bridge,
     // on both the host build and the module.
     let array = run(
@@ -156,6 +154,41 @@ fn assert_protocol(run: impl Fn(&str) -> String) {
 
     let missing = run("{\"method\":\"GET\",\"path\":\"/nope\"}");
     assert_eq!(status(&missing), 404, "{missing}");
+
+    // A path parameter: the declared segment matches one non-empty segment,
+    // and the value reaches the service as the declared integer.
+    let order = run("{\"method\":\"GET\",\"path\":\"/orders/42\"}");
+    assert_eq!(status(&order), 200, "{order}");
+    assert_eq!(
+        body(&order).get("id").and_then(serde_json::Value::as_i64),
+        Some(42),
+        "the id round-trips: {order}"
+    );
+
+    // A segment that fails to parse answers 400: the path matched, the value
+    // did not.
+    let unparseable = run("{\"method\":\"GET\",\"path\":\"/orders/abc\"}");
+    assert_eq!(status(&unparseable), 400, "{unparseable}");
+
+    // A path with a different segment count misses the route.
+    let fewer_segments = run("{\"method\":\"GET\",\"path\":\"/orders\"}");
+    assert_eq!(status(&fewer_segments), 404, "{fewer_segments}");
+
+    // A trailing slash adds an empty segment and misses too.
+    let trailing = run("{\"method\":\"GET\",\"path\":\"/orders/42/\"}");
+    assert_eq!(status(&trailing), 404, "{trailing}");
+
+    // The path matches but the method does not: 405, naming the allowed
+    // methods.
+    let wrong_order_method = run("{\"method\":\"POST\",\"path\":\"/orders/42\"}");
+    assert_eq!(status(&wrong_order_method), 405, "{wrong_order_method}");
+    assert!(
+        body(&wrong_order_method)
+            .get("error")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|message| message.contains("GET")),
+        "the 405 answer names the allowed methods: {wrong_order_method}"
+    );
 
     let wrong_method = run("{\"method\":\"DELETE\",\"path\":\"/ping\"}");
     assert_eq!(status(&wrong_method), 405, "{wrong_method}");

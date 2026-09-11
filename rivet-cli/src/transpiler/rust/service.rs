@@ -35,10 +35,10 @@ pub(super) fn render_service_module(
 fn render_fn(codegen: &Codegen<'_>, route: &RouteDefinition) -> Result<String, Diagnostic> {
     let rendered = render_route(codegen, route)?;
 
-    let signature = if rendered.params.is_empty() {
+    let signature = if rendered.params().is_empty() {
         format!("async fn {}()", route.handler_name)
     } else {
-        format!("async fn {}({})", route.handler_name, rendered.params)
+        format!("async fn {}({})", route.handler_name, rendered.params())
     };
     let return_clause = if rendered.return_ty.is_empty() {
         String::new()
@@ -63,12 +63,29 @@ fn render_fn(codegen: &Codegen<'_>, route: &RouteDefinition) -> Result<String, D
 
 /// The pieces of one rendered route: parameters, return type, and body.
 pub(super) struct RenderedRoute {
-    /// The parameter list without an extractor, or empty.
-    pub(super) params: String,
+    /// Path parameter `(name, Rust type)` pairs, in path order.
+    pub(super) path_params: Vec<(String, String)>,
+    /// The JSON-body parameter `(name, Rust type)`, when the route takes one.
+    pub(super) request: Option<(String, String)>,
     /// The Rust return type, or empty for a route that returns nothing.
     pub(super) return_ty: String,
     /// The body expression that produces the return value, or empty.
     pub(super) body: String,
+}
+
+impl RenderedRoute {
+    /// The full parameter list, without a leading separator: `id: i64, request: Order`.
+    pub(super) fn params(&self) -> String {
+        let mut params: Vec<String> = self
+            .path_params
+            .iter()
+            .map(|(name, ty)| format!("{name}: {ty}"))
+            .collect();
+        if let Some((name, ty)) = &self.request {
+            params.push(format!("{name}: {ty}"));
+        }
+        params.join(", ")
+    }
 }
 
 /// Render a route's parameters, return type, and body once, so the service
@@ -85,9 +102,15 @@ pub(super) fn render_route(
         counts: &counts,
     };
 
-    let rendered_params = match &route.request {
-        RequestSpec::None => String::new(),
-        RequestSpec::Json { var, ty } => format!("{var}: {}", codegen.rust_type(ty, false)?),
+    let path_params: Vec<(String, String)> = route
+        .path_params
+        .iter()
+        .map(|param| Ok((param.name.clone(), codegen.rust_type(&param.ty, false)?)))
+        .collect::<Result<_, Diagnostic>>()?;
+
+    let request = match &route.request {
+        RequestSpec::None => None,
+        RequestSpec::Json { var, ty } => Some((var.clone(), codegen.rust_type(ty, false)?)),
     };
 
     let (return_ty, body) = match &route.response {
@@ -119,7 +142,8 @@ pub(super) fn render_route(
     };
 
     Ok(RenderedRoute {
-        params: rendered_params,
+        path_params,
+        request,
         return_ty,
         body,
     })

@@ -37,6 +37,7 @@ fn route(request_ty: TypeRef, response_ty: TypeRef) -> RouteDefinition {
     RouteDefinition {
         method: HttpMethod::Post,
         path: "/notes".to_string(),
+        path_params: vec![],
         handler_name: "create".to_string(),
         stories: vec!["US-004".to_string()],
         middlewares: vec![],

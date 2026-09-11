@@ -1,20 +1,35 @@
 //! Handler signatures: parameters and return annotations.
 
 use crate::diagnostic::Diagnostic;
-use crate::parser::annotation::parse_type_text;
+use crate::parser::annotation::{parse_type_text, type_label};
 use crate::parser::{NamedChildren, is_safe_identifier, line_of, node_text};
-use rivet_core::ir::{RequestSpec, ResponseSpec, TypeRef};
+use rivet_core::ir::{PathParam, RequestSpec, ResponseSpec, TypeRef};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
-/// Handler parameters. Phase 0 permits zero parameters or one JSON-body
-/// parameter. Returns the request spec and a parameter-name-to-type map used
-/// for return validation.
+/// The parsed pieces of a handler signature.
+pub(crate) struct ParsedParameters {
+    /// The `{name}` path parameters, in path order.
+    pub(crate) path_params: Vec<PathParam>,
+    /// The request body, when the handler declares one.
+    pub(crate) request: RequestSpec,
+    /// Every parameter's declared type, for return validation.
+    pub(crate) types: HashMap<String, TypeRef>,
+}
+
+/// Handler parameters.
+///
+/// A parameter that names a `{name}` placeholder in the route path becomes a
+/// path parameter, in path order. The rest are the request body: at most one,
+/// of any type the JSON bridge supports.
+///
+/// Returns the path parameters, the request spec, and the parameter types.
 pub(crate) fn parse_parameters(
     function: &Node<'_>,
     source: &str,
     file: &str,
-) -> Result<(RequestSpec, HashMap<String, TypeRef>), Diagnostic> {
+    placeholders: &[String],
+) -> Result<ParsedParameters, Diagnostic> {
     let parameters = function.child_by_field_name("parameters").ok_or_else(|| {
         Diagnostic::blocker(
             "E1005",
@@ -81,6 +96,14 @@ pub(crate) fn parse_parameters(
                     )
                     .located(file, parameter_line));
                 }
+                if params.iter().any(|(existing, _)| existing == name) {
+                    return Err(Diagnostic::blocker(
+                        "E1004",
+                        format!("parameter `{name}` is declared twice"),
+                        "give each parameter a distinct name",
+                    )
+                    .located(file, parameter_line));
+                }
                 params.push((name.to_string(), parsed.type_ref));
             }
             "identifier" => {
@@ -103,28 +126,70 @@ pub(crate) fn parse_parameters(
         }
     }
 
-    if params.len() > 1 {
+    let mut path_params = Vec::with_capacity(placeholders.len());
+    for placeholder in placeholders {
+        let Some((_, ty)) = params.iter().find(|(name, _)| name == placeholder) else {
+            return Err(Diagnostic::blocker(
+                "E1015",
+                format!(
+                    "route path declares the placeholder `{{{placeholder}}}`, but the handler has no parameter with that name"
+                ),
+                format!(
+                    "add `{placeholder}: int` to the handler signature, or remove `{{{placeholder}}}` from the route path"
+                ),
+            )
+            .located(file, line_of(function)));
+        };
+        if !matches!(ty, TypeRef::String | TypeRef::Int) {
+            return Err(Diagnostic::blocker(
+                "E1015",
+                format!(
+                    "path parameter `{placeholder}` has type `{}`; a path parameter supports `str` and `int`",
+                    type_label(ty)
+                ),
+                "declare the parameter as `str` or `int`, or move the value into the request body",
+            )
+            .located(file, line_of(function)));
+        }
+        path_params.push(PathParam {
+            name: placeholder.clone(),
+            ty: ty.clone(),
+        });
+    }
+
+    let mut body: Vec<(String, TypeRef)> = params
+        .into_iter()
+        .filter(|(name, _)| !placeholders.contains(name))
+        .collect();
+    if body.len() > 1 {
         return Err(Diagnostic::blocker(
             "E1004",
             format!(
-                "handler `{}` declares {} parameters; phase 0 supports a single request-body parameter",
+                "handler `{}` declares {} parameters that are not path parameters",
                 handler_display_name(function, source),
-                params.len()
+                body.len()
             ),
-            "merge the parameters into one dict or DTO body",
+            "a handler takes path parameters plus at most one request-body parameter; merge the rest into one dict or DTO body",
         )
         .located(file, line_of(function)));
     }
 
     let mut types = HashMap::new();
-    let spec = match params.pop() {
+    for path_param in &path_params {
+        types.insert(path_param.name.clone(), path_param.ty.clone());
+    }
+    let spec = match body.pop() {
         Some((var, ty)) => {
             types.insert(var.clone(), ty.clone());
             RequestSpec::Json { var, ty }
         }
         None => RequestSpec::None,
     };
-    Ok((spec, types))
+    Ok(ParsedParameters {
+        path_params,
+        request: spec,
+        types,
+    })
 }
 
 /// The return annotation decides the response spec.

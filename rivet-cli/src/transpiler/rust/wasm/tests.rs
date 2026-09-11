@@ -2,11 +2,12 @@
 
 use super::*;
 use rivet_core::ir::{
-    Expr, FieldDefinition, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition,
+    Expr, FieldDefinition, HttpMethod, PathParam, RequestSpec, ResponseSpec, RouteDefinition,
     StructDefinition, TypeRef,
 };
 
-/// A blueprint with a parameterless `GET` and a body-taking `POST`.
+/// A blueprint with a parameterless `GET`, a body-taking `POST`, and a `GET`
+/// that declares one integer path parameter.
 fn blueprint() -> ServiceBlueprint {
     ServiceBlueprint {
         name: "app".to_string(),
@@ -23,6 +24,7 @@ fn blueprint() -> ServiceBlueprint {
             RouteDefinition {
                 method: HttpMethod::Get,
                 path: "/ping".to_string(),
+                path_params: vec![],
                 handler_name: "ping".to_string(),
                 stories: vec!["US-001".to_string()],
                 middlewares: vec![],
@@ -36,6 +38,7 @@ fn blueprint() -> ServiceBlueprint {
             RouteDefinition {
                 method: HttpMethod::Post,
                 path: "/orders".to_string(),
+                path_params: vec![],
                 handler_name: "create_order".to_string(),
                 stories: vec!["US-002".to_string()],
                 middlewares: vec![],
@@ -45,6 +48,23 @@ fn blueprint() -> ServiceBlueprint {
                 },
                 response: ResponseSpec::Json(TypeRef::Named("OrderCreate".to_string())),
                 returns: vec![Expr::Ident("request".to_string())],
+            },
+            RouteDefinition {
+                method: HttpMethod::Get,
+                path: "/orders/{id}".to_string(),
+                path_params: vec![PathParam {
+                    name: "id".to_string(),
+                    ty: TypeRef::Int,
+                }],
+                handler_name: "get_order".to_string(),
+                stories: vec!["US-003".to_string()],
+                middlewares: vec![],
+                request: RequestSpec::None,
+                response: ResponseSpec::Json(TypeRef::Json),
+                returns: vec![Expr::Object(vec![(
+                    "id".to_string(),
+                    Expr::Ident("id".to_string()),
+                )])],
             },
         ],
         dependencies: vec![],
@@ -88,20 +108,88 @@ fn the_crate_reuses_the_service_layer() {
 fn the_dispatch_names_every_route() {
     let project = project();
     assert!(
-        project.main_rs.contains("(\"GET\", \"/ping\")"),
+        project
+            .main_rs
+            .contains("rivet_path_matches(&segments, \"/ping\")"),
         "{}",
         project.main_rs
     );
-    assert!(project.main_rs.contains("(\"POST\", \"/orders\")"));
     assert!(
         project
             .main_rs
-            .contains("const RIVET_DECLARED_PATHS: &[&str] = &[\"/ping\", \"/orders\"]")
+            .contains("rivet_path_matches(&segments, \"/orders\")")
     );
-    assert!(project.main_rs.contains("\"/ping\" => \"GET\""));
     assert!(
-        project.main_rs.contains("\"/orders\" => \"POST\""),
+        project
+            .main_rs
+            .contains("rivet_path_matches(&segments, \"/orders/{id}\")"),
         "{}",
+        project.main_rs
+    );
+    assert!(project.main_rs.contains(
+        "const RIVET_DECLARED_PATHS: &[&str] = &[\"/ping\", \"/orders\", \"/orders/{id}\"]"
+    ));
+    assert!(project.main_rs.contains("\"/ping\" => \"GET\""));
+    assert!(project.main_rs.contains("\"/orders\" => \"POST\""));
+    assert!(
+        project.main_rs.contains("\"/orders/{id}\" => \"GET\""),
+        "{}",
+        project.main_rs
+    );
+}
+
+/// A path-parameter route binds its segment, percent-decodes it, and answers
+/// 400 when the segment does not parse into the declared type.
+#[test]
+fn a_path_parameter_route_binds_and_parses_its_segment() {
+    let project = project();
+    assert!(
+        project
+            .main_rs
+            .contains("let id: i64 = match rivet_id_text.parse() {"),
+        "{}",
+        project.main_rs
+    );
+    assert!(
+        project
+            .main_rs
+            .contains("rivet_percent_decode(segments[2])")
+    );
+    assert!(
+        project.main_rs.contains("service::get_order(id).await"),
+        "the path argument leads the call:\n{}",
+        project.main_rs
+    );
+    assert!(
+        project
+            .main_rs
+            .contains("return Err((400, format!(\"`{rivet_id_text}` is not a valid `id`\")))"),
+        "a bad segment answers 400:\n{}",
+        project.main_rs
+    );
+}
+
+/// The dispatch rejects a path no declared route serves with 404, and the
+/// helpers carry the reserved prefix.
+#[test]
+fn the_wasm_path_helpers_carry_the_reserved_prefix() {
+    let project = project();
+    for symbol in [
+        "fn rivet_percent_decode(",
+        "fn rivet_hex_value(",
+        "fn rivet_path_matches(",
+    ] {
+        assert!(
+            project.main_rs.contains(symbol),
+            "`{symbol}` must carry the reserved prefix:\n{}",
+            project.main_rs
+        );
+    }
+    assert!(
+        project
+            .main_rs
+            .contains("return Err((404, format!(\"no route serves {path}\")))"),
+        "an unmatched path answers 404:\n{}",
         project.main_rs
     );
 }
@@ -156,6 +244,9 @@ fn the_generator_symbols_carry_the_reserved_prefix() {
         format!("fn {PREFIX}json_error("),
         format!("fn {PREFIX}body_text("),
         format!("fn {PREFIX}answer("),
+        format!("fn {PREFIX}percent_decode("),
+        format!("fn {PREFIX}hex_value("),
+        format!("fn {PREFIX}path_matches("),
         format!("const {CONST_PREFIX}DECLARED_PATHS"),
     ] {
         assert!(
@@ -176,6 +267,9 @@ fn the_generator_symbols_carry_the_reserved_prefix() {
         "fn body_text(",
         "fn answer(",
         "fn dispatch(",
+        "fn percent_decode(",
+        "fn hex_value(",
+        "fn path_matches(",
     ] {
         assert!(
             !project.main_rs.contains(bare),

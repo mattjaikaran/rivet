@@ -5,7 +5,7 @@
 
 use crate::diagnostic::Diagnostic;
 use crate::parser::expr;
-use crate::parser::{NamedChildren, line_of, node_text};
+use crate::parser::{NamedChildren, is_safe_identifier, line_of, node_text};
 use rivet_core::ir::HttpMethod;
 use tree_sitter::Node;
 
@@ -169,9 +169,16 @@ fn parse_stories(keyword: &Node<'_>, source: &str, file: &str) -> Result<Vec<Str
     Ok(stories)
 }
 
-/// Route paths must start with `/` and, until path-parameter support lands,
-/// must not contain placeholders.
-pub(crate) fn validate_path(path: &str, file: &str, line: usize) -> Result<(), Diagnostic> {
+/// Validate a route path and return its `{name}` placeholders in path order.
+///
+/// A placeholder names one path segment. It binds to the handler parameter of
+/// the same name, so its name must be a safe Rust identifier. A repeated name
+/// would bind two segments to one parameter, so the parser rejects it.
+pub(crate) fn validate_path(
+    path: &str,
+    file: &str,
+    line: usize,
+) -> Result<Vec<String>, Diagnostic> {
     if !path.starts_with('/') {
         return Err(Diagnostic::blocker(
             "E1005",
@@ -180,13 +187,57 @@ pub(crate) fn validate_path(path: &str, file: &str, line: usize) -> Result<(), D
         )
         .located(file, line));
     }
-    if path.contains('{') || path.contains('}') {
-        return Err(Diagnostic::blocker(
-            "E1004",
-            format!("route path `{path}` uses path parameters, which are not supported yet"),
-            "move the parameter into the JSON body for now",
-        )
-        .located(file, line));
+    let mut names: Vec<String> = Vec::new();
+    let mut remainder = path;
+    while let Some(open) = remainder.find('{') {
+        if remainder[..open].contains('}') {
+            return Err(unbalanced_braces(path, file, line));
+        }
+        let Some(close) = remainder[open + 1..].find('}') else {
+            return Err(unbalanced_braces(path, file, line));
+        };
+        let name = &remainder[open + 1..open + 1 + close];
+        if name.is_empty() {
+            return Err(Diagnostic::blocker(
+                "E1015",
+                format!("route path `{path}` has an empty placeholder"),
+                "name the placeholder, for example `/orders/{id}`",
+            )
+            .located(file, line));
+        }
+        if !is_safe_identifier(name) {
+            return Err(Diagnostic::blocker(
+                "E1015",
+                format!(
+                    "placeholder `{{{name}}}` in route path `{path}` is not a safe Rust identifier"
+                ),
+                "rename the placeholder to a snake_case identifier, for example `{order_id}`",
+            )
+            .located(file, line));
+        }
+        if names.iter().any(|existing| existing == name) {
+            return Err(Diagnostic::blocker(
+                "E1015",
+                format!("route path `{path}` declares the placeholder `{{{name}}}` twice"),
+                "give each placeholder a distinct name",
+            )
+            .located(file, line));
+        }
+        names.push(name.to_string());
+        remainder = &remainder[open + 1 + close + 1..];
     }
-    Ok(())
+    if remainder.contains('}') {
+        return Err(unbalanced_braces(path, file, line));
+    }
+    Ok(names)
+}
+
+/// A stray or unclosed brace in a route path.
+fn unbalanced_braces(path: &str, file: &str, line: usize) -> Diagnostic {
+    Diagnostic::blocker(
+        "E1015",
+        format!("route path `{path}` has an unmatched brace"),
+        "write a placeholder as `{name}`, for example `/orders/{id}`",
+    )
+    .located(file, line)
 }

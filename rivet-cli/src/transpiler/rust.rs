@@ -142,6 +142,10 @@ pub fn generate_project(
     let discovery = discovery::render(config)?;
     let parts = MainParts {
         routing: used_router_fns(blueprint, config.admin.enabled).join(", "),
+        has_path_params: blueprint
+            .routes
+            .iter()
+            .any(|route| !route.path_params.is_empty()),
         host: host.clone(),
         port,
         plugins: render_plugin_installs(&plugins),
@@ -429,12 +433,17 @@ impl<'a> Codegen<'a> {
 // Free helpers
 // ---------------------------------------------------------------------------
 
-/// The request parameter types of a route, keyed by parameter name.
+/// The parameter types of a route, keyed by parameter name: the path
+/// parameters in path order, then the JSON body parameter.
 fn param_types(route: &RouteDefinition) -> HashMap<String, TypeRef> {
-    match &route.request {
-        RequestSpec::Json { var, ty } => HashMap::from([(var.clone(), ty.clone())]),
-        RequestSpec::None => HashMap::new(),
+    let mut params = HashMap::new();
+    for param in &route.path_params {
+        params.insert(param.name.clone(), param.ty.clone());
     }
+    if let RequestSpec::Json { var, ty } = &route.request {
+        params.insert(var.clone(), ty.clone());
+    }
+    params
 }
 
 /// Count identifier uses across all returns of a route.

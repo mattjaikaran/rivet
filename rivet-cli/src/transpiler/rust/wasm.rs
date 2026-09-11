@@ -10,8 +10,9 @@
 //! - the module is an edge handler, not a server: it reads one request as
 //!   JSON on stdin, dispatches it, and writes one response envelope as JSON
 //!   on stdout. An edge host runs one module instance per request.
-//! - the dispatch is a `match` rendered at build time, so a request costs one
-//!   comparison chain and no allocation beyond the request itself.
+//! - the dispatch is a route-by-route segment comparison rendered at build
+//!   time, so a request costs one comparison chain and no work beyond the
+//!   request's own segments.
 //!
 //! The service functions are `async` but never await: the parser's subset is
 //! literals, request parameters, and one DTO construction, so no route holds
@@ -21,11 +22,13 @@
 //! A command module is what a WASI host runs directly:
 //! `wasmtime run --dir . module.wasm < request.json`.
 
-use super::Codegen;
-use super::service;
+mod template;
+
+use super::{Codegen, service};
 use crate::config::RivetConfig;
 use crate::diagnostic::Diagnostic;
-use rivet_core::ir::{RequestSpec, RouteDefinition, ServiceBlueprint};
+use rivet_core::ir::{RequestSpec, RouteDefinition, ServiceBlueprint, TypeRef};
+use template::MAIN;
 
 /// The Rust target the WebAssembly build compiles for.
 ///
@@ -76,8 +79,8 @@ pub fn generate_wasm_project(
     })
 }
 
-/// The declared paths, as the `RIVET_DECLARED_PATHS` literal.
-fn render_paths(blueprint: &ServiceBlueprint) -> String {
+/// The declared paths, deduplicated, in blueprint order.
+fn declared_paths(blueprint: &ServiceBlueprint) -> Vec<String> {
     let mut paths: Vec<String> = Vec::new();
     for route in &blueprint.routes {
         if !paths.contains(&route.path) {
@@ -85,6 +88,11 @@ fn render_paths(blueprint: &ServiceBlueprint) -> String {
         }
     }
     paths
+}
+
+/// The declared paths, as the `RIVET_DECLARED_PATHS` literal.
+fn render_paths(blueprint: &ServiceBlueprint) -> String {
+    declared_paths(blueprint)
         .iter()
         .map(|path| super::rust_str(path))
         .collect::<Vec<_>>()
@@ -132,48 +140,87 @@ fn render_dispatch(
     Ok(arms.trim_end().to_string())
 }
 
-/// Render one dispatch arm: parse the body, call the service, serialize the
-/// answer.
+/// Render one dispatch arm: match the path segments, bind every `{name}`
+/// placeholder after percent-decoding, then call the service.
 fn render_arm(codegen: &Codegen<'_>, route: &RouteDefinition) -> Result<String, Diagnostic> {
     let method = route.method.as_str();
     let path = route.path.as_str();
     let name = route.handler_name.as_str();
 
-    // The request: no parameter, or one JSON body of the declared type.
-    let (binding, call) = match &route.request {
-        RequestSpec::None => (String::new(), format!("service::{name}().await")),
-        RequestSpec::Json { var, ty } => {
-            let rust_type = codegen.rust_type(ty, false)?;
-            // A body that does not match the declared type is the client's
-            // error, so it answers 400 rather than a server fault.
-            //
-            // The binding is the route's own parameter name, so the call
-            // below passes the deserialized value. `let x = match x { … }`
-            // reads the outer `body` and then shadows it, which is what lets
-            // a parameter named `body` work here.
-            //
-            // A borrowed DTO decodes from the body text itself, so its
-            // `&'a str` fields point into `body` and no string is copied.
-            let binding = format!(
-                "            let {var}: {rust_type} = match body {{\n                Some(body) => serde_json::from_str(body)\n                    .map_err(|err| (400, format!(\"cannot read the request body: {{err}}\")))?,\n                None => return Err((400, \"this route requires a JSON body\".to_string())),\n            }};\n"
-            );
-            (binding, format!("service::{name}({var}).await"))
+    // The segment index of each `{name}` placeholder, in path order. The
+    // parser fills `path_params` in the same order, so the two lists line up.
+    let placeholders: Vec<usize> = path
+        .split('/')
+        .enumerate()
+        .filter(|(_, segment)| {
+            segment.len() >= 2 && segment.starts_with('{') && segment.ends_with('}')
+        })
+        .map(|(index, _)| index)
+        .collect();
+    if placeholders.len() != route.path_params.len() {
+        return Err(Diagnostic::blocker(
+            "E2017",
+            format!(
+                "`{path}` names {} path parameters but `{name}` declares {}",
+                placeholders.len(),
+                route.path_params.len()
+            ),
+            format!("give `{name}` one parameter per `{{name}}` placeholder in `{path}`"),
+        ));
+    }
+
+    // Bind each path parameter from its decoded segment, in path order; the
+    // JSON body trails. A segment that fails to parse is the client's error,
+    // so it answers 400 rather than a server fault.
+    let mut bindings = String::new();
+    let mut args: Vec<String> = Vec::new();
+    for (segment_index, param) in placeholders.iter().zip(&route.path_params) {
+        let rust_type = codegen.rust_type(&param.ty, false)?;
+        let arg = param.name.as_str();
+        if param.ty == TypeRef::Int {
+            bindings.push_str(&format!(
+                "            let rivet_{arg}_text = rivet_percent_decode(segments[{segment_index}]);\n            let {arg}: {rust_type} = match rivet_{arg}_text.parse() {{\n                Ok(value) => value,\n                Err(_) => return Err((400, format!(\"`{{rivet_{arg}_text}}` is not a valid `{arg}`\"))),\n            }};\n"
+            ));
+        } else {
+            bindings.push_str(&format!(
+                "            let {arg}: {rust_type} = rivet_percent_decode(segments[{segment_index}]);\n"
+            ));
         }
+        args.push(arg.to_string());
+    }
+
+    // The body parameter, deserialized from the request text.
+    if let RequestSpec::Json { var, ty } = &route.request {
+        let rust_type = codegen.rust_type(ty, false)?;
+        bindings.push_str(&format!(
+            "            let {var}: {rust_type} = match body {{\n                Some(body) => serde_json::from_str(body)\n                    .map_err(|err| (400, format!(\"cannot read the request body: {{err}}\")))?,\n                None => return Err((400, \"this route requires a JSON body\".to_string())),\n            }};\n"
+        ));
+        args.push(var.clone());
+    }
+
+    let call = if args.is_empty() {
+        format!("service::{name}()")
+    } else {
+        format!("service::{name}({})", args.join(", "))
     };
 
     Ok(format!(
-        "        (\"{method}\", \"{path}\") => {{\n{binding}            let value = {call};\n            Ok(serde_json::to_value(value).unwrap_or(serde_json::Value::Null))\n        }}\n"
+        "    if rivet_path_matches(&segments, {}) {{\n        known = true;\n        if method == {:?} {{\n{}            let value = {}.await;\n            return Ok(serde_json::to_value(value).unwrap_or(serde_json::Value::Null));\n        }}\n    }}\n",
+        super::rust_str(path),
+        method,
+        bindings,
+        call
     ))
 }
 
 /// Render the `rivet_allowed_methods` function: one arm per declared path.
 fn render_allowed(blueprint: &ServiceBlueprint) -> String {
     let mut arms = String::new();
-    for route in &blueprint.routes {
+    for path in declared_paths(blueprint) {
         arms.push_str(&format!(
-            "        {} => {},\n",
-            super::rust_str(&route.path),
-            super::rust_str(&allowed_for(blueprint, &route.path))
+            "                {} => {},\n",
+            super::rust_str(&path),
+            super::rust_str(&allowed_for(blueprint, &path))
         ));
     }
     arms
@@ -190,161 +237,6 @@ fn allowed_for(blueprint: &ServiceBlueprint, path: &str) -> String {
     }
     methods.join(", ")
 }
-
-/// The generated crate.
-///
-/// A WASI command module: it reads one request from stdin, answers it, and
-/// writes one response envelope to stdout. `@@` tokens stand in for a
-/// `format!` template, because the module is mostly braces.
-const MAIN: &str = r#"//! Generated by rivet. Do not edit; run `rivet build --target wasm` again.
-//!
-//! An edge handler: one request in on stdin, one response out on stdout. The
-//! route logic in `mod service` is the same code the native target compiles.
-
-use std::io::{Read, Write};
-@@STRUCTS@@
-
-@@HELPERS@@
-
-@@SERVICE@@
-
-/// Run one service future to completion.
-///
-/// Every generated route is an `async fn` that never awaits: the parser's
-/// subset holds literals, request parameters, and one DTO construction, so a
-/// future is ready on its first poll. One poll with a no-op waker is the
-/// whole executor, and the module carries no async runtime.
-mod rivet_executor {
-    use std::future::Future;
-    use std::pin::pin;
-    use std::task::{Context, Poll, Waker};
-
-    /// Run one future to completion.
-    ///
-    /// A future that returned `Pending` would spin here, which is why the
-    /// generated routes hold no I/O: this module has no reactor to make
-    /// progress on it. See `docs/pillars/08-wasm-mobile-sdk-support.md`.
-    pub(super) fn block_on<F: Future>(future: F) -> F::Output {
-        let mut future = pin!(future);
-        let waker = Waker::noop();
-        let mut context = Context::from_waker(waker);
-        loop {
-            if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
-                return output;
-            }
-        }
-    }
-}
-
-/// The paths this module serves, so an unknown path answers `404` and a known
-/// path with the wrong method answers `405`.
-const RIVET_DECLARED_PATHS: &[&str] = &[@@PATHS@@];
-
-/// The methods one path answers.
-fn rivet_allowed_methods(path: &str) -> &'static str {
-    match path {
-@@ALLOWED@@
-        _ => "",
-    }
-}
-
-/// Answer one request: `Ok(body)` for a `200`, or the status and message for
-/// a `400`, `404`, or `405`.
-///
-/// The function is `async` because the service layer is: the executor polls
-/// it inside `rivet_answer`.
-///
-/// `body` is unused when no route takes a JSON body, which is a blueprint
-/// shape and not a defect, so the parameter carries an allow rather than a
-/// renamed binding the dispatch arms would have to match.
-#[allow(unused_variables)]
-async fn rivet_dispatch(
-    method: &str,
-    path: &str,
-    body: Option<&str>,
-) -> Result<serde_json::Value, (u16, String)> {
-    if !RIVET_DECLARED_PATHS.contains(&path) {
-        return Err((404, format!("no route serves {path}")));
-    }
-    match (method, path) {
-@@DISPATCH@@
-        _ => Err((
-            405,
-            format!(
-                "{method} is not served by {path}; it allows {}",
-                rivet_allowed_methods(path)
-            ),
-        )),
-    }
-}
-
-/// Answer an error body: `{"error": "..."}`.
-fn rivet_json_error(message: &str) -> serde_json::Value {
-    let mut object = serde_json::Map::new();
-    object.insert(
-        "error".to_string(),
-        serde_json::Value::String(message.to_string()),
-    );
-    serde_json::Value::Object(object)
-}
-
-/// Read the request, answer it, and write the response envelope.
-///
-/// The request is `{"method": "GET", "path": "/ping", "body": "{...}"}`, and
-/// the response is `{"status": 200, "body": {...}}`. An unreadable request
-/// answers `400` rather than exiting: an edge host reads the envelope to
-/// decide the HTTP status, so the module always writes one.
-fn main() {
-    let mut raw = String::new();
-    let read = std::io::stdin().read_to_string(&mut raw);
-    let (status, body) = match read {
-        Ok(_) => rivet_answer(&raw),
-        Err(err) => (400, rivet_json_error(&format!("cannot read the request: {err}"))),
-    };
-
-    let mut envelope = serde_json::Map::new();
-    envelope.insert("status".to_string(), serde_json::Value::from(status));
-    envelope.insert("body".to_string(), body);
-    let envelope = serde_json::Value::Object(envelope).to_string();
-
-    let mut stdout = std::io::stdout();
-    if stdout.write_all(envelope.as_bytes()).is_err() {
-        std::process::exit(1);
-    }
-}
-
-/// The request body as text.
-///
-/// A host may send the body either as a JSON string (the raw body) or as a
-/// JSON value (the parsed body). Both mean the same request, so a value is
-/// re-serialized rather than rejected: answering 400 because a body arrived
-/// parsed would blame the client for a shape it cannot know about.
-fn rivet_body_text(request: &serde_json::Value) -> Option<String> {
-    match request.get("body") {
-        Some(serde_json::Value::String(text)) => Some(text.clone()),
-        Some(value) if !value.is_null() => Some(value.to_string()),
-        _ => None,
-    }
-}
-
-/// Parse one request and answer its envelope body.
-fn rivet_answer(raw: &str) -> (u16, serde_json::Value) {
-    let request: serde_json::Value = match serde_json::from_str(raw) {
-        Ok(request) => request,
-        Err(err) => return (400, rivet_json_error(&format!("cannot read the request: {err}"))),
-    };
-    let method = request.get("method").and_then(serde_json::Value::as_str);
-    let path = request.get("path").and_then(serde_json::Value::as_str);
-    let (Some(method), Some(path)) = (method, path) else {
-        return (400, rivet_json_error("the request names no method or path"));
-    };
-    let body = rivet_body_text(&request);
-    match rivet_executor::block_on(rivet_dispatch(method, path, body.as_deref())) {
-        Ok(value) => (200, value),
-        Err((status, message)) => (status, rivet_json_error(&message)),
-    }
-}
-"#;
 
 #[cfg(test)]
 mod tests;

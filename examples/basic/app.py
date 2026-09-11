@@ -47,3 +47,12 @@ def create_note(request: Note) -> dict:
     The DTO holds a `&str`, so the generated crate copies no string.
     """
     return {"echo": request}
+
+
+@api.get("/orders/{id}", stories=["US-005"])
+def get_order(id: int) -> dict:
+    """
+    Fetches one order by its identifier.
+    The `{id}` placeholder binds to the `id` parameter, which is an int.
+    """
+    return {"id": id, "status": "open"}

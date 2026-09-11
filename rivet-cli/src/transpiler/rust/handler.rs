@@ -60,20 +60,46 @@ pub(super) fn render_handlers(
 fn render_handler(codegen: &Codegen<'_>, route: &RouteDefinition) -> Result<String, Diagnostic> {
     let rendered = render_route(codegen, route)?;
 
+    // The extraction order is a contract: the `Path` extractor first (one
+    // value, or a tuple in path order), then `State`, then the body
+    // extractor. `super::Path` is spelled out for the same reason `Json` and
+    // `State` are: a local item cannot shadow an explicit path.
+    let (path_extraction, path_args) = match route.path_params.as_slice() {
+        [] => (String::new(), String::new()),
+        [param] => {
+            let ty = codegen.rust_type(&param.ty, false)?;
+            (
+                format!("super::Path({}): super::Path<{ty}>", param.name),
+                param.name.clone(),
+            )
+        }
+        params => {
+            let names: Vec<&str> = params.iter().map(|param| param.name.as_str()).collect();
+            let types: Vec<String> = params
+                .iter()
+                .map(|param| codegen.rust_type(&param.ty, false))
+                .collect::<Result<_, _>>()?;
+            (
+                format!(
+                    "super::Path(({})): super::Path<({})>",
+                    names.join(", "),
+                    types.join(", ")
+                ),
+                names.join(", "),
+            )
+        }
+    };
+
     // `super::Json` and `super::State` are spelled out so a handler named
     // after either extractor cannot capture its own pattern. `Bytes` is
     // written as its full path for the same reason: it is an opaque struct,
     // so it binds by name and its type is `axum::body::Bytes`.
-    let (extraction, binding, argument) = match &route.request {
-        RequestSpec::None => (
-            "super::State(channel): super::State<C>".to_string(),
-            String::new(),
-            String::new(),
-        ),
+    let (body_extraction, binding, body_arg) = match &route.request {
+        RequestSpec::None => (String::new(), String::new(), String::new()),
         RequestSpec::Json { var, ty } if codegen.borrows(ty) => {
             let rust_type = codegen.rust_type(ty, false)?;
             (
-                "super::State(channel): super::State<C>, bytes: axum::body::Bytes".to_string(),
+                "bytes: axum::body::Bytes".to_string(),
                 format!(
                     "    let {var}: {rust_type} = match serde_json::from_slice(&bytes) {{\n        Ok(value) => value,\n        Err(err) => return Err((axum::http::StatusCode::BAD_REQUEST, format!(\"cannot read the request body: {{err}}\"))),\n    }};\n"
                 ),
@@ -82,13 +108,34 @@ fn render_handler(codegen: &Codegen<'_>, route: &RouteDefinition) -> Result<Stri
         }
         RequestSpec::Json { var, ty } => (
             format!(
-                "super::State(channel): super::State<C>, super::Json({var}): super::Json<{}>",
+                "super::Json({var}): super::Json<{}>",
                 codegen.rust_type(ty, false)?
             ),
             String::new(),
             var.clone(),
         ),
     };
+
+    let mut extraction = Vec::new();
+    if !path_extraction.is_empty() {
+        extraction.push(path_extraction);
+    }
+    extraction.push("super::State(channel): super::State<C>".to_string());
+    if !body_extraction.is_empty() {
+        extraction.push(body_extraction);
+    }
+    let extraction = extraction.join(", ");
+
+    // The channel call argument list: the path variables then the body
+    // variable, so `get_order` calls `channel.get_order(id, request)`.
+    let mut args = Vec::new();
+    if !path_args.is_empty() {
+        args.push(path_args);
+    }
+    if !body_arg.is_empty() {
+        args.push(body_arg);
+    }
+    let argument = args.join(", ");
     let channel_error = format!("{}channel_error", reserved::PREFIX);
     let (return_ty, call) = if rendered.return_ty.is_empty() {
         (

@@ -78,6 +78,7 @@ to stdout.
 | A declared route whose body matches its type | `200`, with the route's own value |
 | A path no route declares | `404`, with `{"error": "..."}` |
 | A declared path with a method it does not serve | `405`, naming the methods it allows |
+| A path that matches a declared route but has a segment the declared type cannot parse | `400`, not `404`: the route matched, the value failed to parse |
 | A body that does not match the declared type, or no body where one is required | `400` |
 | A request the module cannot read | `400` |
 
