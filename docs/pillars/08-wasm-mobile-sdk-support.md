@@ -28,11 +28,23 @@ feature:
 
 | The native target has | The WASI module has |
 | :--- | :--- |
-| axum handlers and a router | one `dispatch` match rendered at build time |
+| axum handlers and a router | one `rivet_dispatch` match rendered at build time |
 | tokio, with worker threads and a reactor | one poll with a no-op waker |
 | gRPC and the internal channel | a direct call to `service::*` |
 | plugins, embedded assets, discovery | nothing: a module has no sockets and no filesystem |
 | a long-running process | one request per module run |
+
+The module is one namespace, so every generator-owned symbol there carries
+the `rivet_` prefix: `rivet_dispatch`, `rivet_answer`, `rivet_body_text`,
+`rivet_json_error`, `rivet_allowed_methods`, `RIVET_DECLARED_PATHS`,
+`mod rivet_executor`, and the shared `rivet_json_obj` and
+`rivet_json_number`. A DTO name cannot collide with one.
+
+The dispatch reaches the route logic through the module
+(`service::create_order(request).await`), so a handler name never lands in
+the module's namespace either. Read
+[pillar 02](02-multi-service-architecture.md) for the reserved-name rule and
+the `E1013` diagnostic that holds it.
 
 ### The request protocol
 

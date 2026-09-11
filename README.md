@@ -147,7 +147,7 @@ goal of later phases; see [`docs/ROADMAP.md`](docs/ROADMAP.md).
 | Path | Purpose |
 | :--- | :--- |
 | `constraint-tools/` | Deterministic self-checks that gate the Rivet tree (file length, rule modules, tracker) |
-| `rivet-core/` | The IR and shared types for the pipeline |
+| `rivet-core/` | The IR, the shared pipeline types, and the reserved names the generated crate owns |
 | `rivet-plugin-api/` | The compile-time plugin contract: the `Plugin` trait and the monomorphized `install` |
 | `rivet-cli/` | The `rivet` CLI: parser, generator, build command |
 | `examples/basic/plugins/` | The reference plugin (`auth-token`), composed by the example app |
