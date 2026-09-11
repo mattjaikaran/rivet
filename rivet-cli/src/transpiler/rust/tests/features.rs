@@ -2,7 +2,7 @@
 
 use super::fixtures::{RustNativeFeatures, ping_blueprint};
 use super::*;
-use rivet_core::ir::{Expr, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, TypeRef};
+use rivet_core::ir::{Expr, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, Stmt, TypeRef};
 
 /// A blueprint whose DTO carries a fixed-size array.
 fn embedding_blueprint() -> ServiceBlueprint {
@@ -33,7 +33,7 @@ fn embedding_blueprint() -> ServiceBlueprint {
                 ty: TypeRef::Named("Embedding".to_string()),
             },
             response: ResponseSpec::Json(TypeRef::Named("Embedding".to_string())),
-            returns: vec![Expr::Ident("request".to_string())],
+            body: vec![Stmt::Return(Expr::Ident("request".to_string()))],
         }],
         dependencies: vec![],
     }
@@ -161,13 +161,13 @@ fn an_optional_fixed_size_array_is_rejected_before_cargo_sees_it() {
 #[test]
 fn an_array_literal_must_match_a_fixed_size_declaration() {
     let mut blueprint = embedding_blueprint();
-    blueprint.routes[0].returns = vec![Expr::Construct {
+    blueprint.routes[0].body = vec![Stmt::Return(Expr::Construct {
         ty: "Embedding".to_string(),
         args: vec![(
             "values".to_string(),
             Expr::Array(vec![Expr::Float(0.5), Expr::Float(0.5)]),
         )],
-    }];
+    })];
     let error = match generate_project(&blueprint, &const_generics_config(), Path::new(".")) {
         Ok(_) => panic!("a two-value literal does not fill a 768-element array"),
         Err(error) => error,
@@ -190,10 +190,10 @@ fn duplicate_route_blueprint() -> ServiceBlueprint {
         middlewares: vec![],
         request: RequestSpec::None,
         response: ResponseSpec::Json(TypeRef::Json),
-        returns: vec![Expr::Object(vec![(
+        body: vec![Stmt::Return(Expr::Object(vec![(
             "status".to_string(),
             Expr::Str("alive".to_string()),
-        )])],
+        )]))],
     });
     blueprint
 }
@@ -247,10 +247,10 @@ fn the_same_path_on_two_methods_is_not_a_duplicate() {
         middlewares: vec![],
         request: RequestSpec::None,
         response: ResponseSpec::Json(TypeRef::Json),
-        returns: vec![Expr::Object(vec![(
+        body: vec![Stmt::Return(Expr::Object(vec![(
             "status".to_string(),
             Expr::Str("created".to_string()),
-        )])],
+        )]))],
     });
     let project = generate_project(&blueprint, &RivetConfig::default(), Path::new("."))
         .expect("a GET and a POST on one path are two routes");

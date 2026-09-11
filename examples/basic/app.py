@@ -66,3 +66,16 @@ def search(page: int, size: int) -> dict:
     read from the query string: `/search?page=2&size=10`.
     """
     return {"page": page, "size": size}
+
+
+@api.get("/orders/{id}/total", stories=["US-007"])
+def order_total(id: int, quantity: int) -> dict:
+    """
+    Prices an order line.
+    Binds a local, branches on a comparison, and returns from each branch.
+    """
+    total = id * quantity
+    if total > 100:
+        return {"id": id, "total": total, "tier": "bulk"}
+    else:
+        return {"id": id, "total": total, "tier": "single"}

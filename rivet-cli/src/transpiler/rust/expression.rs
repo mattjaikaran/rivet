@@ -6,9 +6,9 @@
 //! flows through, and the service layer and the channel both call it, so a
 //! route's shape stays identical in every target.
 
-use super::{Emitter, expr_kind, rust_str, type_label};
+use super::{Emitter, expr_kind, rust_str};
 use crate::diagnostic::Diagnostic;
-use rivet_core::ir::{Expr, FieldDefinition, StructDefinition, TypeRef};
+use rivet_core::ir::{Expr, FieldDefinition, ResponseSpec, StructDefinition, TypeRef};
 use rivet_core::reserved;
 
 impl Emitter<'_> {
@@ -100,7 +100,20 @@ impl Emitter<'_> {
     }
 
     /// Render an expression into the Rust type named by `ty`.
-    fn render_typed(&self, expr: &Expr, ty: &TypeRef) -> Result<String, Diagnostic> {
+    pub(super) fn render_typed(&self, expr: &Expr, ty: &TypeRef) -> Result<String, Diagnostic> {
+        // A binary operation or a `not` computes a value at its own inferred
+        // type; render it and coerce only when the target type differs.
+        match expr {
+            Expr::Binary { op, left, right } => {
+                let rendered = self.render_binary(*op, left, right)?;
+                return self.coerce_operation(rendered, expr, ty);
+            }
+            Expr::Not(operand) => {
+                let rendered = self.render_not(operand)?;
+                return self.coerce_operation(rendered, expr, ty);
+            }
+            _ => {}
+        }
         match ty {
             TypeRef::Json => self.render_value(expr),
             TypeRef::String => match expr {
@@ -225,6 +238,39 @@ impl Emitter<'_> {
                 "return the DTO construction as the handler's declared response type instead of nesting it inside the JSON value",
             )
             .located("<generated>", 1)),
+            Expr::Binary { op, left, right } => {
+                let rendered = self.render_binary(*op, left, right)?;
+                Ok(format!(
+                    "serde_json::to_value(&({rendered})).expect(\"computed value serialization cannot fail\")"
+                ))
+            }
+            Expr::Not(operand) => {
+                let rendered = self.render_not(operand)?;
+                Ok(format!(
+                    "serde_json::to_value(&({rendered})).expect(\"computed value serialization cannot fail\")"
+                ))
+            }
+        }
+    }
+
+    /// Render the value a return produces, matching the route's response type.
+    pub(super) fn render_return_value(
+        &self,
+        expr: &Expr,
+        response: &ResponseSpec,
+    ) -> Result<String, Diagnostic> {
+        match response {
+            ResponseSpec::Json(TypeRef::Named(name)) => {
+                let struct_def = self.codegen.find_struct(name)?;
+                self.render_named(expr, struct_def)
+            }
+            ResponseSpec::Json(_) => self.render_value(expr),
+            ResponseSpec::None => Err(Diagnostic::blocker(
+                "E2002",
+                "a `-> None` handler cannot return a value",
+                "return no value from the handler, or change its return type",
+            )
+            .located("<generated>", 1)),
         }
     }
 
@@ -238,17 +284,17 @@ impl Emitter<'_> {
         }
     }
 
-    fn type_error(&self, expr: &Expr, ty: &TypeRef) -> Diagnostic {
+    pub(super) fn type_error(&self, expr: &Expr, ty: &TypeRef) -> Diagnostic {
         Diagnostic::blocker(
             "E2002",
             format!(
                 "a {} value cannot satisfy a field of type `{}`",
                 expr_kind(expr),
-                type_label(ty)
+                ty.label()
             ),
             format!(
                 "return a value of the field's declared type `{}` (a literal, a request parameter of that type, or a DTO construction)",
-                type_label(ty)
+                ty.label()
             ),
         )
         .located("<generated>", 1)

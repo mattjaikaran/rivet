@@ -3,7 +3,7 @@
 use super::*;
 use rivet_core::ir::{
     Expr, FieldDefinition, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, RouteParam,
-    StructDefinition, TypeRef,
+    Stmt, StructDefinition, TypeRef,
 };
 
 /// A blueprint with a parameterless `GET`, a body-taking `POST`, and a `GET`
@@ -31,10 +31,10 @@ fn blueprint() -> ServiceBlueprint {
                 middlewares: vec![],
                 request: RequestSpec::None,
                 response: ResponseSpec::Json(TypeRef::Json),
-                returns: vec![Expr::Object(vec![(
+                body: vec![Stmt::Return(Expr::Object(vec![(
                     "status".to_string(),
                     Expr::Str("pong".to_string()),
-                )])],
+                )]))],
             },
             RouteDefinition {
                 method: HttpMethod::Post,
@@ -49,7 +49,7 @@ fn blueprint() -> ServiceBlueprint {
                     ty: TypeRef::Named("OrderCreate".to_string()),
                 },
                 response: ResponseSpec::Json(TypeRef::Named("OrderCreate".to_string())),
-                returns: vec![Expr::Ident("request".to_string())],
+                body: vec![Stmt::Return(Expr::Ident("request".to_string()))],
             },
             RouteDefinition {
                 method: HttpMethod::Get,
@@ -64,10 +64,10 @@ fn blueprint() -> ServiceBlueprint {
                 middlewares: vec![],
                 request: RequestSpec::None,
                 response: ResponseSpec::Json(TypeRef::Json),
-                returns: vec![Expr::Object(vec![(
+                body: vec![Stmt::Return(Expr::Object(vec![(
                     "id".to_string(),
                     Expr::Ident("id".to_string()),
-                )])],
+                )]))],
             },
         ],
         dependencies: vec![],

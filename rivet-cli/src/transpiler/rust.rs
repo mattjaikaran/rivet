@@ -11,7 +11,7 @@ use crate::config::{RivetConfig, RustNativeFeatures, TransportMode};
 use crate::diagnostic::Diagnostic;
 use crate::plugin::{self, ResolvedPlugin};
 use rivet_core::ir::{
-    Expr, FieldDefinition, RequestSpec, RouteDefinition, ServiceBlueprint, StructDefinition,
+    Expr, FieldDefinition, RequestSpec, RouteDefinition, ServiceBlueprint, Stmt, StructDefinition,
     TypeRef,
 };
 use rivet_core::reserved;
@@ -27,7 +27,9 @@ mod expression;
 mod handler;
 mod helpers;
 mod main_file;
+mod operation;
 mod service;
+
 mod wasm;
 
 pub use assets::AssetEmbedding;
@@ -234,8 +236,9 @@ struct Codegen<'a> {
     features: &'a RustNativeFeatures,
 }
 
-/// Per-route render state: parameter types plus identifier use counts (used
-/// to clone a parameter when a handler body references it more than once).
+/// Per-route render state: the name-to-type environment (parameters plus the
+/// locals in scope) and identifier use counts (used to clone a parameter when
+/// a handler body references it more than once).
 struct Emitter<'a> {
     codegen: &'a Codegen<'a>,
     params: &'a HashMap<String, TypeRef>,
@@ -454,7 +457,7 @@ fn param_types(route: &RouteDefinition) -> HashMap<String, TypeRef> {
     params
 }
 
-/// Count identifier uses across all returns of a route.
+/// Count identifier uses across every expression of a route's body.
 fn count_idents_in(route: &RouteDefinition) -> HashMap<String, usize> {
     fn visit(expr: &Expr, counts: &mut HashMap<String, usize>) {
         match expr {
@@ -462,12 +465,28 @@ fn count_idents_in(route: &RouteDefinition) -> HashMap<String, usize> {
             Expr::Array(items) => items.iter().for_each(|item| visit(item, counts)),
             Expr::Object(entries) => entries.iter().for_each(|(_, item)| visit(item, counts)),
             Expr::Construct { args, .. } => args.iter().for_each(|(_, item)| visit(item, counts)),
+            Expr::Binary { left, right, .. } => {
+                visit(left, counts);
+                visit(right, counts);
+            }
+            Expr::Not(operand) => visit(operand, counts),
             _ => {}
         }
     }
     let mut counts = HashMap::new();
-    for expr in &route.returns {
-        visit(expr, &mut counts);
+    for stmt in Stmt::walk(&route.body) {
+        match stmt {
+            Stmt::Return(expr) => visit(expr, &mut counts),
+            Stmt::Assign { value, .. } => visit(value, &mut counts),
+            // The branch bodies are already part of the walk; only the
+            // conditions are not, because they guard the branches rather than
+            // being statements of them.
+            Stmt::If { branches, .. } => {
+                for (cond, _) in branches {
+                    visit(cond, &mut counts);
+                }
+            }
+        }
     }
     counts
 }
@@ -533,18 +552,8 @@ fn expr_kind(expr: &Expr) -> &'static str {
         Expr::Object(_) => "dict",
         Expr::Ident(_) => "parameter reference",
         Expr::Construct { .. } => "constructor call",
-    }
-}
-
-fn type_label(ty: &TypeRef) -> String {
-    match ty {
-        TypeRef::String => "str".to_string(),
-        TypeRef::Bool => "bool".to_string(),
-        TypeRef::Int => "int".to_string(),
-        TypeRef::Float => "float".to_string(),
-        TypeRef::Json => "dict".to_string(),
-        TypeRef::Array { .. } => "list".to_string(),
-        TypeRef::Named(name) => name.clone(),
+        Expr::Binary { .. } => "binary operation",
+        Expr::Not(_) => "negation",
     }
 }
 

@@ -46,7 +46,7 @@ use crate::diagnostic::Diagnostic;
 use crate::parser::{
     NamedChildren, body, decorator, is_docstring, line_of, node_text, signature, types, validate,
 };
-use rivet_core::ir::{Expr, ResponseSpec, RouteDefinition, ServiceBlueprint, StructDefinition};
+use rivet_core::ir::{RouteDefinition, ServiceBlueprint, StructDefinition};
 use rivet_core::reserved;
 use std::collections::HashMap;
 use std::path::Path;
@@ -477,18 +477,12 @@ fn parse_route(
         types: param_types,
     } = signature::parse_parameters(&function, source, file, &placeholders)?;
     let response = signature::parse_return_type(&function, source, file)?;
-    let body_returns = body::parse_handler_body(&function, source, file)?;
 
-    // A bare `return` in a `-> None` handler lowers to JSON null; drop those
-    // so the generated handler stays empty. Real values still go through
-    // return validation, which rejects them for `-> None`.
-    let returns = match &response {
-        ResponseSpec::None => body_returns
-            .into_iter()
-            .filter(|expr| !matches!(expr, Expr::Null))
-            .collect(),
-        _ => body_returns,
-    };
+    // The body resolves a local's type against the parameters and the locals
+    // assigned before it, so the parameter types seed the environment.
+    let mut env = param_types.clone();
+    let body = body::parse_handler_body(&function, source, file, &mut env)?;
+
     let route = RouteDefinition {
         method,
         path,
@@ -499,7 +493,7 @@ fn parse_route(
         middlewares: vec![],
         request,
         response,
-        returns,
+        body,
     };
     validate::validate_returns(&route, file, dtos, &param_types)?;
     Ok(Some(route))

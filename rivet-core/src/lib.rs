@@ -5,5 +5,6 @@
 //! own crate lets front ends and back ends evolve independently and keeps the
 //! contract serializable for tooling and tests.
 
+pub mod infer;
 pub mod ir;
 pub mod reserved;

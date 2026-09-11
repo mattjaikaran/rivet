@@ -7,8 +7,9 @@
 
 use super::{Codegen, Emitter, count_idents_in, param_types};
 use crate::diagnostic::Diagnostic;
-use rivet_core::ir::{RequestSpec, ResponseSpec, RouteDefinition, ServiceBlueprint, TypeRef};
+use rivet_core::ir::{RequestSpec, ResponseSpec, RouteDefinition, ServiceBlueprint, Stmt, TypeRef};
 use rivet_core::reserved;
+use std::collections::HashMap;
 
 /// Render `mod service`: one function per route, in blueprint order.
 pub(super) fn render_service_module(
@@ -48,7 +49,9 @@ fn render_fn(codegen: &Codegen<'_>, route: &RouteDefinition) -> Result<String, D
     let body = if rendered.body.is_empty() {
         String::new()
     } else {
-        format!("\n        {}", rendered.body)
+        // A statement block spans several lines; indent each one, not just
+        // the first, so the block sits inside the function.
+        format!("\n{}", indented(&rendered.body, 8))
     };
     // The function carries a user-chosen name, so it takes
     // `#[allow(non_snake_case)]`: the DSL decides the name, and a cargo style
@@ -71,7 +74,7 @@ pub(super) struct RenderedRoute {
     pub(super) request: Option<(String, String)>,
     /// The Rust return type, or empty for a route that returns nothing.
     pub(super) return_ty: String,
-    /// The body expression that produces the return value, or empty.
+    /// The rendered statement block, or empty for a bodyless route.
     pub(super) body: String,
 }
 
@@ -97,13 +100,8 @@ pub(super) fn render_route(
     codegen: &Codegen<'_>,
     route: &RouteDefinition,
 ) -> Result<RenderedRoute, Diagnostic> {
-    let params = param_types(route);
     let counts = count_idents_in(route);
-    let emitter = Emitter {
-        codegen,
-        params: &params,
-        counts: &counts,
-    };
+    let mut env = param_types(route);
 
     let path_params: Vec<(String, String)> = route
         .path_params
@@ -122,32 +120,42 @@ pub(super) fn render_route(
         RequestSpec::Json { var, ty } => Some((var.clone(), codegen.rust_type(ty, false)?)),
     };
 
-    let (return_ty, body) = match &route.response {
-        ResponseSpec::None => (String::new(), String::new()),
-        ResponseSpec::Json(TypeRef::Named(name)) => {
-            let struct_def = codegen.find_struct(name)?;
-            let value = match route.returns.first() {
-                Some(expr) => emitter.render_named(expr, struct_def)?,
-                None => {
-                    return Err(Diagnostic::blocker(
-                        "E2002",
-                        format!("handler must return a `{name}` value"),
-                        format!("make the handler `return` a `{name}` construction, or return a request parameter of type `{name}`"),
-                    )
-                    .located("<generated>", 1));
-                }
-            };
-            (name.clone(), value)
+    let return_ty = match &route.response {
+        ResponseSpec::None => String::new(),
+        ResponseSpec::Json(TypeRef::Named(name)) => name.clone(),
+        ResponseSpec::Json(_) => "serde_json::Value".to_string(),
+    };
+
+    let body = match route.body.as_slice() {
+        [] => {
+            if matches!(route.response, ResponseSpec::None) {
+                String::new()
+            } else {
+                // A value route with no return still answers JSON null.
+                "serde_json::Value::Null".to_string()
+            }
         }
-        // `dict` and the primitives serialize through serde_json::Value.
-        ResponseSpec::Json(_) => {
-            let value = match route.returns.first() {
-                Some(expr) => emitter.render_value(expr)?,
-                // Python: a bare `return` with no value.
-                None => "serde_json::Value::Null".to_string(),
+        [Stmt::Return(expr)] if !matches!(route.response, ResponseSpec::None) => {
+            // A single return is the common shape; render it as a tail
+            // expression so the generated function stays byte-for-byte the
+            // same as before the body gained statements.
+            let emitter = Emitter {
+                codegen,
+                params: &env,
+                counts: &counts,
             };
-            ("serde_json::Value".to_string(), value)
+            emitter.render_return_value(expr, &route.response)?
         }
+        _ => render_body(
+            &BodyContext {
+                codegen,
+                counts: &counts,
+                response: &route.response,
+            },
+            route.body.as_slice(),
+            &mut env,
+            0,
+        )?,
     };
 
     Ok(RenderedRoute {
@@ -157,4 +165,102 @@ pub(super) fn render_route(
         return_ty,
         body,
     })
+}
+
+/// The context a body render carries down its recursion.
+///
+/// It is the same at every level — the surrounding function supplies it once —
+/// so it travels as one value rather than as four arguments.
+struct BodyContext<'a, 'c> {
+    codegen: &'a Codegen<'c>,
+    counts: &'a HashMap<String, usize>,
+    response: &'a ResponseSpec,
+}
+
+/// Render a handler body as Rust statements, at column zero.
+///
+/// Each statement is one line (an `if` block spans several), and `render_fn`
+/// indents the whole block. The environment gains a binding for every local
+/// the walk assigns, so a later statement resolves the local's type.
+fn render_body(
+    context: &BodyContext<'_, '_>,
+    body: &[Stmt],
+    env: &mut HashMap<String, TypeRef>,
+    indent: usize,
+) -> Result<String, Diagnostic> {
+    let pad = "    ".repeat(indent);
+    let mut out = String::new();
+    for stmt in body {
+        match stmt {
+            Stmt::Assign { name, ty, value } => {
+                let rendered = {
+                    let emitter = Emitter {
+                        codegen: context.codegen,
+                        params: env,
+                        counts: context.counts,
+                    };
+                    emitter.render_typed(value, ty)?
+                };
+                let rust_ty = context.codegen.rust_type(ty, false)?;
+                out.push_str(&format!("{pad}let {name}: {rust_ty} = {rendered};\n"));
+                env.insert(name.clone(), ty.clone());
+            }
+            Stmt::Return(expr) => {
+                if matches!(context.response, ResponseSpec::None) {
+                    // A bare `return` lowers to `Expr::Null`; under `-> None`
+                    // it renders as the plain `return;`.
+                    out.push_str(&format!("{pad}return;\n"));
+                } else {
+                    let value = {
+                        let emitter = Emitter {
+                            codegen: context.codegen,
+                            params: env,
+                            counts: context.counts,
+                        };
+                        emitter.render_return_value(expr, context.response)?
+                    };
+                    out.push_str(&format!("{pad}return {value};\n"));
+                }
+            }
+            Stmt::If {
+                branches,
+                otherwise,
+            } => {
+                // Render every condition first, so the immutable borrow of
+                // `env` ends before the recursion below mutates it.
+                let mut conditions = Vec::with_capacity(branches.len());
+                for (cond, _) in branches {
+                    let emitter = Emitter {
+                        codegen: context.codegen,
+                        params: env,
+                        counts: context.counts,
+                    };
+                    conditions.push(emitter.render_typed(cond, &TypeRef::Bool)?);
+                }
+                for (i, ((_, branch), cond)) in branches.iter().zip(&conditions).enumerate() {
+                    if i == 0 {
+                        out.push_str(&format!("{pad}if {cond} {{\n"));
+                    } else {
+                        out.push_str(&format!("{pad}}} else if {cond} {{\n"));
+                    }
+                    out.push_str(&render_body(context, branch, env, indent + 1)?);
+                }
+                if !otherwise.is_empty() {
+                    out.push_str(&format!("{pad}}} else {{\n"));
+                    out.push_str(&render_body(context, otherwise, env, indent + 1)?);
+                }
+                out.push_str(&format!("{pad}}}\n"));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Shift every line of `text` right by `spaces`.
+fn indented(text: &str, spaces: usize) -> String {
+    let pad = " ".repeat(spaces);
+    text.lines()
+        .map(|line| format!("{pad}{line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }

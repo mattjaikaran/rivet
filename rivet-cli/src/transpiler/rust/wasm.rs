@@ -207,7 +207,7 @@ fn render_arm(codegen: &Codegen<'_>, route: &RouteDefinition) -> Result<String, 
                 "            let {arg}: {rust_type} = match {found} {{\n                Some(value) => value,\n                None => return Err((400, {missing}.to_string())),\n            }};\n"
             )
         } else {
-            let label = super::type_label(&param.ty);
+            let label = param.ty.label();
             format!(
                 "            let {arg}: {rust_type} = match {found} {{\n                Some(value) => match value.parse() {{\n                    Ok(value) => value,\n                    Err(_) => return Err((400, format!(\"the query parameter `{arg}` must parse as {label}, got `{{value}}`\"))),\n                }},\n                None => return Err((400, {missing}.to_string())),\n            }};\n"
             )

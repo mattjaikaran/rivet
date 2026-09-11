@@ -8,7 +8,7 @@
 
 use super::fixtures::{RustNativeFeatures, ping_blueprint};
 use super::*;
-use rivet_core::ir::{Expr, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, TypeRef};
+use rivet_core::ir::{Expr, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, Stmt, TypeRef};
 
 /// A blueprint whose request DTO borrows its text from the body.
 fn borrowed_blueprint() -> ServiceBlueprint {
@@ -36,10 +36,10 @@ fn borrowed_blueprint() -> ServiceBlueprint {
                 ty: TypeRef::Named("Note".to_string()),
             },
             response: ResponseSpec::Json(TypeRef::Json),
-            returns: vec![Expr::Object(vec![(
+            body: vec![Stmt::Return(Expr::Object(vec![(
                 "status".to_string(),
                 Expr::Str("stored".to_string()),
-            )])],
+            )]))],
         }],
         dependencies: vec![],
     }

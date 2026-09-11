@@ -1,7 +1,7 @@
 //! Handler signatures: parameters and return annotations.
 
 use crate::diagnostic::Diagnostic;
-use crate::parser::annotation::{parse_type_text, type_label};
+use crate::parser::annotation::parse_type_text;
 use crate::parser::{NamedChildren, is_safe_identifier, line_of, node_text};
 use rivet_core::ir::{RequestSpec, ResponseSpec, RouteParam, TypeRef};
 use rivet_core::reserved;
@@ -167,7 +167,7 @@ pub(crate) fn parse_parameters(
                 "E1015",
                 format!(
                     "path parameter `{placeholder}` has type `{}`; a path parameter supports `str` and `int`",
-                    type_label(ty)
+                    ty.label()
                 ),
                 "declare the parameter as `str` or `int`, or move the value into the request body",
             )

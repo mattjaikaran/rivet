@@ -113,7 +113,9 @@ fn id_diagnostic(id: &str, problem: &str, app_file: &std::path::Path) -> Diagnos
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rivet_core::ir::{Expr, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, TypeRef};
+    use rivet_core::ir::{
+        Expr, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, Stmt, TypeRef,
+    };
     use std::path::Path;
 
     fn route(method: HttpMethod, path: &str, stories: &[&str]) -> RouteDefinition {
@@ -127,7 +129,7 @@ mod tests {
             middlewares: vec![],
             request: RequestSpec::None,
             response: ResponseSpec::Json(TypeRef::Json),
-            returns: vec![Expr::Null],
+            body: vec![Stmt::Return(Expr::Null)],
         }
     }
 

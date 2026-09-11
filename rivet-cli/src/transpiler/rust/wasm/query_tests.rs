@@ -2,7 +2,7 @@
 
 use super::*;
 use rivet_core::ir::{
-    Expr, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, RouteParam, TypeRef,
+    Expr, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, RouteParam, Stmt, TypeRef,
 };
 
 /// A blueprint with three query-reading routes: two integer parameters, one
@@ -31,10 +31,10 @@ fn blueprint_with_query() -> ServiceBlueprint {
                 middlewares: vec![],
                 request: RequestSpec::None,
                 response: ResponseSpec::Json(TypeRef::Json),
-                returns: vec![Expr::Object(vec![
+                body: vec![Stmt::Return(Expr::Object(vec![
                     ("page".to_string(), Expr::Ident("page".to_string())),
                     ("size".to_string(), Expr::Ident("size".to_string())),
-                ])],
+                ]))],
             },
             RouteDefinition {
                 method: HttpMethod::Get,
@@ -49,10 +49,10 @@ fn blueprint_with_query() -> ServiceBlueprint {
                 middlewares: vec![],
                 request: RequestSpec::None,
                 response: ResponseSpec::Json(TypeRef::Json),
-                returns: vec![Expr::Object(vec![(
+                body: vec![Stmt::Return(Expr::Object(vec![(
                     "name".to_string(),
                     Expr::Ident("name".to_string()),
-                )])],
+                )]))],
             },
             RouteDefinition {
                 method: HttpMethod::Get,
@@ -70,10 +70,10 @@ fn blueprint_with_query() -> ServiceBlueprint {
                 middlewares: vec![],
                 request: RequestSpec::None,
                 response: ResponseSpec::Json(TypeRef::Json),
-                returns: vec![Expr::Object(vec![
+                body: vec![Stmt::Return(Expr::Object(vec![
                     ("id".to_string(), Expr::Ident("id".to_string())),
                     ("verbose".to_string(), Expr::Ident("verbose".to_string())),
-                ])],
+                ]))],
             },
         ],
         dependencies: vec![],

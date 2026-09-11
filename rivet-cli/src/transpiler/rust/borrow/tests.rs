@@ -3,7 +3,7 @@
 use super::*;
 use crate::config::{RivetConfig, RustNativeFeatures};
 use rivet_core::ir::{
-    Expr, FieldDefinition, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, TypeRef,
+    Expr, FieldDefinition, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, Stmt, TypeRef,
 };
 
 /// A DTO whose text borrows from the request body.
@@ -47,7 +47,7 @@ fn route(request_ty: TypeRef, response_ty: TypeRef) -> RouteDefinition {
             ty: request_ty,
         },
         response: ResponseSpec::Json(response_ty),
-        returns: vec![Expr::Ident("request".to_string())],
+        body: vec![Stmt::Return(Expr::Ident("request".to_string()))],
     }
 }
 

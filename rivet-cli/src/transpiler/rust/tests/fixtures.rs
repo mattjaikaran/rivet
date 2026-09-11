@@ -5,7 +5,9 @@
 pub(super) use crate::config::RustNativeFeatures;
 
 use super::*;
-use rivet_core::ir::{Expr, FieldDefinition, RequestSpec, RouteParam, StructDefinition, TypeRef};
+use rivet_core::ir::{
+    Expr, FieldDefinition, RequestSpec, RouteParam, Stmt, StructDefinition, TypeRef,
+};
 
 pub(super) fn ping_blueprint() -> ServiceBlueprint {
     ServiceBlueprint {
@@ -21,10 +23,10 @@ pub(super) fn ping_blueprint() -> ServiceBlueprint {
             middlewares: vec![],
             request: RequestSpec::None,
             response: ResponseSpec::Json(TypeRef::Json),
-            returns: vec![Expr::Object(vec![(
+            body: vec![Stmt::Return(Expr::Object(vec![(
                 "status".to_string(),
                 Expr::Str("pong".to_string()),
-            )])],
+            )]))],
         }],
         dependencies: vec![],
     }
@@ -52,10 +54,10 @@ pub(super) fn dto_blueprint() -> ServiceBlueprint {
             middlewares: vec![],
             request: RequestSpec::None,
             response: ResponseSpec::Json(TypeRef::Named("OrderResponse".to_string())),
-            returns: vec![Expr::Construct {
+            body: vec![Stmt::Return(Expr::Construct {
                 ty: "OrderResponse".to_string(),
                 args: vec![("status".to_string(), Expr::Str("ok".to_string()))],
-            }],
+            })],
         }],
         dependencies: vec![],
     }
@@ -80,10 +82,10 @@ pub(super) fn path_param_blueprint() -> ServiceBlueprint {
             middlewares: vec![],
             request: RequestSpec::None,
             response: ResponseSpec::Json(TypeRef::Json),
-            returns: vec![Expr::Object(vec![(
+            body: vec![Stmt::Return(Expr::Object(vec![(
                 "id".to_string(),
                 Expr::Ident("id".to_string()),
-            )])],
+            )]))],
         }],
         dependencies: vec![],
     }
@@ -111,10 +113,10 @@ pub(super) fn path_param_body_blueprint() -> ServiceBlueprint {
                 ty: TypeRef::String,
             },
             response: ResponseSpec::Json(TypeRef::Json),
-            returns: vec![Expr::Object(vec![
+            body: vec![Stmt::Return(Expr::Object(vec![
                 ("id".to_string(), Expr::Ident("id".to_string())),
                 ("name".to_string(), Expr::Ident("request".to_string())),
-            ])],
+            ]))],
         }],
         dependencies: vec![],
     }
@@ -146,10 +148,10 @@ pub(super) fn two_path_params_blueprint() -> ServiceBlueprint {
             middlewares: vec![],
             request: RequestSpec::None,
             response: ResponseSpec::Json(TypeRef::Json),
-            returns: vec![Expr::Object(vec![
+            body: vec![Stmt::Return(Expr::Object(vec![
                 ("user_id".to_string(), Expr::Ident("user_id".to_string())),
                 ("id".to_string(), Expr::Ident("id".to_string())),
-            ])],
+            ]))],
         }],
         dependencies: vec![],
     }
@@ -180,10 +182,10 @@ pub(super) fn query_params_blueprint() -> ServiceBlueprint {
             middlewares: vec![],
             request: RequestSpec::None,
             response: ResponseSpec::Json(TypeRef::Json),
-            returns: vec![Expr::Object(vec![
+            body: vec![Stmt::Return(Expr::Object(vec![
                 ("page".to_string(), Expr::Ident("page".to_string())),
                 ("size".to_string(), Expr::Ident("size".to_string())),
-            ])],
+            ]))],
         }],
         dependencies: vec![],
     }

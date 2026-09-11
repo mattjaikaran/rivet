@@ -220,7 +220,7 @@ fn render_query_binding(codegen: &Codegen<'_>, param: &RouteParam) -> Result<Str
     let value = if param.ty == TypeRef::String {
         "value.clone()".to_string()
     } else {
-        let label = super::type_label(&param.ty);
+        let label = param.ty.label();
         format!(
             "match value.parse() {{\n            Ok(value) => value,\n            Err(_) => return Err((axum::http::StatusCode::BAD_REQUEST, format!(\"the query parameter `{name}` must parse as {label}, got `{{value}}`\"))),\n        }}"
         )

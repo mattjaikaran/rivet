@@ -187,7 +187,9 @@ fetch("/__rivet/routes")
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rivet_core::ir::{Expr, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, TypeRef};
+    use rivet_core::ir::{
+        Expr, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, Stmt, TypeRef,
+    };
 
     fn blueprint() -> ServiceBlueprint {
         ServiceBlueprint {
@@ -203,7 +205,7 @@ mod tests {
                 middlewares: vec![],
                 request: RequestSpec::None,
                 response: ResponseSpec::Json(TypeRef::Json),
-                returns: vec![Expr::Null],
+                body: vec![Stmt::Return(Expr::Null)],
             }],
             dependencies: vec![],
         }

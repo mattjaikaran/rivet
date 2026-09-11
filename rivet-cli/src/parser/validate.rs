@@ -5,55 +5,110 @@
 //! fields, and that the blueprint carries every DTO a route mentions.
 
 use crate::diagnostic::Diagnostic;
-use crate::parser::annotation::type_label;
-use rivet_core::ir::{Expr, RequestSpec, ResponseSpec, RouteDefinition, StructDefinition, TypeRef};
+use rivet_core::infer;
+use rivet_core::ir::{Expr, ResponseSpec, RouteDefinition, Stmt, StructDefinition, TypeRef};
+mod dto;
+mod reach;
+
+pub(crate) use reach::{ensure_known_dtos, reachable_structs};
+
+use dto::validate_construct;
+
 use std::collections::HashMap;
 
-/// Check a route's returns against its response type and parameter types.
+/// Check a route's body against its response type and parameter types.
+///
+/// Every `return` in the body must produce the declared type, and a response
+/// that carries a concrete value must return on every path. A `-> dict` or
+/// `-> None` handler may fall off its end, because Python returns `None`
+/// there and the generator answers null.
 pub(crate) fn validate_returns(
     route: &RouteDefinition,
     file: &str,
     dtos: &HashMap<String, StructDefinition>,
     param_types: &HashMap<String, TypeRef>,
 ) -> Result<(), Diagnostic> {
-    match &route.response {
-        ResponseSpec::None => {
-            for value in &route.returns {
-                if !matches!(value, Expr::Null) {
-                    return Err(Diagnostic::blocker(
-                        "E1010",
-                        "handler declares `-> None` but returns a value",
-                        "return nothing, or change the return annotation",
-                    )
-                    .located(file, 1));
+    // The environment starts at the parameters and gains every local, so a
+    // `return` can name a value an earlier statement bound.
+    let mut env = param_types.clone();
+    check_block(&route.body, route, file, dtos, &mut env)?;
+
+    // A concrete response type must be produced on every path, because the
+    // generated function has to return it; `dict` and `None` may be absent.
+    let must_return =
+        matches!(&route.response, ResponseSpec::Json(target) if target != &TypeRef::Json);
+    if must_return && !Stmt::all_paths_return(&route.body) {
+        return Err(Diagnostic::blocker(
+            "E1010",
+            format!(
+                "handler must return a value of type `{}` on every path",
+                match &route.response {
+                    ResponseSpec::Json(target) => target.label(),
+                    ResponseSpec::None => "None".to_string(),
                 }
-            }
-            Ok(())
-        }
-        ResponseSpec::Json(target) => match route.returns.as_slice() {
-            [] => match target {
-                TypeRef::Json => Ok(()), // Python returns None; render as JSON null
-                _ => Err(Diagnostic::blocker(
-                    "E1010",
-                    format!(
-                        "handler must return a value of type `{}`",
-                        type_label(target)
-                    ),
-                    "add a return statement to the handler",
-                )
-                .located(file, 1)),
-            },
-            [value] => validate_value(value, target, file, dtos, param_types),
-            _ => Err(Diagnostic::blocker(
-                "E1006",
-                "multiple return statements are not supported yet",
-                "collapse the handler to a single return statement",
-            )
-            .located(file, 1)),
-        },
+            ),
+            "add a `return`, or give every branch of an `if` its own `return` and an `else`",
+        )
+        .located(file, 1));
     }
+    Ok(())
 }
 
+/// Check every return in one block, in source order.
+///
+/// `env` gains each local as the walk reaches it, so a `return` below an
+/// assignment can name the value that assignment bound.
+fn check_block(
+    body: &[Stmt],
+    route: &RouteDefinition,
+    file: &str,
+    dtos: &HashMap<String, StructDefinition>,
+    env: &mut HashMap<String, TypeRef>,
+) -> Result<(), Diagnostic> {
+    for statement in body {
+        match statement {
+            Stmt::Return(value) => check_return(value, route, file, dtos, env)?,
+            Stmt::Assign { name, ty, .. } => {
+                env.insert(name.clone(), ty.clone());
+            }
+            Stmt::If {
+                branches,
+                otherwise,
+            } => {
+                for (_, branch) in branches {
+                    check_block(branch, route, file, dtos, env)?;
+                }
+                check_block(otherwise, route, file, dtos, env)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Check one `return` value against the route's declared response type.
+fn check_return(
+    value: &Expr,
+    route: &RouteDefinition,
+    file: &str,
+    dtos: &HashMap<String, StructDefinition>,
+    env: &HashMap<String, TypeRef>,
+) -> Result<(), Diagnostic> {
+    match &route.response {
+        ResponseSpec::None => {
+            if matches!(value, Expr::Null) {
+                Ok(())
+            } else {
+                Err(Diagnostic::blocker(
+                    "E1010",
+                    "handler declares `-> None` but returns a value",
+                    "return nothing with a bare `return`, or change the return annotation",
+                )
+                .located(file, 1))
+            }
+        }
+        ResponseSpec::Json(target) => validate_value(value, target, file, dtos, env),
+    }
+}
 /// Check one return value against its declared type.
 fn validate_value(
     value: &Expr,
@@ -62,6 +117,30 @@ fn validate_value(
     dtos: &HashMap<String, StructDefinition>,
     params: &HashMap<String, TypeRef>,
 ) -> Result<(), Diagnostic> {
+    // A computed value carries no shape of its own, so check it by the type
+    // inference resolves. The structural checks below then only ever see a
+    // literal, a name, or a constructor.
+    if matches!(value, Expr::Binary { .. } | Expr::Not(_)) {
+        return match infer::infer(value, params) {
+            Ok(ty) if &ty == target => Ok(()),
+            Ok(ty) => Err(Diagnostic::blocker(
+                "E1010",
+                format!(
+                    "the expression produces `{}`; the handler declares `{}`",
+                    ty.label(),
+                    target.label()
+                ),
+                "return a value of the declared type, or change the return annotation",
+            )
+            .located(file, 1)),
+            Err(error) => Err(Diagnostic::blocker(
+                "E1010",
+                error.message(),
+                "make every operand a parameter or a local whose type the front end can resolve",
+            )
+            .located(file, 1)),
+        };
+    }
     match target {
         TypeRef::Json => validate_json_value(value, file, params),
         TypeRef::String | TypeRef::Bool | TypeRef::Int | TypeRef::Float => {
@@ -131,11 +210,11 @@ fn validate_primitive(
             "E1010",
             format!(
                 "return value does not match the declared type `{}`",
-                type_label(target)
+                target.label()
             ),
             format!(
                 "return a literal or request parameter of type `{}`",
-                type_label(target)
+                target.label()
             ),
         )
         .located(file, 1)),
@@ -180,174 +259,6 @@ fn validate_array(
     }
 }
 
-/// A DTO response must construct that DTO or return a parameter of that type.
-fn validate_construct(
-    value: &Expr,
-    name: &str,
-    file: &str,
-    dtos: &HashMap<String, StructDefinition>,
-    params: &HashMap<String, TypeRef>,
-) -> Result<(), Diagnostic> {
-    match value {
-        Expr::Construct { ty, args } => {
-            let struct_def = dtos.get(name).ok_or_else(|| {
-                Diagnostic::blocker(
-                    "E1003",
-                    format!("response type `{name}` is not a defined DTO class"),
-                    format!("define `{name}` as an annotation-only class in the app module"),
-                )
-                .located(file, 1)
-            })?;
-            if ty != name {
-                return Err(Diagnostic::blocker(
-                    "E1010",
-                    format!("handler must return `{name}`, not `{ty}`"),
-                    format!("construct `{name}(field=\"value\")` instead of `{ty}`"),
-                )
-                .located(file, 1));
-            }
-            let field_types: HashMap<&str, &TypeRef> = struct_def
-                .fields
-                .iter()
-                .map(|f| (f.name.as_str(), &f.type_ref))
-                .collect();
-            let mut provided: Vec<&str> = Vec::new();
-            for (arg_name, arg_value) in args {
-                provided.push(arg_name.as_str());
-                let field = struct_def.fields.iter().find(|f| f.name == *arg_name);
-                let Some(field) = field else {
-                    return Err(Diagnostic::blocker(
-                        "E1010",
-                        format!("`{name}` has no field `{arg_name}`"),
-                        format!(
-                            "available fields: {}",
-                            struct_def
-                                .fields
-                                .iter()
-                                .map(|f| f.name.as_str())
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        ),
-                    )
-                    .located(file, 1));
-                };
-                let field_ty = field_types[arg_name.as_str()];
-                let ok = if matches!(arg_value, Expr::Null) {
-                    field.is_optional || field_ty == &TypeRef::Json
-                } else {
-                    arg_value_matches(arg_value, field_ty, file, params)?
-                };
-                if !ok {
-                    return Err(Diagnostic::blocker(
-                        "E1010",
-                        format!("field `{arg_name}` of `{name}` cannot accept this value"),
-                        "pass a value of the field's declared type or remove the argument",
-                    )
-                    .located(file, 1));
-                }
-            }
-            for field in &struct_def.fields {
-                if !field.is_optional && !provided.contains(&field.name.as_str()) {
-                    return Err(Diagnostic::blocker(
-                        "E1010",
-                        format!("missing required field `{}` for `{name}`", field.name),
-                        "pass the field as a keyword argument",
-                    )
-                    .located(file, 1));
-                }
-            }
-            Ok(())
-        }
-        Expr::Ident(var) => match params.get(var) {
-            Some(ty) if ty == &TypeRef::Named(name.to_string()) => Ok(()),
-            Some(_) => Err(Diagnostic::blocker(
-                "E1010",
-                format!("parameter `{var}` does not have the response type `{name}`"),
-                "return a constructed DTO or change the parameter type",
-            )
-            .located(file, 1)),
-            None => Err(unknown_parameter(var, file)),
-        },
-        _ => Err(Diagnostic::blocker(
-            "E1010",
-            format!("handler must return a `{name}` value"),
-            format!("construct it: `{name}(field=\"value\")`"),
-        )
-        .located(file, 1)),
-    }
-}
-
-/// Whether the argument expression belongs to the field's type family.
-/// Returns `Err` with a precise message only for shape errors (for example a
-/// nested DTO construction where one is impossible); type mismatches return
-/// `Ok(false)` and get a generic message from the caller.
-fn arg_value_matches(
-    value: &Expr,
-    field_ty: &TypeRef,
-    file: &str,
-    params: &HashMap<String, TypeRef>,
-) -> Result<bool, Diagnostic> {
-    match value {
-        Expr::Null => Ok(field_ty == &TypeRef::Json),
-        Expr::Str(_) => Ok(matches!(field_ty, TypeRef::String | TypeRef::Json)),
-        Expr::Int(_) => Ok(matches!(
-            field_ty,
-            TypeRef::Int | TypeRef::Float | TypeRef::Json
-        )),
-        Expr::Float(_) => Ok(matches!(field_ty, TypeRef::Float | TypeRef::Json)),
-        Expr::Bool(_) => Ok(matches!(field_ty, TypeRef::Bool | TypeRef::Json)),
-        Expr::Array(items) => match field_ty {
-            TypeRef::Array { element, .. } => {
-                for item in items {
-                    if !arg_value_matches(item, element, file, params)? {
-                        return Ok(false);
-                    }
-                }
-                Ok(true)
-            }
-            TypeRef::Json => {
-                for item in items {
-                    if matches!(item, Expr::Construct { .. }) {
-                        return Err(Diagnostic::blocker(
-                            "E1010",
-                            "constructing a DTO inside a list is not supported yet",
-                            "return plain values in the list, or construct the DTO only as the top-level response",
-                        )
-                        .located(file, 1));
-                    }
-                }
-                Ok(true)
-            }
-            _ => Ok(false),
-        },
-        Expr::Object(_) => Ok(field_ty == &TypeRef::Json),
-        Expr::Ident(var) => match params.get(var) {
-            Some(ty) => Ok(ty == field_ty
-                || field_ty == &TypeRef::Json
-                || (field_ty == &TypeRef::Float && ty == &TypeRef::Int)),
-            None => Err(unknown_parameter(var, file)),
-        },
-        Expr::Construct { ty, .. } => {
-            if field_ty == &TypeRef::Named(ty.clone()) {
-                Ok(true)
-            } else {
-                Err(Diagnostic::blocker(
-                    "E1010",
-                    format!(
-                        "field expects `{}`, not a constructed `{ty}`",
-                        type_label(field_ty)
-                    ),
-                    format!(
-                        "pass a value of type `{}` for this field",
-                        type_label(field_ty)
-                    ),
-                )
-                .located(file, 1))
-            }
-        }
-    }
-}
-
 fn unknown_parameter(var: &str, file: &str) -> Diagnostic {
     Diagnostic::blocker(
         "E1010",
@@ -357,88 +268,4 @@ fn unknown_parameter(var: &str, file: &str) -> Diagnostic {
         ),
     )
     .located(file, 1)
-}
-
-/// Reject references to DTO types that are not defined as annotation-only
-/// classes.
-pub(crate) fn ensure_known_dtos(
-    route: &RouteDefinition,
-    dtos: &HashMap<String, StructDefinition>,
-    file: &str,
-) -> Result<(), Diagnostic> {
-    fn check(
-        ty: &TypeRef,
-        dtos: &HashMap<String, StructDefinition>,
-        file: &str,
-    ) -> Result<(), Diagnostic> {
-        match ty {
-            TypeRef::Named(name) if !dtos.contains_key(name) => Err(Diagnostic::blocker(
-                "E1003",
-                format!("type `{name}` is not a defined DTO class"),
-                "define the DTO as an annotation-only class in the app module",
-            )
-            .located(file, 1)),
-            TypeRef::Array { element, .. } => check(element, dtos, file),
-            _ => Ok(()),
-        }
-    }
-    if let RequestSpec::Json { ty, .. } = &route.request {
-        check(ty, dtos, file)?;
-    }
-    if let ResponseSpec::Json(ty) = &route.response {
-        check(ty, dtos, file)?;
-    }
-    Ok(())
-}
-
-/// The DTOs reachable from route request/response types, closed over nested
-/// field references, in declaration order.
-pub(crate) fn reachable_structs(
-    routes: &[RouteDefinition],
-    dtos: &HashMap<String, StructDefinition>,
-    dto_order: &[String],
-    file: &str,
-) -> Result<Vec<StructDefinition>, Diagnostic> {
-    fn named_refs_in_type(ty: &TypeRef, out: &mut Vec<String>) {
-        match ty {
-            TypeRef::Named(name) => out.push(name.clone()),
-            TypeRef::Array { element, .. } => named_refs_in_type(element, out),
-            _ => {}
-        }
-    }
-
-    let mut queue: Vec<String> = Vec::new();
-    for route in routes {
-        if let RequestSpec::Json { ty, .. } = &route.request {
-            named_refs_in_type(ty, &mut queue);
-        }
-        if let ResponseSpec::Json(ty) = &route.response {
-            named_refs_in_type(ty, &mut queue);
-        }
-    }
-
-    let mut reachable: Vec<String> = Vec::new();
-    while let Some(name) = queue.pop() {
-        if reachable.contains(&name) {
-            continue;
-        }
-        let struct_def = dtos.get(&name).ok_or_else(|| {
-            Diagnostic::blocker(
-                "E1003",
-                format!("type `{name}` is not a defined DTO class"),
-                "define the DTO as an annotation-only class in the app module",
-            )
-            .located(file, 1)
-        })?;
-        reachable.push(name.clone());
-        for field in &struct_def.fields {
-            named_refs_in_type(&field.type_ref, &mut queue);
-        }
-    }
-
-    Ok(dto_order
-        .iter()
-        .filter(|name| reachable.contains(*name))
-        .filter_map(|name| dtos.get(name).cloned())
-        .collect())
 }

@@ -51,7 +51,6 @@ const GRANDFATHERED: &[(&str, usize)] = &[
     ("rivet-cli/src/parser/python.rs", 728),
     ("rivet-cli/src/transpiler/rust.rs", 699),
     ("rivet-cli/src/commands/audit.rs", 679),
-    ("rivet-cli/src/parser/validate.rs", 444),
 ];
 
 /// Resolve the line ceiling for a relative source path.

@@ -10,6 +10,10 @@
 //! request parameters, or one DTO constructor call. Anything outside that
 //! subset fails with a structured diagnostic instead of a wrong translation.
 
+mod expr;
+
+pub use expr::{BinOp, Expr, Stmt, binary_result};
+
 use serde::{Deserialize, Serialize};
 
 /// The HTTP verb a route responds to.
@@ -96,6 +100,23 @@ pub struct StructDefinition {
     pub fields: Vec<FieldDefinition>,
 }
 
+impl TypeRef {
+    /// A human label for the type, as the DSL writes it.
+    ///
+    /// Both the parser's diagnostics and the generator's use the same label,
+    /// so a message about a type reads the same wherever it comes from.
+    pub fn label(&self) -> String {
+        match self {
+            TypeRef::String => "str".to_string(),
+            TypeRef::Bool => "bool".to_string(),
+            TypeRef::Int => "int".to_string(),
+            TypeRef::Float => "float".to_string(),
+            TypeRef::Json => "dict".to_string(),
+            TypeRef::Array { .. } => "list".to_string(),
+            TypeRef::Named(name) => name.clone(),
+        }
+    }
+}
 /// A parameter a route reads from somewhere other than its response body.
 ///
 /// One type serves both sources, because a path placeholder and a query
@@ -134,30 +155,6 @@ pub enum ResponseSpec {
     Json(TypeRef),
 }
 
-/// A handler return expression, translated from the DSL.
-///
-/// Values are stored typed so generators can render each one into the target
-/// language without re-analyzing the source.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Expr {
-    Null,
-    Bool(bool),
-    Int(i64),
-    Float(f64),
-    Str(String),
-    /// `[a, b]` — an array literal.
-    Array(Vec<Expr>),
-    /// `{"key": value}` — an object literal with string keys.
-    Object(Vec<(String, Expr)>),
-    /// A reference to a handler parameter by name.
-    Ident(String),
-    /// A DTO constructor call such as `OrderResponse(status="ok")`.
-    Construct {
-        ty: String,
-        args: Vec<(String, Expr)>,
-    },
-}
-
 /// A single route: DSL decorator plus handler signature and return body.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RouteDefinition {
@@ -180,10 +177,9 @@ pub struct RouteDefinition {
     pub middlewares: Vec<String>,
     pub request: RequestSpec,
     pub response: ResponseSpec,
-    /// Return statements. Phase 0 permits at most one, and the parser enforces
-    /// it; the type is a vector so later phases can model control flow.
+    /// The handler body, in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub returns: Vec<Expr>,
+    pub body: Vec<Stmt>,
 }
 
 /// The parse result for one DSL entry point (`app.py`).
@@ -239,7 +235,7 @@ mod tests {
                 },
                 query_params: vec![],
                 response: ResponseSpec::Json(TypeRef::Named("OrderResponse".to_string())),
-                returns: vec![],
+                body: vec![],
             }],
             dependencies: vec![],
         }
@@ -275,6 +271,51 @@ mod tests {
         // defaults keep IR dumps readable: no empty vecs sprayed everywhere
         let json = serde_json::to_string(&sample()).expect("serialize blueprint");
         assert!(!json.contains("\"stories\":[]"));
-        assert!(!json.contains("\"returns\":[]"));
+        assert!(!json.contains("\"body\":[]"));
+    }
+
+    /// The binary rule is the only place an operand pair becomes a type, so
+    #[test]
+    fn division_is_always_true_division() {
+        use TypeRef::{Float, Int, String};
+        assert_eq!(binary_result(BinOp::Div, &Int, &Int), Some(Float));
+        assert_eq!(binary_result(BinOp::Add, &Int, &Float), Some(Float));
+        assert_eq!(binary_result(BinOp::Add, &String, &String), Some(String));
+        assert_eq!(binary_result(BinOp::Mul, &String, &Int), None);
+        assert_eq!(binary_result(BinOp::Add, &TypeRef::Bool, &Int), None);
+    }
+
+    #[test]
+    fn a_comparison_yields_a_bool_and_needs_comparable_operands() {
+        use TypeRef::{Bool, Float, Int, String};
+        assert_eq!(binary_result(BinOp::Lt, &Int, &Float), Some(Bool));
+        assert_eq!(binary_result(BinOp::Eq, &String, &String), Some(Bool));
+        assert_eq!(binary_result(BinOp::Gt, &Int, &String), None);
+        assert_eq!(binary_result(BinOp::And, &Bool, &Bool), Some(Bool));
+        assert_eq!(binary_result(BinOp::And, &Int, &Bool), None);
+    }
+
+    /// A body returns on every path only when the `else` branch exists and
+    /// every branch returns; otherwise the generated function falls off its
+    /// end and the crate does not compile.
+    #[test]
+    fn all_paths_return_needs_an_else_and_a_return_in_each_branch() {
+        let value = Expr::Int(1);
+        let returns = vec![Stmt::Return(value.clone())];
+        let empty = vec![];
+        assert!(Stmt::all_paths_return(&returns));
+        assert!(!Stmt::all_paths_return(&empty));
+
+        let with_else = vec![Stmt::If {
+            branches: vec![(Expr::Bool(true), returns.clone())],
+            otherwise: returns.clone(),
+        }];
+        assert!(Stmt::all_paths_return(&with_else));
+
+        let without_else = vec![Stmt::If {
+            branches: vec![(Expr::Bool(true), returns.clone())],
+            otherwise: empty,
+        }];
+        assert!(!Stmt::all_paths_return(&without_else));
     }
 }

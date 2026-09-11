@@ -227,19 +227,6 @@ fn borrowed_error(
     .located(file, line)
 }
 
-/// A human label for a type, used in diagnostics.
-pub(crate) fn type_label(ty: &TypeRef) -> String {
-    match ty {
-        TypeRef::String => "str".to_string(),
-        TypeRef::Bool => "bool".to_string(),
-        TypeRef::Int => "int".to_string(),
-        TypeRef::Float => "float".to_string(),
-        TypeRef::Json => "dict".to_string(),
-        TypeRef::Array { .. } => "list".to_string(),
-        TypeRef::Named(name) => name.clone(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

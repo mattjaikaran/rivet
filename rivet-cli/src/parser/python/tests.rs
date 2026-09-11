@@ -1,5 +1,7 @@
 use super::*;
-use rivet_core::ir::{Expr, HttpMethod, RequestSpec, ServiceBlueprint, TypeRef};
+use rivet_core::ir::{
+    Expr, HttpMethod, RequestSpec, ResponseSpec, ServiceBlueprint, Stmt, TypeRef,
+};
 
 fn parse(source: &str) -> Result<ServiceBlueprint, Diagnostic> {
     parse_python_module(source, "app", "app.py").map(|module| module.blueprint)
@@ -31,7 +33,7 @@ fn parses_ping_and_echo() {
     assert_eq!(ping.handler_name, "ping");
     assert_eq!(ping.request, RequestSpec::None);
     assert_eq!(ping.response, ResponseSpec::Json(TypeRef::Json));
-    assert!(matches!(ping.returns[0], Expr::Object(_)));
+    assert!(matches!(ping.body[0], Stmt::Return(Expr::Object(_))));
 
     let echo = &blueprint.routes[1];
     assert_eq!(echo.method, HttpMethod::Post);
@@ -78,7 +80,10 @@ def create_order(request: OrderCreate) -> OrderResponse:
         }
         _ => panic!("expected a JSON body"),
     }
-    assert!(matches!(route.returns[0], Expr::Construct { .. }));
+    assert!(matches!(
+        route.body[0],
+        Stmt::Return(Expr::Construct { .. })
+    ));
 }
 
 #[test]
@@ -121,10 +126,12 @@ fn rejects_unknown_decorator_keyword() {
     assert!(!diagnostic.suggested_fix.is_empty());
 }
 
+/// A loop is still outside the body subset; an assignment is not, which is
+/// what this test used to guard.
 #[test]
 fn rejects_unsupported_body_statement() {
     let diagnostic = parse(
-        "from rivet import api\n\n@api.get(\"/ping\")\ndef ping() -> dict:\n    x = 1\n    return {}\n",
+        "from rivet import api\n\n@api.get(\"/ping\")\ndef ping() -> dict:\n    while True:\n        return {}\n",
     )
     .expect_err("must fail");
     assert_eq!(diagnostic.error_code, "E1006");
@@ -167,14 +174,17 @@ fn skips_plain_functions() {
     assert_eq!(blueprint.routes.len(), 1);
 }
 
+/// A bare `return` under `-> None` is kept as a statement, not dropped: the
+/// generated function returns early, which is what the statement means when a
+/// branch holds it.
 #[test]
-fn response_none_with_bare_return_is_empty() {
+fn response_none_keeps_a_bare_return() {
     let blueprint = parse(
         "from rivet import api\n\n@api.delete(\"/thing\")\ndef delete_thing() -> None:\n    return\n",
     )
     .expect("bare return with -> None is fine");
     assert_eq!(blueprint.routes[0].response, ResponseSpec::None);
-    assert!(blueprint.routes[0].returns.is_empty());
+    assert_eq!(blueprint.routes[0].body, vec![Stmt::Return(Expr::Null)]);
 }
 
 #[test]
@@ -386,3 +396,4 @@ fn a_handler_name_the_generated_crate_owns_still_parses() {
 mod borrow;
 mod path_params;
 mod query_params;
+mod statements;

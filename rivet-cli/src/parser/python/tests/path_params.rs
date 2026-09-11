@@ -2,7 +2,7 @@
 //! the handler parameter of the same name, in path order.
 
 use super::*;
-use rivet_core::ir::RouteParam;
+use rivet_core::ir::{ResponseSpec, RouteParam, Stmt};
 
 /// A `{name}` placeholder binds to the handler parameter of the same name and
 /// becomes a typed path parameter, in path order.
@@ -70,7 +70,10 @@ fn a_path_parameter_can_be_the_response_value() {
     .expect("parse");
     let route = &blueprint.routes[0];
     assert_eq!(route.response, ResponseSpec::Json(TypeRef::Int));
-    assert_eq!(route.returns, vec![Expr::Ident("id".to_string())]);
+    assert_eq!(
+        route.body,
+        vec![Stmt::Return(Expr::Ident("id".to_string()))]
+    );
 }
 
 /// A placeholder the handler does not declare is a parse error, not a route
