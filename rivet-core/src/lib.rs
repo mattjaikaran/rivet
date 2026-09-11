@@ -6,3 +6,4 @@
 //! contract serializable for tooling and tests.
 
 pub mod ir;
+pub mod reserved;
