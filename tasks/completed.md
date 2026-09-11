@@ -704,7 +704,7 @@ exist.
   `Optional[List[T, N]]` is rejected with `E2012` rather than generating a
   struct that cannot compile; and a flag the generator does not implement is
   rejected with `E2013`, so the section cannot advertise a capability the
-  build ignores.
+  build ignores (`927fb68`).
 
 ### Verification: the const_generics flag
 
@@ -712,7 +712,7 @@ exist.
   768 back in order, and a 10-value request answers `422` from the
   deserializer.
 - End to end on the WASI target: `wasmtime run` answers `200` for a
-  768-element embedding and `400` for a short one.
+  768-element embedding and `400` for a short one (`927fb68`).
 - The wasm integration fixture carries a fixed-size array DTO, and both
   protocol runs assert the array round-trips and that a short one is
   rejected, so a bridge emitted for one target and not the other would fail
@@ -720,4 +720,4 @@ exist.
 - Generator tests cover the render, the missing opt-in (`E2003`), the absent
   bridge for a plain array, the short literal (`E2011`), the optional form
   (`E2012`), and the unimplemented flag (`E2013`); the config tests cover
-  the defaults and the flag the generator does not implement.
+  the defaults and the flag the generator does not implement (`927fb68`).
