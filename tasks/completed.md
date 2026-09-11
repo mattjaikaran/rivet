@@ -828,3 +828,90 @@ exist.
 - `./scripts/gate.sh` passes over the union: fmt, clippy `-D warnings`, 302
   tests (was 287), `cargo deny`, the example build and audit, and the repo
   self-checks.
+
+### The zero_copy_deserialization flag
+
+- `[rust_native_features] zero_copy_deserialization = true` renders a
+  `borrowed[str]` DTO field as `pub text: &'a str` behind `#[serde(borrow)]`,
+  and the DTO takes a lifetime. The parser sets
+  `FieldDefinition::is_borrowed`, which the IR already tracked but nothing
+  ever set. The flag leaves the set the generator still calls unimplemented
+  (`753e9f8`, `27d3f04`).
+- The borrow has exactly one buffer to point into, so the generator accepts a
+  borrowed DTO only as a route's **request body**. A response type or a field
+  of another DTO is rejected with `E2016` before any crate is written; a
+  borrowed field in a project without the flag is `E2015`, whose fix names
+  the flag. Both targets call the check, so one blueprint gets one answer
+  (`27d3f04`).
+- The native handler extracts `axum::body::Bytes` and calls
+  `serde_json::from_slice` itself, rather than using the `Json` extractor:
+  `Json<T>` requires `T: DeserializeOwned`, which a `&'a str` field cannot
+  satisfy. The WASM module decodes from the body text it already holds. Both
+  targets therefore read the field without copying a `String` (`27d3f04`).
+- The parser rejects the annotations that cannot borrow — `Optional[
+  borrowed[str]]`, `borrowed[int]`, `List[borrowed[str]]`, a bare
+  `borrowed[str]` parameter, and a borrowed return type — with `E1014`, at
+  the offending line (`753e9f8`).
+- The example app gained a `Note` DTO with `text: borrowed[str]`, a
+  `POST /notes` route, and `zero_copy_deserialization = true`, so the gate
+  exercises the feature end to end (`65a24ea`).
+- A pre-existing warning found while probing: the generated crate in `grpc`
+  mode warned `struct InProcess is never constructed`, because both
+  topologies emit the monolith transport and only `in_process` constructs it.
+  The struct now carries `#[allow(dead_code)]`, with a generator test
+  holding it (`b45b3c5`).
+
+### Verification: the zero_copy_deserialization flag
+
+- End to end on the native target: `POST /notes` with
+  `{"text":"borrowed-from-the-body"}` answers `200` with the text echoed
+  back, and a non-JSON body answers `400` with the decode error.
+- End to end on the WASI target: `wasmtime run` answers
+  `{"body":{"echo":{"text":"borrowed-under-wasmtime"}},"status":200}` for the
+  same body and `400` for an unreadable one.
+- End to end over the gRPC transport, which serializes the DTO to JSON and
+  decodes it on the server side: `POST /notes` answers `200`, so the borrow
+  survives the round trip through the owned-JSON channel too.
+- A parallel probe built all 16 rows of the input table at once. The legal
+  shapes built: a borrowed request body, `List[Note]` as a request body, two
+  borrowed fields on one DTO, one borrowed DTO shared by two routes, and a
+  handler named `String` with a borrowed DTO. The illegal shapes answered as
+  designed: `E1014` for `Optional[borrowed[str]]`, `borrowed[int]`,
+  `List[borrowed[str]]`, a bare borrowed parameter, and a borrowed return
+  type; `E2016` for a borrowed response type, a borrowed DTO nested in
+  another DTO, and a borrowed DTO in a mixed blueprint; `E2015` for a
+  borrowed field with the flag off.
+- The probe corrected one row: a DTO carrying both a borrowed field and
+  `List[float, 4]` answered `E2003` until the probe config also set
+  `const_generics`, which shows the two flags are independent rather than
+  subsumed. With both flags set, the DTO renders the lifetime and the array
+  together and answers `200` with the array intact, and a generator test pins
+  that composition.
+- One JSON shape cannot borrow: a string carrying an escape, such as
+  `{"text":"a\nb"}`. The value exists only after unescaping, so no contiguous
+  slice of the body holds it; the route answers `400` with the decode error
+  rather than copying the text. A unit test on the deserializer asserts it,
+  and both pillar 02 and pillar 08 record it.
+- Six generator tests in `transpiler/rust/tests/zero_copy.rs` cover the
+  borrow render and its lifetime, the `Bytes` extraction, the untouched owned
+  route, the missing opt-in (`E2015`), the rejected wasm response (`E2016`),
+  and the composition with `const_generics`; one test in `rust/tests.rs`
+  covers the unused transport's allow. Seven tests in
+  `transpiler/rust/borrow/tests.rs` cover the opt-in, the legal position, the
+  illegal response, nested-DTO, and array positions, and the array-element
+  case. Two parser tests cover a borrowed parameter and return type (`E1014`)
+  and the marker on a DTO field; four annotation tests cover `borrowed[str]`
+  and each rejected annotation. The config tests cover the flag no longer
+  being unimplemented.
+- The gate caught two defects in the new code, both fixed: the emitter's new
+  field formatting pushed `rivet-cli/src/transpiler/rust.rs` and the feature
+  test module over the 400-line ceiling, so the expression renderer moved to
+  `transpiler/rust/expression.rs`, the annotation parser to
+  `parser/annotation.rs`, and the zero-copy tests to
+  `transpiler/rust/tests/zero_copy.rs`; and a doc line the generator emitted
+  named the remote transport, which made the in-process crate fail the test
+  asserting it carries no remote-transport code. The comment now describes
+  the position without naming the type.
+- `./scripts/gate.sh` passes over the union: fmt, clippy `-D warnings`, 284
+  in-process tests in `rivet-cli` plus the workspace suite, `cargo deny`, the
+  example build and audit on both targets, and the repo self-checks.
