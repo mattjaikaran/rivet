@@ -7,9 +7,9 @@
 //! continue where it stopped; `list` shows the saved session names.
 use crate::config::RivetConfig;
 use crate::diagnostic::Diagnostic;
-use crate::verifier;
 use crate::parser::python::parse_python_file;
 use crate::store;
+use crate::verifier;
 use std::path::Path;
 
 /// Save the current module context as a named session.

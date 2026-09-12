@@ -11,8 +11,8 @@
 //! a fix suggestion. The project opts out by setting
 //! `stories_required = false` in the `[verifier]` config.
 
-use crate::verifier::{Context, Finding, Rule};
 use crate::parser::python::DeclKind;
+use crate::verifier::{Context, Finding, Rule};
 use std::collections::HashMap;
 
 pub(crate) struct StoryLink;
@@ -73,8 +73,8 @@ impl Rule for StoryLink {
 mod tests {
     use super::*;
     use crate::config::VerifierConfig;
-    use crate::verifier::run_rule;
     use crate::parser::python::parse_python_module;
+    use crate::verifier::run_rule;
 
     fn module(source: &str) -> crate::parser::python::ParsedModule {
         parse_python_module(source, "app", "app.py").expect("module must parse")

@@ -19,8 +19,8 @@
 //! only trip this rule once control flow lands in the DSL; the walker and
 //! its contract are exercised directly against the syntax tree.
 
-use crate::verifier::{Context, Finding, Rule, named_children};
 use crate::parser::python::{DeclKind, Declaration, ParsedModule};
+use crate::verifier::{Context, Finding, Rule, named_children};
 use tree_sitter::Node;
 
 pub(crate) struct Complexity;
@@ -142,9 +142,9 @@ impl Rule for Complexity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::verifier::run_verifier;
     use crate::parser::NamedChildren;
     use crate::parser::node_text;
+    use crate::verifier::run_verifier;
     use rivet_core::ir::ServiceBlueprint;
     use tree_sitter::Parser;
 

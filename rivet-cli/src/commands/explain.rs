@@ -14,10 +14,10 @@
 
 use crate::config::RivetConfig;
 use crate::diagnostic::Diagnostic;
-use crate::verifier;
 use crate::parser::python::parse_python_file;
 use crate::store;
 use crate::store::vector::{RouteSummary, digest, index_blueprint, search};
+use crate::verifier;
 use std::path::Path;
 /// One searchable chunk per blueprint route, in route order.
 pub(crate) fn route_summaries(module: &crate::parser::python::ParsedModule) -> Vec<RouteSummary> {

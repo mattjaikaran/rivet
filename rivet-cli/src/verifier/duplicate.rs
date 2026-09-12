@@ -8,9 +8,9 @@
 //! finding that names each handler and its line; the outcome is
 //! `[verifier] duplicate_code` (blocker by default).
 
-use crate::verifier::{Context, Finding, Rule};
 use crate::parser::NamedChildren;
 use crate::parser::python::DeclKind;
+use crate::verifier::{Context, Finding, Rule};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
@@ -108,8 +108,8 @@ mod tests {
     use super::*;
     use crate::config::VerifierConfig;
     use crate::diagnostic::Severity;
-    use crate::verifier::run_rule;
     use crate::parser::python::parse_python_module;
+    use crate::verifier::run_rule;
 
     fn module(source: &str) -> crate::parser::python::ParsedModule {
         parse_python_module(source, "app", "app.py").expect("module must parse")

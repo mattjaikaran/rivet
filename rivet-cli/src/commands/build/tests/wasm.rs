@@ -31,7 +31,7 @@ fn build_wasm(dir: &ScratchDir, name: &str) -> std::path::PathBuf {
         ),
     )
     .expect("write rivet.toml");
-    run_build(&app, BuildTarget::Wasm).expect("the wasm fixture must build");
+    run_build(&app, BuildTarget::Wasm, true).expect("the wasm fixture must build");
     dir.join("generated-wasm")
         .join("target")
         .join("wasm32-wasip1")

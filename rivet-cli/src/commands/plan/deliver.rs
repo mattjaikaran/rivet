@@ -4,8 +4,8 @@
 use super::provider;
 use crate::config::RivetConfig;
 use crate::diagnostic::{Diagnostic, Severity};
-use crate::verifier;
 use crate::parser::python::ParsedModule;
+use crate::verifier;
 use serde_json::Value;
 use std::path::Path;
 

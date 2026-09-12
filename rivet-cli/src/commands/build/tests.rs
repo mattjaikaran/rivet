@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 const FIXTURE_APP: &str = "from rivet import api\n\n@api.get(\"/ping\", stories=[\"US-001\"])\ndef ping() -> dict:\n    return {\"status\": \"pong\"}\n\n@api.post(\"/echo\", stories=[\"US-002\"])\ndef echo(request: dict) -> dict:\n    return {\"echo\": request}\n";
 
 #[test]
-fn verifier_blocker_stops_build_without_writing_a_crate() {
+fn verifier_gate_runs_before_codegen() {
     let dir = ScratchDir::new("build-storyless");
     let app = dir.join("app.py");
     fs::write(
@@ -19,7 +19,8 @@ fn verifier_blocker_stops_build_without_writing_a_crate() {
         "from rivet import api\n\n@api.get(\"/ping\")\ndef ping() -> dict:\n    return {\"status\": \"pong\"}\n",
     )
     .expect("write app.py");
-    let diagnostics = run_build(&app, BuildTarget::Native).expect_err("storyless route must fail");
+    let diagnostics =
+        run_build(&app, BuildTarget::Native, true).expect_err("storyless route must fail");
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(diagnostics[0].error_code, "E2045");
     assert!(!diagnostics[0].suggested_fix.is_empty());
@@ -67,7 +68,7 @@ fn build_run_and_probe(
 
     // `in_process` first, then `grpc`: the second build reuses the first
     // crate's dependency cache, so the transport flag is the only change.
-    run_build(&app, BuildTarget::Native).expect("the fixture must build");
+    run_build(&app, BuildTarget::Native, true).expect("the fixture must build");
 
     let binary = dir.join("generated/target/release/transport");
     let _server = Server(
@@ -233,7 +234,7 @@ fn the_binary_serves_the_embedded_frontend_after_dist_is_renamed() {
     fs::write(dir.join("dist/index.html"), FIXTURE_INDEX).expect("write index.html");
     fs::write(dir.join("dist/assets/main.js"), FIXTURE_ASSET).expect("write asset");
 
-    run_build(&app, BuildTarget::Native).expect("the fixture must build");
+    run_build(&app, BuildTarget::Native, true).expect("the fixture must build");
 
     // The directory is gone, so only a binary that carries the build inside
     // can still answer.
@@ -338,7 +339,7 @@ fn the_admin_panel_serves_the_route_table_and_the_panel() {
     )
     .expect("write rivet.toml");
 
-    run_build(&app, BuildTarget::Native).expect("the fixture must build");
+    run_build(&app, BuildTarget::Native, true).expect("the fixture must build");
 
     let _server = Server(
         Command::new(dir.join("generated/target/release/panel"))

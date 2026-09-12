@@ -19,8 +19,8 @@ mod deliver;
 mod provider;
 
 use deliver::{
-    branch_name, err, failed, feedback_json, verifier_blockers, generated_summary, git_preflight,
-    grade_from_audit, open_pr, repair, run_git, write_text,
+    branch_name, err, failed, feedback_json, generated_summary, git_preflight, grade_from_audit,
+    open_pr, repair, run_git, verifier_blockers, write_text,
 };
 
 const MAX_ATTEMPTS: usize = 2;
@@ -158,8 +158,11 @@ async fn plan_async(
         }
     };
 
+    // `rivet plan` verifies through its own convergence loop (parse, the
+    // Verifier, and a real compile) and carries no `--no-gauntlet` opt-out,
+    // so it builds with the standalone Gauntlet step skipped.
     write_text(app_file, &source)?;
-    if let Err(build_diagnostics) = run_build(app_file, BuildTarget::Native) {
+    if let Err(build_diagnostics) = run_build(app_file, BuildTarget::Native, true) {
         if from.is_some() {
             return Err(failed("compile", build_diagnostics));
         }
@@ -180,7 +183,7 @@ async fn plan_async(
             return Err(failed("compile", blockers));
         }
         write_text(app_file, &source)?;
-        if let Err(build_diagnostics) = run_build(app_file, BuildTarget::Native) {
+        if let Err(build_diagnostics) = run_build(app_file, BuildTarget::Native, true) {
             return Err(failed("compile", build_diagnostics));
         }
         module = revised;

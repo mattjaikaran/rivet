@@ -81,7 +81,7 @@ fn outcome(dir_name: &str, source: &str, target: BuildTarget) -> Result<(), Vec<
         "[project]\nname = \"collide\"\n\n[rust_native_features]\nconst_generics = true\n",
     )
     .expect("write rivet.toml");
-    run_build(&app, target)
+    run_build(&app, target, true)
 }
 
 /// Both targets, in one call.
@@ -190,7 +190,7 @@ fn a_name_that_only_resembles_a_reserved_one_is_accepted() {
     fs::write(dir.join("rivet.toml"), "[project]\nname = \"near\"\n").expect("write rivet.toml");
     // The parse must reach the generator: a rejected module never writes a
     // crate, so the presence of `generated/` proves the parser accepted it.
-    let _ = run_build(&app, BuildTarget::Native);
+    let _ = run_build(&app, BuildTarget::Native, true);
     assert!(
         dir.join("generated").exists(),
         "`Stringify` and `rivetfree` are not reserved names"

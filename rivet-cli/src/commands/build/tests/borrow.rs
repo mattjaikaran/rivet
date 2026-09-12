@@ -21,7 +21,7 @@ fn a_borrowed_request_body_answers_over_http() {
         "[project]\nname = \"zerocopy\"\n\n[rust_native_features]\nzero_copy_deserialization = true\n",
     )
     .expect("write rivet.toml");
-    run_build(&app, BuildTarget::Native).expect("the borrowed fixture must build");
+    run_build(&app, BuildTarget::Native, true).expect("the borrowed fixture must build");
 
     let port = 31390;
     let binary = dir.join("generated/target/release/zerocopy");

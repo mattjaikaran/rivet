@@ -1,18 +1,25 @@
 //! `rivet build`: parse the DSL entry point, run the Verifier, generate the
 //! Rust crate, and compile it with cargo.
 //!
-//! The Verifier runs between parse and generate. Its blocker findings stop
-//! the command before any crate is written; its warnings print to stderr
-//! and let the build continue. All diagnostics share the agentic-JSON path
-//! so a driver (human or agent) sees every finding at once.
+//! Two gates guard the build. The Verifier is Rivet's own DSL-level gate: it
+//! runs between parse and generate, and its blocker findings stop the command
+//! before any crate is written. The standalone `gauntlet` CLI is the
+//! codebase-level gate: the `build` subcommand runs it on the crate once it
+//! is written and before cargo compiles it, and `--no-gauntlet` skips it.
+//! Commands that build as a sub-step (`rivet dev`, `rivet plan`) skip it, so
+//! the external binary never gates a command the user did not aim at it.
+//!
+//! All diagnostics share the agentic-JSON path so a driver (human or agent)
+//! sees every finding at once.
 
 use crate::config::RivetConfig;
 use crate::diagnostic::{Diagnostic, Severity};
-use crate::verifier;
 use crate::parser::python::parse_python_file;
 use crate::transpiler::rust::{AssetEmbedding, generate_project};
+use crate::verifier;
 use std::path::Path;
 
+mod gate;
 mod wasm;
 
 /// Which artifact `rivet build` produces.
@@ -24,7 +31,20 @@ pub enum BuildTarget {
     Wasm,
 }
 
-pub fn run_build(app_file: &Path, target: BuildTarget) -> Result<(), Vec<Diagnostic>> {
+/// Build the app into the requested target and compile the crate.
+///
+/// The `build` subcommand passes `skip_gauntlet = false`, so the standalone
+/// Gauntlet CLI runs on the generated crate. A caller that builds as a
+/// sub-step of a larger command passes `true`: `rivet dev` serves the binary
+/// and `rivet plan` verifies through its own convergence loop, so neither
+/// command carries an opt-out for the external binary. Tests that build
+/// in-process pass `true` too, so the suite never depends on whether the
+/// binary sits on the ambient `PATH`.
+pub fn run_build(
+    app_file: &Path,
+    target: BuildTarget,
+    skip_gauntlet: bool,
+) -> Result<(), Vec<Diagnostic>> {
     let project_dir = app_file
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -71,7 +91,7 @@ pub fn run_build(app_file: &Path, target: BuildTarget) -> Result<(), Vec<Diagnos
     }
 
     if target == BuildTarget::Wasm {
-        return wasm::run(&project_dir, &module.blueprint, &config);
+        return wasm::run(&project_dir, &module.blueprint, &config, skip_gauntlet);
     }
 
     let generated = generate_project(&module.blueprint, &config, &project_dir)
@@ -122,6 +142,12 @@ pub fn run_build(app_file: &Path, target: BuildTarget) -> Result<(), Vec<Diagnos
     );
     if let AssetEmbedding::Embedded { dir, .. } = &generated.assets {
         println!("Embedding static assets from {}", dir.display());
+    }
+
+    // Layer 2: the standalone Gauntlet CLI checks the crate on disk, before
+    // cargo compiles it. `--no-gauntlet` and the sub-step callers skip it.
+    if !skip_gauntlet {
+        gate::enforce(&out_dir)?;
     }
 
     let status = std::process::Command::new("cargo")

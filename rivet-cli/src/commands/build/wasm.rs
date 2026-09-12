@@ -7,6 +7,10 @@
 //! The build checks the `wasm32-wasip1` target before it runs cargo, so a
 //! missing target is `E2010` with the `rustup target add` command that fixes
 //! it, not a wall of cargo output.
+//!
+//! Once the crate is on disk, the standalone Gauntlet CLI checks it before
+//! cargo compiles it, exactly as the native target does. `--no-gauntlet`
+//! skips that step.
 
 use crate::config::RivetConfig;
 use crate::diagnostic::Diagnostic;
@@ -25,6 +29,7 @@ pub(super) fn run(
     project_dir: &Path,
     blueprint: &ServiceBlueprint,
     config: &RivetConfig,
+    skip_gauntlet: bool,
 ) -> Result<(), Vec<Diagnostic>> {
     if !target_installed()? {
         return Err(vec![Diagnostic::blocker(
@@ -51,6 +56,12 @@ pub(super) fn run(
         if blueprint.routes.len() == 1 { "" } else { "s" },
         out_dir.display()
     );
+
+    // Layer 2: the standalone Gauntlet CLI checks the crate on disk, before
+    // cargo compiles it. `--no-gauntlet` and the sub-step callers skip it.
+    if !skip_gauntlet {
+        super::gate::enforce(&out_dir)?;
+    }
 
     let status = std::process::Command::new("cargo")
         .arg("build")

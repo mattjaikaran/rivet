@@ -18,7 +18,7 @@ fn a_path_parameter_answers_over_http() {
     let app = dir.join("app.py");
     fs::write(&app, FIXTURE_APP).expect("write app.py");
     fs::write(dir.join("rivet.toml"), "[project]\nname = \"orders\"\n").expect("write rivet.toml");
-    run_build(&app, BuildTarget::Native).expect("the path-param fixture must build");
+    run_build(&app, BuildTarget::Native, true).expect("the path-param fixture must build");
 
     let port = 31391;
     let binary = dir.join("generated/target/release/orders");

@@ -32,10 +32,10 @@
 //! Anything the parser cannot type already fails earlier with an `E1xxx`
 //! diagnostic; this rule owns the module-level contract.
 
-use crate::verifier::{Context, Finding, Rule};
 use crate::parser::NamedChildren;
 use crate::parser::decorator::parse_api_decorator;
 use crate::parser::python::DeclKind;
+use crate::verifier::{Context, Finding, Rule};
 use tree_sitter::Node;
 
 pub(crate) struct TypeStrict;
@@ -148,8 +148,8 @@ impl Rule for TypeStrict {
 mod tests {
     use super::*;
     use crate::config::VerifierConfig;
-    use crate::verifier::run_rule;
     use crate::parser::python::parse_python_module;
+    use crate::verifier::run_rule;
 
     fn module(source: &str) -> crate::parser::python::ParsedModule {
         parse_python_module(source, "app", "app.py").expect("module must parse")

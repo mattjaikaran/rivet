@@ -19,7 +19,7 @@ fn query_parameters_answer_over_http() {
     let app = dir.join("app.py");
     fs::write(&app, FIXTURE_APP).expect("write app.py");
     fs::write(dir.join("rivet.toml"), "[project]\nname = \"search\"\n").expect("write rivet.toml");
-    run_build(&app, BuildTarget::Native).expect("the query-param fixture must build");
+    run_build(&app, BuildTarget::Native, true).expect("the query-param fixture must build");
 
     let port = 31392;
     let binary = dir.join("generated/target/release/search");

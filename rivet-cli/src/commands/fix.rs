@@ -24,11 +24,11 @@
 
 use crate::config::RivetConfig;
 use crate::diagnostic::Diagnostic;
-use crate::verifier;
 use crate::parser::NamedChildren;
 use crate::parser::python::{
     DeclKind, Declaration, ParsedModule, parse_python_file, parse_python_module,
 };
+use crate::verifier;
 use std::path::Path;
 
 /// Rounds the fix loop runs before giving up on a module. A chain of

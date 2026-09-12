@@ -19,12 +19,12 @@
 mod commands;
 mod config;
 mod diagnostic;
-mod verifier;
 mod mcp;
 mod parser;
 mod plugin;
 mod store;
 mod transpiler;
+mod verifier;
 
 #[cfg(test)]
 mod test_support;
@@ -57,6 +57,10 @@ enum Command {
         /// `wasm32-wasip1` module that answers the same routes.
         #[arg(long, value_enum, default_value_t = commands::build::BuildTarget::Native)]
         target: commands::build::BuildTarget,
+        /// Skip the post-generation step that runs the standalone `gauntlet`
+        /// CLI on the generated crate.
+        #[arg(long)]
+        no_gauntlet: bool,
     },
     /// Serve the Rust backend and the frontend dev server behind one origin
     /// (phase 4, pillar 03).
@@ -305,7 +309,11 @@ fn main() -> ExitCode {
                 version.as_deref(),
             ),
         },
-        Command::Build { app, target } => commands::build::run_build(&app, target),
+        Command::Build {
+            app,
+            target,
+            no_gauntlet,
+        } => commands::build::run_build(&app, target, no_gauntlet),
         Command::Audit { app, json } => commands::audit::run_audit(&app, json),
         Command::Dev {
             app,

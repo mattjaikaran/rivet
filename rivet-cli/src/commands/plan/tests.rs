@@ -58,7 +58,10 @@ fn from_file_converges_commits_and_compiles() {
     assert!(spec.contains("Plan: add a health route US-42"), "{spec}");
     let subject = git_ok(&repo, &["log", "--oneline", "-1"]);
     assert!(subject.contains("plan: add a health route"), "{subject}");
-    run_build(&app, BuildTarget::Native).expect("the generated crate compiles");
+    // Production `rivet plan` builds with the post-generation gate skipped,
+    // so the test mirrors that path and never depends on whether the
+    // standalone `gauntlet` binary is installed.
+    run_build(&app, BuildTarget::Native, true).expect("the generated crate compiles");
 }
 
 #[test]

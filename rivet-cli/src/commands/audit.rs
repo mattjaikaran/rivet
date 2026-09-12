@@ -45,10 +45,10 @@
 //! breakdown reports them under `story_gate` so the audit cannot look clean
 //! on a module that fails the build.
 
-use crate::config::{VerifierConfig, RivetConfig};
+use crate::config::{RivetConfig, VerifierConfig};
 use crate::diagnostic::{Diagnostic, Severity};
-use crate::verifier;
 use crate::parser::python::parse_python_file;
+use crate::verifier;
 use serde_json::Value;
 use std::path::Path;
 

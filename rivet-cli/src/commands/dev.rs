@@ -125,7 +125,10 @@ pub fn run_dev(
         ),
     }
 
-    crate::commands::build::run_build(app_file, BuildTarget::Native)?;
+    // `rivet dev` is not the command the post-generation gate belongs to:
+    // it serves the binary and carries no `--no-gauntlet` opt-out, so it
+    // builds with the standalone Gauntlet step skipped.
+    crate::commands::build::run_build(app_file, BuildTarget::Native, true)?;
 
     let binary = project_dir
         .join("generated")
