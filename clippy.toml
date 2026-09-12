@@ -1,4 +1,4 @@
-# Enforce Gauntlet-style limits on the Rivet workspace itself.
+# Enforce Verifier-style limits on the Rivet workspace itself.
 # See https://doc.rust-lang.org/clippy/configuration.html for the schema.
 too-many-arguments-threshold = 5
 too-many-lines-threshold = 500

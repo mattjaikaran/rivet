@@ -245,3 +245,29 @@ fn an_unknown_discovery_backend_fails_the_parse() {
     let config: Result<RivetConfig, _> = toml::from_str(raw);
     assert!(config.is_err());
 }
+
+/// Write `rivet.toml` with `body` into a scratch directory.
+fn load_scratch(name: &str, body: &str) -> Result<RivetConfig, String> {
+    let dir = crate::test_support::ScratchDir::new(name);
+    std::fs::write(dir.join("rivet.toml"), body).expect("write rivet.toml");
+    RivetConfig::load(dir.path())
+}
+
+// TODO(remove-in-0.2): remove [gauntlet] compat shim
+
+#[test]
+fn a_deprecated_gauntlet_section_still_loads() {
+    let config = load_scratch("config-gauntlet-shim", "[gauntlet]\nmax_complexity = 5\n")
+        .expect("the deprecated section must still parse");
+    assert_eq!(config.verifier.max_complexity, 5);
+}
+
+#[test]
+fn a_verifier_section_wins_over_a_deprecated_gauntlet_section() {
+    let config = load_scratch(
+        "config-gauntlet-both",
+        "[gauntlet]\nmax_complexity = 5\n\n[verifier]\nmax_complexity = 12\n",
+    )
+    .expect("both sections must parse");
+    assert_eq!(config.verifier.max_complexity, 12);
+}

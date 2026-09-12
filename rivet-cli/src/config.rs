@@ -3,7 +3,8 @@
 //! `rivet build` reads this file from the directory that contains app.py.
 //! Unknown sections and keys are ignored, so the file format can grow ahead
 //! of the engine. The `[verifier]` section tunes the compile-time quality
-//! rules in [`crate::verifier`].
+//! rules in [`crate::verifier`]. The deprecated `[gauntlet]` name still loads
+//! for this release, with a warning that names its replacement.
 
 use crate::diagnostic::Severity;
 use std::collections::BTreeMap;
@@ -314,8 +315,35 @@ impl RivetConfig {
             }
             Err(err) => return Err(format!("failed to read {}: {err}", path.display())),
         };
-        toml::from_str(&raw).map_err(|err| format!("failed to parse {}: {err}", path.display()))
+        let mut config: RivetConfig = toml::from_str(&raw)
+            .map_err(|err| format!("failed to parse {}: {err}", path.display()))?;
+        apply_deprecated_verifier_section(&mut config, &raw)
+            .map_err(|err| format!("failed to parse {}: {err}", path.display()))?;
+        Ok(config)
     }
+}
+
+/// Fold the deprecated `[gauntlet]` section into the `[verifier]` config.
+///
+/// The section was renamed with the component. A file that still carries the
+/// old name keeps working: the build warns once and reads its values. A file
+/// that carries both keeps `[verifier]`, because the new name wins.
+// TODO(remove-in-0.2): remove [gauntlet] compat shim
+fn apply_deprecated_verifier_section(
+    config: &mut RivetConfig,
+    raw: &str,
+) -> Result<(), toml::de::Error> {
+    let value: toml::Value = toml::from_str(raw)?;
+    let Some(legacy) = value.get("gauntlet") else {
+        return Ok(());
+    };
+    eprintln!(
+        "[rivet] `rivet.toml` uses the deprecated `[gauntlet]` section; rename it to `[verifier]` (the old name is removed in 0.2)"
+    );
+    if value.get("verifier").is_none() {
+        config.verifier = legacy.clone().try_into()?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

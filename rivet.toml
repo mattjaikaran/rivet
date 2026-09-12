@@ -11,8 +11,9 @@ architecture = "monolith"
 [environments]
 development = { host = "127.0.0.1", port = 3000, log_level = "debug" }
 
-# The Gauntlet enforces these rules at compile time, before code generation.
-[gauntlet]
+# The Verifier enforces these rules at compile time, before code generation.
+# The section was called `[gauntlet]`; the old name still loads with a warning.
+[verifier]
 max_complexity = 8            # E2042: cyclomatic complexity limit
 stories_required = true       # E2045: every route needs a story ID
 strict_type_checking = true   # E2046: the module must translate whole
