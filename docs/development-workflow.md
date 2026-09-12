@@ -23,6 +23,30 @@ cargo test --workspace
 cargo deny check
 ```
 
+## Reclaiming disk space
+
+Three things grow without bound: the workspace build cache (`target/`), the
+crate each `rivet build` writes to `generated/` (about 140 MB, plus
+`generated-wasm/` for the WASI target), and the fixture projects the test
+suite leaves under the temp dir. The `Makefile` wraps `scripts/clean.sh`:
+
+```bash
+make disk             # report the footprint, delete nothing
+make clean            # remove generated crates and temp fixtures
+make clean-dry-run    # show what the two clean targets would remove
+make clean-all        # the above plus `cargo clean`
+```
+
+`make clean` runs after a working session, or before you need free space. It
+keeps `target/` because rebuilding it costs minutes; it prints that size so
+the cost of keeping it is visible. Use `make clean-all` when you want the
+space back and can wait for a full rebuild.
+
+The sweep covers both `$TMPDIR` and `/tmp`, because macOS keeps them in
+separate trees and fixtures land in both. It only touches Rivet-named paths.
+Removal is best effort: a path that survives a locked file is reported, and
+the script exits non-zero without skipping the rest.
+
 ## Repository self-checks (constraint tools)
 
 The Verifier gates DSL apps; `constraint-tools/` gates the Rivet source tree

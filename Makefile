@@ -1,7 +1,7 @@
-.PHONY: help build dev test docker-up docker-down clean clean-all gate self-check
+.PHONY: help build dev test docker-up docker-down clean clean-dry-run clean-all disk gate self-check
 
 help: ## Show available commands
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
 
 build: ## Build the Rivet CLI
 	cargo build --release --bin rivet
@@ -27,8 +27,14 @@ docker-up: ## Start Docker dependencies
 docker-down: ## Stop Docker dependencies
 	docker compose down
 
-clean: ## Remove generated crates and test fixtures (keeps the cargo cache)
+clean: ## Remove generated crates and test fixtures (keeps the build cache)
 	./scripts/clean.sh
 
-clean-all: ## Remove generated output and the workspace cargo build cache
+clean-dry-run: ## Show what `clean` and `clean-all` would remove
+	./scripts/clean.sh --dry-run
+
+clean-all: ## Remove generated output and the workspace build cache
 	./scripts/clean.sh --all
+
+disk: ## Report the disk footprint of generated output
+	./scripts/clean.sh --disk

@@ -158,13 +158,20 @@ generated field is `pub text: &'a str` behind `#[serde(borrow)]`. See
 and the diagnostics that hold them.
 
 Each `rivet build` writes a crate with its own cargo `target/` (about
-140 MB). Remove the generated crates and the test fixtures when you do
-not need them:
+140 MB), and the test suite leaves fixture projects under the temp dir.
+Remove them when you do not need them:
 
 ```bash
-make clean        # generated crates and test fixtures
-make clean-all    # the above plus the workspace cargo cache
+make disk             # report what generated output is on disk
+make clean            # remove generated crates and temp fixtures
+make clean-dry-run    # show what clean and clean-all would remove
+make clean-all        # the above plus the workspace cargo cache
 ```
+
+The workspace build cache (`target/`) is usually the largest item, at
+several gigabytes, so `clean` leaves it alone and prints its size. Pass
+`--all` (or `make clean-all`) to remove it; the next build then recompiles
+every dependency from scratch.
 
 ## What Rivet transpiles
 
