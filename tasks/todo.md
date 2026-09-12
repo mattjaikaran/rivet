@@ -4,7 +4,7 @@ This file is the source of truth for what needs to be done. It follows the
 [roadmap](docs/ROADMAP.md) phases and the original `prompts/` build order, and
 each phase references the pillars it serves.
 
-Last updated: 2026-09-10
+Last updated: 2026-09-12
 
 ## Scope: finish the Python front end first
 
@@ -27,10 +27,6 @@ The Python DSL front end is a subset. Finish it before any other language.
 Each item below is Python-side front-end work, ordered by what it unblocks.
 Seed prompt: `prompts/prompt-09-python-frontend.md` (authored 2026-09-12).
 
-- [ ] `for` and `match` in a handler body. Assignment, `if`/`elif`/`else`,
-  and several `return`s have landed; the other two statement kinds have not.
-  Acceptance: a handler that loops over a list and one that matches a value
-  build and answer on both targets.
 - [ ] Calls, attribute access, f-strings, and comprehensions. The arithmetic,
   comparison, and boolean operators have landed; these have not.
   Acceptance: a handler that formats a string and reads a field builds and
@@ -38,6 +34,13 @@ Seed prompt: `prompts/prompt-09-python-frontend.md` (authored 2026-09-12).
 - [ ] `//` and `%`, which need a rendering that floors like Python rather
   than truncating like Rust. Acceptance: `-7 // 2` answers `-4` and
   `-7 % 3` answers `2` on both targets.
+- [ ] `while`, rejected with `E1006` at `parser/body.rs:114`. `for` and
+  `match` landed without it, so this is an open scope decision, not an
+  oversight. It needs no new IR beyond a condition and a body, it reuses the
+  `for` treatment of `all_paths_return` (a `while` may run zero times), and the
+  Verifier already counts `while_statement`. Acceptance: a handler that loops
+  on a condition builds and answers on both targets, or the rejection records
+  why it stays out.
 
 ## How to use this file
 

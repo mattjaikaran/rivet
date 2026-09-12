@@ -13,8 +13,8 @@ into a compiled, memory-safe Rust API server, and publish it.
 
 **The Python front end is not finished. Finish it before any other language.**
 
-Two earlier sessions shipped a real feature and then wrote that the
-"reachable Python-side work is done". Both claims were true only of that
+Three earlier sessions shipped a real feature and then wrote that the
+"reachable Python-side work is done". Each claim was true only of that
 session's own tracker section. The front end is still a documented subset
 with hard rejection sites, and `tasks/todo.md` says so in its own words.
 
@@ -22,7 +22,7 @@ The correct order is:
 
 1. **Python front-end features** — this is the work. See the gap table below,
    and the seed prompt `prompts/prompt-09-python-frontend.md`, which covers
-   all three items in detail.
+   both remaining items in detail.
 2. TypeScript DSL front end — only after Python is complete, and only with
    explicit scope.
 3. Kotlin, Swift, Java, Go, C#, and every other target — parked. Do not shape
@@ -38,7 +38,8 @@ thinking about another language, stop and come back to the gap table.
 
 ## Start state
 
-`main` at `a12e582`, pushed to `origin/main`, working tree clean.
+`main` carries the front-end commits above `6315ebb` — the one the `for`/`match`
+feature landed at — and `origin/main` carries the same tip. Working tree clean.
 
 ```bash
 rtk git log --oneline -5
@@ -46,32 +47,35 @@ git status --short                 # expect: prints nothing
 rtk ./scripts/gate.sh              # expect green: fmt, clippy, tests, deny, example, self-checks
 ```
 
-The last full green gate ran at `c9c549e`. The three commits after it
-(`4686469`, `c9c549e`, `a12e582`) touch documentation and `scripts/clean.sh`
-only — no `.rs` file — so the gate is expected to pass unchanged. Run it
-first anyway; do not inherit a claim you did not verify.
+The gate is green at that tip. It takes about 130 to 400 seconds when the test
+and release profiles are warm. A cold profile takes far longer, because
+`cargo test --workspace` pulls `lance` and `datafusion` into the test profile.
+Run it first; do not inherit a claim you did not verify.
 
 ## What is actually missing from the Python front end
 
-The three open items in `tasks/todo.md` under "Python front-end completion",
-with the evidence verified in the code, not assumed:
+The two feature items in `tasks/todo.md` under "Python front-end completion"
+(that section also carries `while` as its own open item, covered below), with
+the evidence verified in the code, not assumed:
 
 | Item | State | Evidence (file:line) |
 | :--- | :--- | :--- |
-| `for` and `match` in a handler body | **rejected** | both hit the `other` arm at `parser/body.rs:99` — `` "`{other}` statements are not supported in handler bodies yet" `` (`E1006`), which prints the node kind (`for_statement`, `match_statement`) |
-| Calls, attribute access, f-strings, comprehensions | **rejected** | `parser/expr.rs:184` attribute access; `expr.rs:129` "only DTO constructors may be called"; `expr/strings.rs:17` f-strings; `expr.rs:188` the generic subset arm |
-| `//` and `%` | **rejected** | `parser/expr/operator.rs:79` — `` "the operator `{operator}` means something different in Rust than in Python for negative values" `` (`E1007`) |
+| Calls, attribute access, f-strings, comprehensions | **rejected** | `parser/expr.rs:186` attribute access; `expr.rs:132` "only DTO constructors may be called"; `expr.rs:190` the generic subset arm, which catches comprehensions and subscripts; `expr/strings.rs:17` f-strings |
+| `//` and `%` | **rejected** | `parser/expr/operator.rs:84` — `` "the operator `{operator}` means something different in Rust than in Python for negative values" `` (`E1007`) |
 
-`while` is rejected by that same `other` arm, and `tasks/todo.md` does not
-list it. The Verifier complexity rule already counts `while_statement`
-(`verifier/complexity.rs:36`), so it was always expected to land. Scope it
-explicitly with `for`/`match`, or record why it stays out — do not discover
-it halfway through.
+`for` and `match` shipped at `6315ebb`. A handler body now holds assignments,
+`if`/`elif`/`else`, `for`, `match`, and `return`, over literals, request
+values, a DTO constructor, `+ - * /`, comparisons, `and`, `or`, and `not`.
 
-Everything else in phases 0-4 has shipped. A handler today holds assignments,
-`if`/`elif`/`else`, and `return`, over literals, request values, a DTO
-constructor, `+ - * /`, comparisons, `and`, `or`, and `not`. That is the
-whole statement and expression language.
+**`while` stays out, and the decision is recorded here on purpose.**
+`tasks/todo.md` carries it as its own open item. `while` is rejected by the
+`other` arm at `parser/body.rs:114` with `E1006`, and the Verifier complexity
+rule already counts `while_statement` (`verifier/complexity.rs:37`), so it was
+always expected to land. It needs no new IR beyond a condition and a body, and
+it needs the same `all_paths_return` treatment `for` got: a `while` may run
+zero times, so it never completes a handler. Add it when the work plan below
+puts it in scope, or record why it stays out. Do not discover it halfway
+through.
 
 **A probe already settled how `//` and `%` must render, and it rules out the
 obvious answer**, so do not repeat it from memory when you reach item 3.
@@ -81,33 +85,32 @@ Rust's `div_euclid`/`rem_euclid` agree with Python only when the divisor is
 divisors, so a naive `div_euclid` rendering passes it while still being
 wrong. The measured table is in `prompts/prompt-09-python-frontend.md`.
 
-**Order them yourself, but `for` and `match` are first**, because a REST
-framework that cannot iterate or branch on a value cannot express real
-business logic, and because the IR decision they force (how a nested block is
-represented, and how a loop's body is walked) is the shape the remaining two
-items extend.
+## This session's target: calls, attribute access, f-strings, comprehensions
 
-## This session's target: `for` and `match`
+Make each of these build and answer on **both** targets, or refuse it with a
+diagnostic that names the construct. Order them yourself by risk, but the
+cheap one is first:
 
-Make these build and answer on **both** targets:
+**f-strings are the likely first win.** `f"{a}-{b}"` lowers to Rust
+`format!`, and the interpolated pieces are already in the expression subset.
+`parser/expr/strings.rs:17` rejects the `f` prefix today. Accept an f-string
+whose interpolated expressions are expressions the subset already carries, and
+refuse one that carries anything else.
 
-```python
-@api.get("/orders/{id}/total", stories=["US-007"])
-def order_total(id: int, quantity: int) -> dict:
-    total = 0
-    for line in [1, 2, 3]:
-        total = total + line
-    return {"id": id, "total": total}
+**Attribute access and general calls need a design decision, and it is the
+task.** `Expr` has no field-access node, and a call has no callee beyond a DTO
+name:
 
+- what does a callable mean in the IR? A method on a DTO, a helper, a runtime
+  class? Each answer changes whether the generated Rust needs a trait, a free
+  function, or a macro.
+- an attribute read needs a borrow-versus-copy decision, and the DTO borrow
+  rules already exist: `borrowed[str]` renders `&'a str`, so a field read must
+  not force a copy the DTO avoided.
 
-@api.get("/grade/{score}", stories=["US-008"])
-def grade(score: int) -> dict:
-    match score:
-        case 1:
-            return {"grade": "low"}
-        case _:
-            return {"grade": "high"}
-```
+**A comprehension over a list is a loop in disguise.** `Stmt::For` exists now,
+so lower a comprehension to it rather than inventing a second iteration
+construct. Reach that after the loop shape is understood.
 
 ### What the code already gives you
 
@@ -115,88 +118,73 @@ These are verified. Do not re-derive them; do check them if you edit nearby.
 
 - **The WASM target reuses the native service renderer.** `transpiler/rust/wasm.rs:64`
   calls `service::render_service_module`, and `wasm/template.rs:9` says so in
-  prose. A new statement rendered once in `transpiler/rust/service.rs`
-  therefore covers **both** targets. Do not write a second renderer.
-- **The Verifier already counts `for` and `match`.** `verifier/complexity.rs:36`
-  maps `"for_statement"`, and its module doc lists `case_clause` of a
-  `match`. The rule walks the **tree-sitter syntax tree**, not the IR, so it
-  sees the new statements the moment the parser accepts them. No complexity
-  change is needed — but confirm it rather than assume it.
-- **`Stmt` is a three-variant enum**: `Return(Expr)`, `Assign{name, ty, value}`,
-  `If{branches, otherwise}` (`rivet-core/src/ir/expr.rs:146`). `Expr` has
-  `Null`, `Bool`, `Int`, `Float`, `Str`, `Array`, `Object`, `Ident`,
-  `Construct`, `Binary`, `Not`.
-
-### The IR change
-
-Add variants to `Stmt` in `rivet-core/src/ir/expr.rs`, beside `If`. A loop
-needs a binding name, the collection, and a body; a `match` needs the subject
-and the arms:
-
-```rust
-    /// `for <name> in <iterable>:` — one body per iteration.
-    For {
-        name: String,
-        /// The element type the loop binding takes, resolved by the parser so
-        /// the generator needs no second type analysis.
-        ty: TypeRef,
-        iterable: Expr,
-        body: Vec<Stmt>,
-    },
-    /// `match <subject>:` — one arm per `case`.
-    Match {
-        subject: Expr,
-        /// Each arm is an optional pattern and the body it guards. `None` is
-        /// the `case _` wildcard, which must come last.
-        arms: Vec<(Option<Expr>, Vec<Stmt>)>,
-    },
-```
-
-`TypeRef` is already a field of `Assign`, so its import in that module is
-present. Keep the same public surface otherwise; this is an addition.
+  prose. A new statement rendered once in `transpiler/rust/body.rs` therefore
+  covers **both** targets. Do not write a second renderer.
+- **The Verifier already counts `for` and `match`.** `verifier/complexity.rs:32`
+  maps `for_statement`, `while_statement`, and `case_clause`. The rule walks
+  the **tree-sitter syntax tree**, not the IR, so it sees a new statement the
+  moment the parser accepts it. No complexity change is needed.
+- **`Stmt` is a five-variant enum**: `Return(Expr)`, `Assign{name, ty, value}`,
+  `If{branches, otherwise}`, `For{name, ty, iterable, body}`, and
+  `Match{subject, arms}` (`rivet-core/src/ir/expr.rs:146`).
+- **`Expr` has eleven variants**: `Null`, `Bool`, `Int`, `Float`, `Str`,
+  `Array`, `Object`, `Ident`, `Construct`, `Binary`, `Not`
+  (`rivet-core/src/ir/expr.rs:113`). A new `Expr` variant is a **wider** break
+  than a new `Stmt` variant, because more sites match on it, and four of those
+  sites carry a catch-all arm. See trap 1.
 
 ### The traps that cost an hour each
 
-**1. Adding a `Stmt` variant breaks every exhaustive match on it.** The
-compiler reports them one at a time and stops at the first, so you cannot read
-the whole list from one build. These are the sites as of `a12e582`:
+**1. Three sites match on `Expr` exhaustively, and four more have a catch-all
+arm.** The three stop the build, one at a time, so you cannot read the whole
+list from one build. The four catch-all sites compile in silence and then
+mishandle the new variant, which is the worse failure. Both lists are verified
+as of `6315ebb`:
 
-| Site | What it does |
-| :--- | :--- |
-| `transpiler/rust/service.rs:195` | renders `Assign` |
-| `transpiler/rust/service.rs:208` | renders `Return` |
-| `transpiler/rust/service.rs:225` | renders `If` |
-| `transpiler/rust.rs:479` | counts literals for the borrow / const-generics checks |
-| `parser/validate.rs:70` | walks the body to type-check every `return` |
+| Site | Exhaustive? | What it does |
+| :--- | :--- | :--- |
+| `rivet-core/src/infer.rs:61` | yes | resolves the type of an expression |
+| `transpiler/rust/expression.rs:215` | yes | renders an expression as `serde_json::Value` |
+| `transpiler/rust.rs:606` (`expr_kind`) | yes | names the kind of an expression, for a diagnostic |
+| `transpiler/rust/expression.rs:21` (`render_named`) | no — `_ =>` | renders a named (DTO) response |
+| `transpiler/rust/expression.rs:106` (`render_typed`) | no — `_ => {}` | renders an expression into a target type |
+| `transpiler/rust.rs:478` (`visit`) | no — `_ => {}` | counts identifier uses, for the clone decision |
+| `parser/validate/dto.rs:119` | no — `_ =>` | checks an expression against a DTO field type |
 
-Count them up front or you will loop. `cargo build --workspace 2>&1 | rtk err`
-shows only the error line.
+Give each of the four a real arm for the new variant. A catch-all arm is where
+a new expression kind goes wrong without a compiler error.
 
-**2. `Stmt::walk` must recurse into the new bodies.**
-`rivet-core/src/ir/expr.rs:193` returns every statement including nested
-blocks, and two callers depend on it: the complexity rule and the literal
-counter at `transpiler/rust.rs:479`. A `for` body that `walk` does not visit
-means a string literal inside the loop is **not counted**, which silently
-breaks the borrow and fixed-array checks. This is the single most likely
-mistake in this change.
+**2. A new `Expr` variant must reach the identifier counter, or a value moves
+twice.** `count_idents_in` (`transpiler/rust.rs:470`) decides whether a
+non-`Copy` parameter is cloned, and its inner `visit` (`rust.rs:477`) is one of
+the catch-all sites above: an attribute read that hides an identifier from that
+walk means the value is not cloned, moves twice, and the generated crate fails
+with `E0382`. The counter weights a use inside a loop body twice and exempts
+the innermost loop's own binding — read the doc comment at `rust.rs:461` before
+you extend it.
 
-**3. `Stmt::all_paths_return` must handle both variants.**
-`rivet-core/src/ir/expr.rs:175` decides whether a handler that returns a value
-returns on every path. A `for` cannot complete — the collection may be empty —
-so it never satisfies it. A `match` completes only when it has a `case _`
-wildcard and every arm completes. Getting this wrong turns a non-returning
-handler into a build error, or worse, accepts one that can fall off the end.
+**3. Keep the fall-through tail intact.** `render_route`
+(`transpiler/rust/service.rs:133`) appends `serde_json::Value::Null` to a
+`-> dict` body that can fall off its end, because Python answers `None` there.
+A new statement that ends a body must not defeat `Stmt::all_paths_return`, or
+the generated function ends in `()` against a `serde_json::Value` return type
+and fails with `E0308`. `all_paths_return` lives at
+`rivet-core/src/ir/expr.rs:200`.
 
-**4. Do not reach for `ast_edit` on the `Stmt` variants.** A previous session
+**4. A guard belongs where it has the most context.** A check that needs a
+file and a line belongs in the parser, so every command rejects the input. A
+check about rendered output belongs in the generator, and both generators must
+call it.
+
+**5. Do not reach for `ast_edit` on the enum variants.** A previous session
 tried it on a structurally similar change and the pattern matched a fraction
 of the sites, with a proposal that could not be inspected field by field.
 Plain edits, verified by the compiler, are correct for enum variants.
 
-### The stale comment to fix while you are there
-
-`parser/expr.rs:9` says the supported arithmetic is `` `+ - * / // %` ``, but
-`parser/expr/operator.rs:79` **refuses** `//` and `%`, and `README.md` agrees
-with the refusal. The module doc is wrong. Correct it in this change.
+**6. Watch the file ceiling while you edit.** `parser/body.rs` is 354 lines,
+`parser/body/flow.rs` is 357, and `transpiler/rust/body.rs` is 238, so all three
+have room, but a fourth statement kind adds to `body/flow.rs` too. Split into a
+sibling module with a `tests.rs` before you reach 400.
 
 ## Work plan
 
@@ -205,32 +193,29 @@ not depend on itself.
 
 **Wave 1 — run these together.**
 
-- **Own the design yourself.** Write the `Stmt` variants, update `walk` and
-  `all_paths_return`, then fix the exhaustive-match sites so the tree
-  compiles. Nothing else can start until it does.
+- **Own the design decision yourself.** What a callable means in the IR shapes
+  everything else. Write the `Expr` variant, update `infer`, then fix the
+  seven exhaustive-match sites until the tree compiles. Nothing else can start
+  until it does.
 - **Spawn one `scout` (read-only)** on the rendering question, because the
   answer is spread across the generator. Ask it, per file: the function name,
-  its line range, and exactly what rendering a nested block requires.
-  Targets: `transpiler/rust/service.rs` (`render_body`, `render_stmt`),
-  `transpiler/rust.rs` (the literal counter), `parser/validate.rs` (the return
-  walk), and `verifier/complexity.rs` (confirm `for`/`match` counting).
+  its line range, and exactly what rendering an attribute read requires.
+  Targets: `transpiler/rust/expression.rs` (`render_typed`, `render_value`,
+  `render_named`), `transpiler/rust/borrow.rs` (the borrowed-field lifetime),
+  and `parser/validate/dto.rs` (the field-type check).
 
 **Wave 2 — after the IR compiles, in parallel, one writer per file.**
 
 Declare the contract up front, in the batch `context`, before you spawn.
-Suggested contract: `for` renders as a Rust `for` loop over the rendered
-iterable, binding with the parser-resolved type; `match` renders as a Rust
-`match` whose `case _` becomes `_` and whose other arms compare by equality.
-Both targets share one renderer, so `service.rs` is the only render site.
 
 | Slice | Files it owns | Agent |
 | :--- | :--- | :--- |
-| Parser: accept `for` and `match`, resolve the loop binding's type, reject a non-final `case _` | `parser/body.rs` | you |
-| Generator: render both statements, update the literal counter and the return walk | `transpiler/rust/service.rs`, `transpiler/rust.rs`, `parser/validate.rs` | `task` |
+| f-strings: accept the `f` prefix, lower to `format!`, refuse a piece the subset cannot render | `parser/expr/strings.rs`, `parser/expr.rs` | you |
+| Attribute access and calls | `transpiler/rust/expression.rs`, `parser/validate/dto.rs` | `task` |
 | Tests: parser unit tests plus a native and a WASI integration row | the `tests/` trees, `examples/basic/app.py` | `task` |
 
 **File discipline is the rule that makes this work.** No two writers touch one
-file. If two slices need `body.rs`, one owns it and the other coordinates over
+file. If two slices need `expr.rs`, one owns it and the other coordinates over
 `hub`. A mid-flight build failure is expected while siblings edit; tell every
 agent to skip validation and you run the suite once at the end.
 
@@ -238,18 +223,17 @@ Every task in the batch must be told to skip `cargo fmt`, `clippy`, and the
 full test suite. Run those once, over the union, yourself.
 
 **Wave 3 — verify end to end, on both targets.** A green gate is necessary,
-not sufficient.
+not sufficient. Assert the **body**, not the status code.
 
 ```bash
 # native
 ./target/release/rivet build examples/basic/app.py
 ./examples/basic/generated/target/release/basic &
-curl -i localhost:3000/orders/1/total      # 200
-curl -i localhost:3000/grade/1             # 200, the low arm
+curl -i localhost:3000/<the new route>       # 200, and the expected body
 
 # WASI
 ./target/release/rivet build --target wasm examples/basic/app.py
-echo '{"method":"GET","path":"/grade/1"}' | wasmtime run \
+echo '{"method":"GET","path":"<the new route>"}' | wasmtime run \
   examples/basic/generated-wasm/target/wasm32-wasip1/release/basic.wasm
 ```
 
@@ -276,8 +260,9 @@ rtk json                           # compact JSON, or --keys-only
 `rtk test` and `rtk err` are the two that matter most here: a failing
 `cargo test` is thousands of lines, and you only need the failure.
 
-Prefer `target/release/rivet` while iterating. The cache is warm, so the gate
-takes about 100-400 seconds depending on how much recompiles.
+Prefer `target/release/rivet` while iterating. Note that a `--bin` target has
+no library, so `cargo test -p rivet-cli --lib` fails with "no library targets
+found"; use `cargo test -p rivet-cli --bin rivet` instead.
 
 ## How to work: subagents
 
@@ -308,23 +293,26 @@ Rules that keep this cheap and correct:
 - **Fix at the source.** No stubs, placeholders, `TODO` shims, or speculative
   abstractions.
 - **A bug that surfaces as a cargo error is a generator bug.** Give it its own
-  diagnostic. Parser errors belong in the `E1xxx` range. The codes in use at
-  `a12e582` are `E1001`-`E1015`, `E2002`-`E2006`, `E2009`-`E2018`,
-  `E2042`-`E2046`, `E2999`, and `E3000`-`E3023`, so **the next free parser
-  code is `E1016`**, the next free generator code is `E2019`, and the next
-  free context code is `E3024`. Grep the tree for a code before you claim it:
-  the previous resume prompt named `E1015` as free and it was already taken by
-  the path-parameter work.
+  diagnostic, or fix the parser so the input is refused. Parser errors belong
+  in the `E1xxx` range. The codes in use at `6315ebb` are `E1001`-`E1017`,
+  `E2002`-`E2006`, `E2009`-`E2018`, `E2042`-`E2046`, `E2999`, and
+  `E3000`-`E3023`, so **the next free parser code is `E1018`**, the next free
+  generator code is `E2019`, and the next free context code is `E3024`. Grep
+  the tree for a code before you claim it: an earlier resume prompt named
+  `E1015` as free and the path-parameter work had already taken it, and this
+  one named `E1016` while the `for`/`match` work took it.
 - **Put a guard where it has the most context.** A check needing a file and a
   line goes in the parser, so every command rejects the input. A check about
   rendered output goes in the generator and must be called by **both**
   generators.
 - **The generated crate must compile warning-free** for every input the change
-  makes legal.
+  makes legal. An unused handler parameter warns today, and that is the one
+  known exception: the user can act on it, unlike a generated name.
 - **File ceiling is 400 lines** and it bites. The largest sources are
-  `transpiler/rust.rs` (561, grandfathered, must shrink not grow),
-  `parser/python.rs` (520, grandfathered), and `commands/audit.rs` (427).
-  Split into a sibling module with a `tests.rs` before you reach it.
+  `rivet-cli/src/parser/python.rs` (523, must shrink not grow),
+  `rivet-cli/src/transpiler/rust.rs` (622, must shrink not grow), and
+  `rivet-cli/src/commands/audit.rs` (427). Split into a sibling module with a
+  `tests.rs` before you reach it.
 - **No two conventions.** Read the neighbouring module before you add one.
 - Idiomatic ownership over clones; `Result` with structured errors; no panics
   in library paths; no `unwrap`/`expect` outside tests; build JSON by hand
@@ -339,8 +327,8 @@ period; blank line; body wrapped at 72. The body says what and why, not how.
 
 A fix commit names the symptom and the cause and **quotes the actual error**.
 When a fix rests on a probe, record the probe in the body and say so when the
-probe contradicts the plan — that has already happened twice in this repo, and
-the correction is the valuable part.
+probe contradicts the plan — that has already happened three times in this
+repo, and the correction is the valuable part.
 
 Never commit a placeholder. Land the feature, then fill the real hash in a
 follow-up tracker commit. Never commit build output; `git check-ignore -v
@@ -351,7 +339,8 @@ follow-up tracker commit. Never commit build output; `git check-ignore -v
 - `rtk ./scripts/gate.sh` passes: fmt, clippy `-D warnings`, `cargo test
   --workspace`, `cargo deny`, the example build and audit, repo self-checks.
 - Pipeline changes are verified end to end: rebuild `examples/basic`, run the
-  binary, `curl` the affected routes. WASM changes also run under `wasmtime`.
+  binary, `curl` the affected routes and assert the body. WASM changes also
+  run under `wasmtime`.
 - The generated crate compiles with no warnings for every input the change
   makes legal.
 - Affected docs are updated: `README.md` "What Rivet transpiles", the relevant
@@ -363,14 +352,14 @@ follow-up tracker commit. Never commit build output; `git check-ignore -v
 ## First steps
 
 1. `rtk git log --oneline -5`, `git status --short`, and
-   `rtk ./scripts/gate.sh` — confirm green at `a12e582`.
-2. Read `rivet-core/src/ir/expr.rs` (`Stmt` at :146, `walk` at :193,
-   `all_paths_return` at :175), then `rivet-cli/src/parser/body.rs:63`
-   (`parse_statement`, where `for`/`match` are rejected) and
-   `rivet-cli/src/transpiler/rust/service.rs:185` (`render_body`). Those three
-   hold the whole change.
-3. Write the `Stmt` variants, update `walk` and `all_paths_return`, then fix
-   the five exhaustive-match sites until the tree compiles. This is step one
-   of the feature, not setup.
+   `rtk ./scripts/gate.sh` — confirm green at `6315ebb`.
+2. Read `rivet-cli/src/parser/expr.rs` (the dispatch at `:34`, the call arm at
+   `:120`, attribute access at `:184`), then
+   `rivet-cli/src/parser/expr/strings.rs` (the f-prefix refusal at `:17`), then
+   `rivet-cli/src/transpiler/rust/expression.rs:103` (`render_typed`). Those
+   three hold the whole change.
+3. Decide what a callable means in the IR, then write the `Expr` variant and
+   fix the three exhaustive-match sites and the four catch-all sites from trap
+   1 until the tree compiles. This is step one of the feature, not setup.
 4. Spawn the `scout` for the rendering mapping while you do step 3.
 5. Then decompose Wave 2, declare the contract, and spawn it.

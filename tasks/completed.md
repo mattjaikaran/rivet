@@ -1004,3 +1004,55 @@ exist.
 - `./scripts/gate.sh` passes: fmt, clippy `-D warnings`, 331 in-process tests
   in `rivet-cli` plus the workspace suite, `cargo deny`, the example build
   and audit on both targets, and the repo self-checks (`849461a`).
+
+### `for` and `match` in a handler body
+
+- A handler body may loop over a list with `for` and pattern-match a value
+  with `match`. `Stmt` gained `Stmt::For { name, ty, iterable, body }` and
+  `Stmt::Match { subject, arms }`, where an arm is an optional pattern and
+  its body and `None` is the `case _` wildcard. `Stmt::walk` descends into
+  both new bodies, so a string literal inside a loop still reaches the
+  borrow and fixed-array checks (`6315ebb`).
+- A `for` never satisfies `all_paths_return`, because the collection may be
+  empty; a `match` satisfies it only through a final wildcard arm whose body
+  completes (`6315ebb`).
+- Rust scopes a `let` to the block that holds it, so three rules follow and
+  each one keeps a cargo error out of the generated crate. `parse_block`
+  drops the names a block introduced, so nothing below a block reads what it
+  bound (`E1010`). A `match` needs a final `case _`, because Rust rejects a
+  non-exhaustive `match` (`E1017`). A local keeps one type, because the
+  generated crate binds it once (`E1016`). A `case` guard, a union pattern,
+  a repeated pattern, a pattern of the wrong type, and a non-scalar subject
+  are refused with `E1017`; a loop name already in scope, an assignment to
+  the loop's own binding, and an unpacking loop target are refused with
+  `E1016`, `E1016`, and `E1007` (`6315ebb`).
+- The identifier counter weights a use inside a loop body twice, because
+  that use runs once per element and a non-`Copy` value would otherwise move
+  on the first iteration and fail the generated crate with `E0382`. The
+  innermost loop's own binding is exempt: each iteration hands it a fresh
+  value, so moving it is legal (`6315ebb`).
+- The second half of that rule is a probe result: `for word in [...]: for n
+  in [...]: copy = word` moved `word` on the inner loop's first iteration
+  under an earlier version that exempted every enclosing loop binding. The
+  exemption now applies to the innermost binding alone (`6315ebb`).
+- A `-> dict` handler may fall off its end, which Python answers as `None`.
+  `render_route` now emits the `serde_json::Value::Null` tail for such a
+  body. Without it a body whose last statement is a `for` or a
+  non-returning `match` ended in `()` against a `serde_json::Value` return
+  type, which is `E0308` in the generated crate. This was latent before the
+  change, because an `if` without an `else` reached the same shape
+  (`6315ebb`).
+- Measured end to end on both targets. Native over HTTP: `/loop/7` answers
+  `{"id":7,"total":6}`, `/grade/1` `{"grade":"low"}`, `/grade/5`
+  `{"grade":"high"}`, and a fall-through body answers `null` with `200`.
+  The WASI target answers the same six rows under Wasmtime (`6315ebb`).
+- The gate's 400-line ceiling forced four splits: `parser/body/flow.rs`,
+  `parser/python/tests/flow.rs`, `transpiler/rust/body.rs`, and
+  `transpiler/rust/tests/statements.rs` (`6315ebb`).
+- A stale doc claim is corrected: the module doc at `parser/expr.rs:9`
+  listed `//` and `%` as supported arithmetic while `parser/expr/operator.rs`
+  refuses them and the README agrees with the refusal. The doc now lists
+  `+ - * /` alone (`6315ebb`).
+- `./scripts/gate.sh` passes: fmt, clippy `-D warnings`, the workspace
+  suite, `cargo deny`, the example build and audit, and the repo
+  self-checks (`6315ebb`).
