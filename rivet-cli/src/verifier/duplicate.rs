@@ -6,9 +6,9 @@
 //! URL still collide — that is exactly the redundancy this rule exists to
 //! catch. Every group of two or more identical implementations produces one
 //! finding that names each handler and its line; the outcome is
-//! `[gauntlet] duplicate_code` (blocker by default).
+//! `[verifier] duplicate_code` (blocker by default).
 
-use crate::gauntlet::{Context, Finding, Rule};
+use crate::verifier::{Context, Finding, Rule};
 use crate::parser::NamedChildren;
 use crate::parser::python::DeclKind;
 use std::collections::HashMap;
@@ -106,9 +106,9 @@ impl Rule for Duplicate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::GauntletConfig;
+    use crate::config::VerifierConfig;
     use crate::diagnostic::Severity;
-    use crate::gauntlet::run_rule;
+    use crate::verifier::run_rule;
     use crate::parser::python::parse_python_module;
 
     fn module(source: &str) -> crate::parser::python::ParsedModule {
@@ -130,7 +130,7 @@ def beta() -> dict:
     #[test]
     fn identical_handlers_produce_one_finding_naming_both() {
         let parsed = module(DUPLICATES);
-        let diagnostics = run_rule(&parsed, &GauntletConfig::default(), &Duplicate);
+        let diagnostics = run_rule(&parsed, &VerifierConfig::default(), &Duplicate);
         assert_eq!(diagnostics.len(), 1);
         let diagnostic = &diagnostics[0];
         assert_eq!(diagnostic.error_code, "E2043");
@@ -159,16 +159,16 @@ def echo(request: dict) -> dict:
     return {"echo": request}
 "#,
         );
-        let diagnostics = run_rule(&parsed, &GauntletConfig::default(), &Duplicate);
+        let diagnostics = run_rule(&parsed, &VerifierConfig::default(), &Duplicate);
         assert!(diagnostics.is_empty());
     }
 
     #[test]
     fn warning_outcome_reports_instead_of_blocking() {
         let parsed = module(DUPLICATES);
-        let config = GauntletConfig {
+        let config = VerifierConfig {
             duplicate_code: Severity::Warning,
-            ..GauntletConfig::default()
+            ..VerifierConfig::default()
         };
         let diagnostics = run_rule(&parsed, &config, &Duplicate);
         assert_eq!(diagnostics.len(), 1);

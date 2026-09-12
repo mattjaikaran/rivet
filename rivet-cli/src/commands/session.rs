@@ -1,13 +1,13 @@
 //! `rivet session`: save, list, and resume compact markdown context.
 //!
 //! A session captures what a human or agent was looking at: the parsed
-//! module summary, the `[gauntlet]` config that ran, and the diagnostics it
+//! module summary, the `[verifier]` config that ran, and the diagnostics it
 //! produced. `save` renders that context to compact markdown and stores it
 //! in the project store; `resume` prints it back verbatim so work can
 //! continue where it stopped; `list` shows the saved session names.
 use crate::config::RivetConfig;
 use crate::diagnostic::Diagnostic;
-use crate::gauntlet;
+use crate::verifier;
 use crate::parser::python::parse_python_file;
 use crate::store;
 use std::path::Path;
@@ -64,7 +64,7 @@ pub fn run_session_list(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
 /// Render the current command context as compact markdown.
 ///
 /// The heading records the app path; the body summarizes the parsed module
-/// (routes and DTOs), the `[gauntlet]` config in effect, and the diagnostics
+/// (routes and DTOs), the `[verifier]` config in effect, and the diagnostics
 /// the module produced. Human and agent resume from this file.
 pub(crate) fn render_context(app_file: &Path) -> Result<String, Diagnostic> {
     let project_dir = store::project_dir_for(app_file);
@@ -76,7 +76,7 @@ pub(crate) fn render_context(app_file: &Path) -> Result<String, Diagnostic> {
         )
     })?;
     let module = parse_python_file(app_file)?;
-    let findings = gauntlet::run_gauntlet(&module, &config.gauntlet);
+    let findings = verifier::run_verifier(&module, &config.verifier);
 
     let mut out = String::new();
     out.push_str(&format!("# Rivet session for {}\n\n", app_file.display()));
@@ -103,22 +103,22 @@ pub(crate) fn render_context(app_file: &Path) -> Result<String, Diagnostic> {
         out.push('\n');
     }
 
-    out.push_str("## Gauntlet config\n\n");
-    let gauntlet = &config.gauntlet;
-    out.push_str(&format!("- max_complexity: {}\n", gauntlet.max_complexity));
+    out.push_str("## Verifier config\n\n");
+    let verifier = &config.verifier;
+    out.push_str(&format!("- max_complexity: {}\n", verifier.max_complexity));
     out.push_str(&format!(
         "- stories_required: {}\n",
-        gauntlet.stories_required
+        verifier.stories_required
     ));
     out.push_str(&format!(
         "- strict_type_checking: {}\n",
-        gauntlet.strict_type_checking
+        verifier.strict_type_checking
     ));
     out.push_str(&format!(
         "- duplicate_code: {:?}\n",
-        gauntlet.duplicate_code
+        verifier.duplicate_code
     ));
-    out.push_str(&format!("- dead_code: {:?}\n", gauntlet.dead_code));
+    out.push_str(&format!("- dead_code: {:?}\n", verifier.dead_code));
     out.push('\n');
 
     out.push_str("## Diagnostics\n\n");
@@ -160,7 +160,7 @@ mod tests {
         let markdown = render_context(&app).expect("context renders");
         assert!(markdown.contains("GET /ping"), "{markdown}");
         assert!(markdown.contains("US-001"), "{markdown}");
-        assert!(markdown.contains("## Gauntlet config"), "{markdown}");
+        assert!(markdown.contains("## Verifier config"), "{markdown}");
     }
 
     #[test]

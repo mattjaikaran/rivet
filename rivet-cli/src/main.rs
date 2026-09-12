@@ -3,7 +3,7 @@
 //!
 //! Every command reports failures as structured, machine-readable JSON on
 //! stderr (see [`diagnostic::Diagnostic`]) so agents and humans see the same
-//! error. A command may return several diagnostics at once — the Gauntlet
+//! error. A command may return several diagnostics at once — the Verifier
 //! emits one per finding — so the CLI prints every line before failing.
 //!
 //! Every invocation is recorded in the project context store before it runs
@@ -19,7 +19,7 @@
 mod commands;
 mod config;
 mod diagnostic;
-mod gauntlet;
+mod verifier;
 mod mcp;
 mod parser;
 mod plugin;
@@ -73,7 +73,7 @@ enum Command {
         #[arg(long)]
         backend_port: Option<u16>,
     },
-    /// Run the Gauntlet and report the phase-1 MQI grade (pillar 06).
+    /// Run the Verifier and report the phase-1 MQI grade (pillar 06).
     Audit {
         /// Path to the app module (defaults to `app.py`).
         #[arg(default_value = "app.py")]
@@ -115,7 +115,7 @@ enum Command {
         #[arg(long)]
         push: bool,
     },
-    /// Auto-fix what the Gauntlet can deterministically repair (phase 3).
+    /// Auto-fix what the Verifier can deterministically repair (phase 3).
     Fix {
         /// Path to the app module (defaults to `app.py`).
         #[arg(default_value = "app.py")]

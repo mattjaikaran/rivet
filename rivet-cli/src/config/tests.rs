@@ -12,13 +12,13 @@ fn defaults_apply_without_a_file() {
 }
 
 #[test]
-fn gauntlet_defaults_apply_without_a_section() {
+fn verifier_defaults_apply_without_a_section() {
     let config = RivetConfig::default();
-    assert_eq!(config.gauntlet.max_complexity, 8);
-    assert!(config.gauntlet.stories_required);
-    assert!(config.gauntlet.strict_type_checking);
-    assert_eq!(config.gauntlet.duplicate_code, Severity::Blocker);
-    assert_eq!(config.gauntlet.dead_code, Severity::Warning);
+    assert_eq!(config.verifier.max_complexity, 8);
+    assert!(config.verifier.stories_required);
+    assert!(config.verifier.strict_type_checking);
+    assert_eq!(config.verifier.duplicate_code, Severity::Blocker);
+    assert_eq!(config.verifier.dead_code, Severity::Warning);
 }
 
 #[test]
@@ -27,7 +27,7 @@ fn unknown_sections_are_ignored() {
 [project]
 name = "orders"
 
-[gauntlet]
+[verifier]
 max_complexity = 8
 
 [telemetry]
@@ -85,9 +85,9 @@ fn a_landed_flag_is_no_longer_unimplemented() {
 }
 
 #[test]
-fn gauntlet_section_parses_thresholds_and_severities() {
+fn verifier_section_parses_thresholds_and_severities() {
     let raw = r#"
-[gauntlet]
+[verifier]
 max_complexity = 5
 stories_required = false
 strict_type_checking = false
@@ -95,17 +95,17 @@ duplicate_code = "warn"
 dead_code = "block"
 "#;
     let config: RivetConfig = toml::from_str(raw).expect("parse");
-    assert_eq!(config.gauntlet.max_complexity, 5);
-    assert!(!config.gauntlet.stories_required);
-    assert!(!config.gauntlet.strict_type_checking);
-    assert_eq!(config.gauntlet.duplicate_code, Severity::Warning);
-    assert_eq!(config.gauntlet.dead_code, Severity::Blocker);
+    assert_eq!(config.verifier.max_complexity, 5);
+    assert!(!config.verifier.stories_required);
+    assert!(!config.verifier.strict_type_checking);
+    assert_eq!(config.verifier.duplicate_code, Severity::Warning);
+    assert_eq!(config.verifier.dead_code, Severity::Blocker);
 }
 
 #[test]
 fn malformed_severity_word_fails_the_parse() {
     let raw = r#"
-[gauntlet]
+[verifier]
 dead_code = "sometimes"
 "#;
     let config: Result<RivetConfig, _> = toml::from_str(raw);

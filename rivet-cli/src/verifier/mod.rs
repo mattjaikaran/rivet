@@ -1,4 +1,4 @@
-//! The Gauntlet: compile-time quality rules that run between parse and
+//! The Verifier: compile-time quality rules that run between parse and
 //! generate.
 //!
 //! Each rule is one small module beside this one, mirroring the parser
@@ -7,12 +7,12 @@
 //! findings into [`Diagnostic`]s on the standard JSON path: blockers stop
 //! the build, warnings report and let it continue.
 //!
-//! Severity is policy: the `[gauntlet]` config decides which rules run and
-//! at which severity (see [`crate::config::GauntletConfig`]). Rules that
+//! Severity is policy: the `[verifier]` config decides which rules run and
+//! at which severity (see [`crate::config::VerifierConfig`]). Rules that
 //! guard a hard guarantee (`complexity`, `story_link`, `type_strictness`)
 //! are blockers when enabled.
 //!
-//! Error codes owned by the Gauntlet:
+//! Error codes owned by the Verifier:
 //!
 //! | code | rule | meaning |
 //! | --- | --- | --- |
@@ -22,9 +22,9 @@
 //! | E2045 | [`story_link`] | route without a story ID (pillar 05) |
 //! | E2046 | [`type_strict`] | module construct the engine cannot translate |
 //!
-//! The agentic-JSON shape follows `docs/pillars/07-the-gauntlet.md`.
+//! The agentic-JSON shape follows `docs/pillars/07-the-verifier.md`.
 
-use crate::config::GauntletConfig;
+use crate::config::VerifierConfig;
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::parser::python::ParsedModule;
 use tree_sitter::Node;
@@ -122,7 +122,7 @@ impl Finding {
 /// Everything a rule needs to inspect one module.
 pub(crate) struct Context<'a> {
     pub module: &'a ParsedModule,
-    pub config: &'a GauntletConfig,
+    pub config: &'a VerifierConfig,
     /// The severity the config resolved for this rule.
     pub severity: Severity,
 }
@@ -151,15 +151,15 @@ static RULES: &[&dyn Rule] = &[
 /// Findings come back as diagnostics sorted by source line so the output is
 /// stable. The caller separates blockers (fail the build) from warnings
 /// (report and continue).
-pub fn run_gauntlet(module: &ParsedModule, config: &GauntletConfig) -> Vec<Diagnostic> {
+pub fn run_verifier(module: &ParsedModule, config: &VerifierConfig) -> Vec<Diagnostic> {
     run_rules(module, config, RULES)
 }
 
 /// Run a specific rule list. Tests use this to exercise one rule or a
-/// stand-in; production goes through [`run_gauntlet`].
+/// stand-in; production goes through [`run_verifier`].
 fn run_rules(
     module: &ParsedModule,
-    config: &GauntletConfig,
+    config: &VerifierConfig,
     rules: &[&dyn Rule],
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
@@ -185,7 +185,7 @@ fn run_rules(
 #[cfg(test)]
 pub(crate) fn run_rule(
     module: &ParsedModule,
-    config: &GauntletConfig,
+    config: &VerifierConfig,
     rule: &dyn Rule,
 ) -> Vec<Diagnostic> {
     run_rules(module, config, &[rule])
@@ -195,7 +195,7 @@ pub(crate) fn run_rule(
 ///
 /// Rules with hard guarantees are blockers when enabled; `duplicate_code`
 /// and `dead_code` take their severity from the config.
-fn policy_for(rule: &dyn Rule, config: &GauntletConfig) -> Option<Severity> {
+fn policy_for(rule: &dyn Rule, config: &VerifierConfig) -> Option<Severity> {
     match rule.id() {
         "complexity" => Some(Severity::Blocker),
         "story_link" => config.stories_required.then_some(Severity::Blocker),
@@ -244,7 +244,7 @@ def ping() -> dict:
     #[test]
     fn registered_rule_findings_become_json_diagnostics() {
         let parsed = module();
-        let diagnostics = run_rule(&parsed, &GauntletConfig::default(), &AlwaysBlock);
+        let diagnostics = run_rule(&parsed, &VerifierConfig::default(), &AlwaysBlock);
         assert_eq!(diagnostics.len(), 1);
         let json: serde_json::Value =
             serde_json::from_str(&diagnostics[0].to_json()).expect("payload must parse");
@@ -264,7 +264,7 @@ def ping() -> dict:
     #[test]
     fn unknown_rule_falls_back_to_its_default_severity() {
         let parsed = module();
-        let diagnostics = run_rule(&parsed, &GauntletConfig::default(), &AlwaysBlock);
+        let diagnostics = run_rule(&parsed, &VerifierConfig::default(), &AlwaysBlock);
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].severity, Severity::Blocker);
     }
@@ -272,9 +272,9 @@ def ping() -> dict:
     #[test]
     fn disabled_story_rule_produces_no_findings() {
         let parsed = module();
-        let config = GauntletConfig {
+        let config = VerifierConfig {
             stories_required: false,
-            ..GauntletConfig::default()
+            ..VerifierConfig::default()
         };
         let diagnostics = run_rule(&parsed, &config, &story_link::StoryLink);
         assert!(diagnostics.is_empty());
@@ -295,7 +295,7 @@ def b(request: dict) -> dict:
 "#;
         let parsed = parse_python_module(source, "app", "app.py").expect("module must parse");
         let rules: &[&dyn Rule] = &[&duplicate::Duplicate, &story_link::StoryLink];
-        let diagnostics = run_rules(&parsed, &GauntletConfig::default(), rules);
+        let diagnostics = run_rules(&parsed, &VerifierConfig::default(), rules);
         let lines: Vec<usize> = diagnostics.iter().map(|d| d.line.unwrap_or(0)).collect();
         // The duplicate fires on line 4 (first shared body), the missing
         // story on line 8; sorted output must lead with the earlier line.
@@ -338,7 +338,7 @@ def gamma() -> dict:
     #[test]
     fn every_rule_diagnostic_carries_a_non_empty_suggested_fix() {
         let parsed = parse_python_module(EVERY_RULE, "app", "app.py").expect("module must parse");
-        let diagnostics = run_gauntlet(&parsed, &GauntletConfig::default());
+        let diagnostics = run_verifier(&parsed, &VerifierConfig::default());
         let codes: Vec<&str> = diagnostics.iter().map(|d| d.error_code.as_str()).collect();
         for code in ["E2043", "E2044", "E2045", "E2046"] {
             assert!(codes.contains(&code), "expected {code} in {codes:?}");

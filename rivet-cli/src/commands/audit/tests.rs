@@ -52,9 +52,9 @@ fn module(source: &str) -> crate::parser::python::ParsedModule {
     parse_python_module(source, "app", "app.py").expect("module must parse")
 }
 
-fn report_for(source: &str, config: &GauntletConfig) -> Report {
+fn report_for(source: &str, config: &VerifierConfig) -> Report {
     let parsed = module(source);
-    let findings = gauntlet::run_gauntlet(&parsed, config);
+    let findings = verifier::run_verifier(&parsed, config);
     Report::build(&parsed.file, &findings, config)
 }
 
@@ -109,7 +109,7 @@ fn grade_bands_cover_the_scale() {
 
 #[test]
 fn clean_module_scores_a_plus_everywhere() {
-    let report = report_for(CLEAN, &GauntletConfig::default());
+    let report = report_for(CLEAN, &VerifierConfig::default());
     assert_eq!(report.overall, 100.0);
     assert_eq!(report.grade(), "A+");
     assert_eq!(report.scored.len(), 4);
@@ -125,7 +125,7 @@ fn clean_module_scores_a_plus_everywhere() {
 fn blocker_findings_deduct_twenty_points() {
     // One blocker on each scored dimension: every score is 80 and the
     // weighted mean is exactly 80.
-    let config = GauntletConfig::default();
+    let config = VerifierConfig::default();
     let findings = [
         finding("E2042", Severity::Blocker),
         finding("E2043", Severity::Blocker),
@@ -143,7 +143,7 @@ fn blocker_findings_deduct_twenty_points() {
 
 #[test]
 fn warning_findings_deduct_ten_points_and_floor_at_zero() {
-    let config = GauntletConfig::default();
+    let config = VerifierConfig::default();
     let findings = [
         finding("E2044", Severity::Warning),
         finding("E2044", Severity::Warning),
@@ -172,7 +172,7 @@ fn warning_findings_deduct_ten_points_and_floor_at_zero() {
 fn overall_grade_weights_dimensions() {
     // One blocker on the medium duplicate dimension only: 80 carries
     // weight 2 against three 100s of weight 3, so the mean is not 95.
-    let config = GauntletConfig::default();
+    let config = VerifierConfig::default();
     let findings = [finding("E2043", Severity::Blocker)];
     let report = Report::build("app.py", &findings, &config);
     assert_eq!(report.overall, 96.4);
@@ -182,7 +182,7 @@ fn overall_grade_weights_dimensions() {
 
 #[test]
 fn dead_code_warning_drops_only_that_dimension() {
-    let report = report_for(DEAD_CODE, &GauntletConfig::default());
+    let report = report_for(DEAD_CODE, &VerifierConfig::default());
     let dead = outcome(&report, "dead_code");
     assert_eq!((dead.blockers, dead.warnings), (0, 1));
     assert_eq!(dead.score, 90.0);
@@ -192,7 +192,7 @@ fn dead_code_warning_drops_only_that_dimension() {
 
 #[test]
 fn duplicate_blocker_drops_the_redundant_code_dimension() {
-    let report = report_for(DUPLICATES, &GauntletConfig::default());
+    let report = report_for(DUPLICATES, &VerifierConfig::default());
     let duplicate = outcome(&report, "duplicate_code");
     assert_eq!((duplicate.blockers, duplicate.warnings), (1, 0));
     assert_eq!(duplicate.score, 80.0);
@@ -201,7 +201,7 @@ fn duplicate_blocker_drops_the_redundant_code_dimension() {
 
 #[test]
 fn story_gate_findings_do_not_move_the_grade() {
-    let report = report_for(STORYLESS, &GauntletConfig::default());
+    let report = report_for(STORYLESS, &VerifierConfig::default());
     assert_eq!(report.story_violations, 1);
     assert!(report.story_enabled);
     assert_eq!(report.overall, 100.0);
@@ -210,9 +210,9 @@ fn story_gate_findings_do_not_move_the_grade() {
 
 #[test]
 fn disabled_rule_moves_its_dimension_to_not_scored() {
-    let config = GauntletConfig {
+    let config = VerifierConfig {
         strict_type_checking: false,
-        ..GauntletConfig::default()
+        ..VerifierConfig::default()
     };
     let report = report_for(CLEAN, &config);
     assert_eq!(report.scored.len(), 3);
@@ -229,7 +229,7 @@ fn disabled_rule_moves_its_dimension_to_not_scored() {
 
 #[test]
 fn json_breakdown_is_parseable_and_complete() {
-    let report = report_for(DEAD_CODE, &GauntletConfig::default());
+    let report = report_for(DEAD_CODE, &VerifierConfig::default());
     let value: serde_json::Value =
         serde_json::from_str(&report.to_json()).expect("JSON must parse");
     assert_eq!(value["grade"], "A+");
@@ -255,7 +255,7 @@ fn json_breakdown_is_parseable_and_complete() {
 
 #[test]
 fn text_breakdown_leads_with_the_grade() {
-    let report = report_for(CLEAN, &GauntletConfig::default());
+    let report = report_for(CLEAN, &VerifierConfig::default());
     let text = report.to_text();
     assert!(text.starts_with("Grade: A+ (100.0)"));
     assert!(text.contains("Cyclomatic Complexity"));

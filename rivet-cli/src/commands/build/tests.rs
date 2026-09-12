@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 const FIXTURE_APP: &str = "from rivet import api\n\n@api.get(\"/ping\", stories=[\"US-001\"])\ndef ping() -> dict:\n    return {\"status\": \"pong\"}\n\n@api.post(\"/echo\", stories=[\"US-002\"])\ndef echo(request: dict) -> dict:\n    return {\"echo\": request}\n";
 
 #[test]
-fn gauntlet_blocker_stops_build_without_writing_a_crate() {
+fn verifier_blocker_stops_build_without_writing_a_crate() {
     let dir = ScratchDir::new("build-storyless");
     let app = dir.join("app.py");
     fs::write(
@@ -39,7 +39,7 @@ fn dead_code_warns_through_the_gate_with_default_config() {
     )
     .expect("write app.py");
     let module = parse_python_file(&app).expect("module parses");
-    let findings = gauntlet::run_gauntlet(&module, &config::RivetConfig::default().gauntlet);
+    let findings = verifier::run_verifier(&module, &config::RivetConfig::default().verifier);
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].severity, Severity::Warning);
     assert_eq!(findings[0].error_code, "E2044");

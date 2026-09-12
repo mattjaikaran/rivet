@@ -170,7 +170,7 @@ pub struct RouteDefinition {
     pub query_params: Vec<RouteParam>,
     /// Rust-safe handler name, identical to the DSL function name.
     pub handler_name: String,
-    /// User-story IDs; the Gauntlet requires at least one per endpoint.
+    /// User-story IDs; the Verifier requires at least one per endpoint.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stories: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

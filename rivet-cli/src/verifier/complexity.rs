@@ -11,7 +11,7 @@
 //!
 //! `else` arms and plain blocks add nothing. The walker counts nodes in the
 //! body subtree, so nested branches accumulate. A handler whose score
-//! exceeds `[gauntlet] max_complexity` fails the build; the `ast_path` names
+//! exceeds `[verifier] max_complexity` fails the build; the `ast_path` names
 //! the decision that crossed the limit, for example
 //! `create_order.if_statement.2`.
 //!
@@ -19,7 +19,7 @@
 //! only trip this rule once control flow lands in the DSL; the walker and
 //! its contract are exercised directly against the syntax tree.
 
-use crate::gauntlet::{Context, Finding, Rule, named_children};
+use crate::verifier::{Context, Finding, Rule, named_children};
 use crate::parser::python::{DeclKind, Declaration, ParsedModule};
 use tree_sitter::Node;
 
@@ -142,7 +142,7 @@ impl Rule for Complexity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gauntlet::run_gauntlet;
+    use crate::verifier::run_verifier;
     use crate::parser::NamedChildren;
     use crate::parser::node_text;
     use rivet_core::ir::ServiceBlueprint;
@@ -232,7 +232,7 @@ def create_order(request: dict) -> dict:
     #[test]
     fn handler_above_the_limit_fails_with_e2042_and_an_ast_path() {
         let module = raw_module(COMPLEX);
-        let diagnostics = run_gauntlet(&module, &crate::config::GauntletConfig::default());
+        let diagnostics = run_verifier(&module, &crate::config::VerifierConfig::default());
         assert_eq!(diagnostics.len(), 1);
         let diagnostic = &diagnostics[0];
         assert_eq!(diagnostic.error_code, "E2042");
@@ -257,17 +257,17 @@ def ping() -> dict:
     return {"status": "pong"}
 "#,
         );
-        let diagnostics = run_gauntlet(&module, &crate::config::GauntletConfig::default());
+        let diagnostics = run_verifier(&module, &crate::config::VerifierConfig::default());
         assert!(diagnostics.is_empty());
     }
 
     #[test]
     fn higher_config_limit_lets_the_handler_pass() {
         let module = raw_module(COMPLEX);
-        let config = crate::config::GauntletConfig {
+        let config = crate::config::VerifierConfig {
             max_complexity: 10,
-            ..crate::config::GauntletConfig::default()
+            ..crate::config::VerifierConfig::default()
         };
-        assert!(run_gauntlet(&module, &config).is_empty());
+        assert!(run_verifier(&module, &config).is_empty());
     }
 }

@@ -3,7 +3,7 @@
 //! `rivet mcp` serves the Rivet tools over MCP's stdio transport so AI
 //! agents can parse a DSL module, audit it, and search the phase-2 vector
 //! index without shelling out. The server is transport only: the tools in
-//! [`tools`] call the same parser, Gauntlet, audit, and store functions
+//! [`tools`] call the same parser, Verifier, audit, and store functions
 //! the CLI commands call.
 //!
 //! The SDK is `rmcp` 3.x, the official Rust SDK for the Model Context

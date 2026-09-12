@@ -19,7 +19,7 @@ mod deliver;
 mod provider;
 
 use deliver::{
-    branch_name, err, failed, feedback_json, gauntlet_blockers, generated_summary, git_preflight,
+    branch_name, err, failed, feedback_json, verifier_blockers, generated_summary, git_preflight,
     grade_from_audit, open_pr, repair, run_git, write_text,
 };
 
@@ -115,7 +115,7 @@ async fn plan_async(
         .to_string();
     let file_label = app_file.display().to_string();
 
-    // Converge: parse + Gauntlet until clean. `--from` fails immediately; the provider gets one feedback round.
+    // Converge: parse + Verifier until clean. `--from` fails immediately; the provider gets one feedback round.
     let mut attempt = 0;
     let mut module = loop {
         attempt += 1;
@@ -135,7 +135,7 @@ async fn plan_async(
                 .await?;
             }
             Ok(parsed) => {
-                let blockers = gauntlet_blockers(&parsed, &config);
+                let blockers = verifier_blockers(&parsed, &config);
                 if blockers.is_empty() {
                     break parsed;
                 }
@@ -175,7 +175,7 @@ async fn plan_async(
             Err(parse_error) => return Err(failed("compile", vec![parse_error])),
             Ok(module) => module,
         };
-        let blockers = gauntlet_blockers(&revised, &config);
+        let blockers = verifier_blockers(&revised, &config);
         if !blockers.is_empty() {
             return Err(failed("compile", blockers));
         }

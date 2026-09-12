@@ -204,7 +204,7 @@ fn a_name_that_only_resembles_a_reserved_one_is_accepted() {
 /// row is only "legal" if the emitted crate actually builds. One aggregate
 /// app per target pays that cost once instead of once per row.
 ///
-/// Every handler returns a distinct literal. The Gauntlet's duplicate-code
+/// Every handler returns a distinct literal. The Verifier's duplicate-code
 /// rule rejects one body repeated across routes (`E2043`), and that rule is
 /// about the body, not the name, so an identical body would make this test
 /// fail for a reason the test is not asking about.

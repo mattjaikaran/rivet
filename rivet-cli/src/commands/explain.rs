@@ -14,7 +14,7 @@
 
 use crate::config::RivetConfig;
 use crate::diagnostic::Diagnostic;
-use crate::gauntlet;
+use crate::verifier;
 use crate::parser::python::parse_python_file;
 use crate::store;
 use crate::store::vector::{RouteSummary, digest, index_blueprint, search};
@@ -47,7 +47,7 @@ pub(crate) struct Explanation {
     pub commit: Option<String>,
     /// The module digest recorded against the current commit.
     pub digest: String,
-    /// Gauntlet findings on the module.
+    /// Verifier findings on the module.
     pub findings: usize,
 }
 
@@ -68,10 +68,10 @@ pub(crate) async fn explain_async(
     })?;
 
     let module = parse_python_file(app_file)?;
-    // Run the gauntlet too so the explanation carries the module's
+    // Run the verifier too so the explanation carries the module's
     // findings; a module that fails the build is usually the module the
     // symptom points at.
-    let findings = gauntlet::run_gauntlet(&module, &config.gauntlet);
+    let findings = verifier::run_verifier(&module, &config.verifier);
 
     let routes = route_summaries(&module);
     let module_text = format!("{:?}", module.blueprint);
@@ -187,10 +187,10 @@ pub fn run_explain(symptom: &str, app_file: &Path) -> Result<(), Vec<Diagnostic>
         None => println!("Not a git checkout; no commit fingerprint recorded"),
     }
     if explanation.findings == 0 {
-        println!("Gauntlet: no findings on the module");
+        println!("Verifier: no findings on the module");
     } else {
         println!(
-            "Gauntlet: {} finding(s) on the module",
+            "Verifier: {} finding(s) on the module",
             explanation.findings
         );
     }

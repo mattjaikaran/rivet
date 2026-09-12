@@ -37,7 +37,7 @@ pub fn run_trace(symptom: &str, app_file: &Path) -> Result<(), Vec<Diagnostic>> 
 fn build_trace(symptom: &str, app_file: &Path) -> Result<String, Vec<Diagnostic>> {
     let project_dir = store::project_dir_for(app_file);
 
-    // Parse the module and load the `[gauntlet]` config exactly like
+    // Parse the module and load the `[verifier]` config exactly like
     // `rivet build`, so the DSL line numbers and the generated code come
     // from the same source of truth the compiler would see.
     let config = RivetConfig::load(&project_dir).map_err(|message| {
@@ -150,10 +150,10 @@ fn build_trace(symptom: &str, app_file: &Path) -> Result<String, Vec<Diagnostic>
         None => out.push_str("Not a git checkout; no commit fingerprint recorded\n"),
     }
     if explanation.findings == 0 {
-        out.push_str("Gauntlet: no findings on the module\n");
+        out.push_str("Verifier: no findings on the module\n");
     } else {
         out.push_str(&format!(
-            "Gauntlet: {} finding(s) on the module\n",
+            "Verifier: {} finding(s) on the module\n",
             explanation.findings
         ));
     }
@@ -292,6 +292,6 @@ mod tests {
             "trace text:\n{text}"
         );
         assert!(text.contains("Current commit "), "trace text:\n{text}");
-        assert!(text.contains("Gauntlet:"), "trace text:\n{text}");
+        assert!(text.contains("Verifier:"), "trace text:\n{text}");
     }
 }

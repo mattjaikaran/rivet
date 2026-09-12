@@ -4,7 +4,7 @@
 use super::provider;
 use crate::config::RivetConfig;
 use crate::diagnostic::{Diagnostic, Severity};
-use crate::gauntlet;
+use crate::verifier;
 use crate::parser::python::ParsedModule;
 use serde_json::Value;
 use std::path::Path;
@@ -101,8 +101,8 @@ pub(super) fn failed(what: &str, underlying: Vec<Diagnostic>) -> Vec<Diagnostic>
     out
 }
 
-pub(super) fn gauntlet_blockers(module: &ParsedModule, config: &RivetConfig) -> Vec<Diagnostic> {
-    gauntlet::run_gauntlet(module, &config.gauntlet)
+pub(super) fn verifier_blockers(module: &ParsedModule, config: &RivetConfig) -> Vec<Diagnostic> {
+    verifier::run_verifier(module, &config.verifier)
         .into_iter()
         .filter(|finding| finding.severity == Severity::Blocker)
         .collect()

@@ -2,12 +2,12 @@
 //!
 //! Every failure the transpiler can raise becomes a [`Diagnostic`]. The CLI
 //! prints it to stderr as one JSON object so AI agents can act on it, and as a
-//! one-line human summary. The shape follows the Gauntlet error contract from
-//! the design docs (`docs/pillars/07-the-gauntlet.md`).
+//! one-line human summary. The shape follows the Verifier error contract from
+//! the design docs (`docs/pillars/07-the-verifier.md`).
 //!
 //! Error-code ranges: the parser front end owns `E1xxx`, the generator and
-//! the Gauntlet own `E2xxx`. The Gauntlet rules (see
-//! [`crate::gauntlet`]) report `E2042`-`E2046`.
+//! the Verifier own `E2xxx`. The Verifier rules (see
+//! [`crate::verifier`]) report `E2042`-`E2046`.
 
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer};
@@ -15,9 +15,9 @@ use serde_json::Value;
 
 /// Severity of a diagnostic.
 ///
-/// Phase 0 reported only blockers. The Gauntlet added warnings: a warning
+/// Phase 0 reported only blockers. The Verifier added warnings: a warning
 /// prints to stderr and lets the build continue, a blocker stops it. The
-/// `[gauntlet]` config maps rule outcomes to these severities, so the same
+/// `[verifier]` config maps rule outcomes to these severities, so the same
 /// enum deserializes from `rivet.toml`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {

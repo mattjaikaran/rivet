@@ -2,14 +2,14 @@
 //!
 //! `rivet build` reads this file from the directory that contains app.py.
 //! Unknown sections and keys are ignored, so the file format can grow ahead
-//! of the engine. The `[gauntlet]` section tunes the compile-time quality
-//! rules in [`crate::gauntlet`].
+//! of the engine. The `[verifier]` section tunes the compile-time quality
+//! rules in [`crate::verifier`].
 
 use crate::diagnostic::Severity;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// The `[gauntlet]` section: thresholds and per-rule outcomes.
+/// The `[verifier]` section: thresholds and per-rule outcomes.
 ///
 /// Defaults keep a minimal project green: `max_complexity` 8, stories
 /// required, strict type checking on, duplicate handlers blocked, and dead
@@ -17,7 +17,7 @@ use std::path::Path;
 /// threshold, setting a flag false, or choosing `warn` as the outcome.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(default)]
-pub struct GauntletConfig {
+pub struct VerifierConfig {
     /// Maximum cyclomatic complexity for a handler or DTO class.
     pub max_complexity: usize,
     /// Require at least one story ID on every route (pillar 05).
@@ -30,7 +30,7 @@ pub struct GauntletConfig {
     pub dead_code: Severity,
 }
 
-impl Default for GauntletConfig {
+impl Default for VerifierConfig {
     fn default() -> Self {
         Self {
             max_complexity: 8,
@@ -286,7 +286,7 @@ pub struct RivetConfig {
     pub environments: Environments,
     /// Compile-time quality-rule settings. Defaults apply when the section
     /// is absent.
-    pub gauntlet: GauntletConfig,
+    pub verifier: VerifierConfig,
     /// Plugins composed into the generated app at compile time, keyed by
     /// plugin name. An empty table means the app has no plugins.
     pub plugins: BTreeMap<String, PluginConfig>,

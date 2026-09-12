@@ -7,10 +7,10 @@
 //! (the blueprint carries exactly the reachable closure, so any declared
 //! DTO missing from it is unreferenced).
 //!
-//! Findings report at `[gauntlet] dead_code` severity (warning by default)
+//! Findings report at `[verifier] dead_code` severity (warning by default)
 //! so a build can carry reported debt without breaking.
 
-use crate::gauntlet::{Context, Finding, Rule, named_children};
+use crate::verifier::{Context, Finding, Rule, named_children};
 use crate::parser::python::{DeclKind, ParsedModule};
 use std::collections::HashMap;
 use tree_sitter::Node;
@@ -159,9 +159,9 @@ impl Rule for DeadCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::GauntletConfig;
+    use crate::config::VerifierConfig;
     use crate::diagnostic::Severity;
-    use crate::gauntlet::run_rule;
+    use crate::verifier::run_rule;
     use crate::parser::python::parse_python_module;
 
     fn module(source: &str) -> crate::parser::python::ParsedModule {
@@ -185,7 +185,7 @@ def ping() -> dict:
     #[test]
     fn unused_helper_and_dto_warn_by_default() {
         let parsed = module(WITH_HELPER);
-        let diagnostics = run_rule(&parsed, &GauntletConfig::default(), &DeadCode);
+        let diagnostics = run_rule(&parsed, &VerifierConfig::default(), &DeadCode);
         assert_eq!(diagnostics.len(), 2);
         assert!(diagnostics.iter().all(|d| d.error_code == "E2044"));
         assert!(diagnostics.iter().all(|d| d.severity == Severity::Warning));
@@ -201,9 +201,9 @@ def ping() -> dict:
     #[test]
     fn configured_blocker_outcome_stops_the_build() {
         let parsed = module(WITH_HELPER);
-        let config = GauntletConfig {
+        let config = VerifierConfig {
             dead_code: Severity::Blocker,
-            ..GauntletConfig::default()
+            ..VerifierConfig::default()
         };
         let diagnostics = run_rule(&parsed, &config, &DeadCode);
         assert_eq!(diagnostics.len(), 2);
@@ -226,7 +226,7 @@ def ping() -> dict:
     return {"status": "pong"}
 "#;
         let parsed = module(source);
-        let diagnostics = run_rule(&parsed, &GauntletConfig::default(), &DeadCode);
+        let diagnostics = run_rule(&parsed, &VerifierConfig::default(), &DeadCode);
         // Only `render` is dead; `format_price` is called by it.
         assert_eq!(diagnostics.len(), 1);
         assert!(diagnostics[0].message.contains("render"));
@@ -245,7 +245,7 @@ def create(request: Order) -> dict:
     return {"ok": True}
 "#;
         let parsed = module(source);
-        let diagnostics = run_rule(&parsed, &GauntletConfig::default(), &DeadCode);
+        let diagnostics = run_rule(&parsed, &VerifierConfig::default(), &DeadCode);
         assert!(diagnostics.is_empty());
     }
 }

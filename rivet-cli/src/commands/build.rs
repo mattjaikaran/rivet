@@ -1,14 +1,14 @@
-//! `rivet build`: parse the DSL entry point, run the Gauntlet, generate the
+//! `rivet build`: parse the DSL entry point, run the Verifier, generate the
 //! Rust crate, and compile it with cargo.
 //!
-//! The Gauntlet runs between parse and generate. Its blocker findings stop
+//! The Verifier runs between parse and generate. Its blocker findings stop
 //! the command before any crate is written; its warnings print to stderr
 //! and let the build continue. All diagnostics share the agentic-JSON path
 //! so a driver (human or agent) sees every finding at once.
 
 use crate::config::RivetConfig;
 use crate::diagnostic::{Diagnostic, Severity};
-use crate::gauntlet;
+use crate::verifier;
 use crate::parser::python::parse_python_file;
 use crate::transpiler::rust::{AssetEmbedding, generate_project};
 use std::path::Path;
@@ -52,11 +52,11 @@ pub fn run_build(app_file: &Path, target: BuildTarget) -> Result<(), Vec<Diagnos
 
     let module = parse_python_file(app_file).map_err(|diagnostic| vec![diagnostic])?;
 
-    // The Gauntlet gates generation. Warnings report; blockers stop the
+    // The Verifier gates generation. Warnings report; blockers stop the
     // build with JSON on stderr and no crate written.
     let mut warnings = Vec::new();
     let mut blockers = Vec::new();
-    for diagnostic in gauntlet::run_gauntlet(&module, &config.gauntlet) {
+    for diagnostic in verifier::run_verifier(&module, &config.verifier) {
         match diagnostic.severity {
             Severity::Warning => warnings.push(diagnostic),
             Severity::Blocker => blockers.push(diagnostic),

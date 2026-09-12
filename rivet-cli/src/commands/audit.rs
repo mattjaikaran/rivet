@@ -1,6 +1,6 @@
 //! `rivet audit`: report the phase-1 MQI grade for one DSL module.
 //!
-//! The audit parses the module, runs the same Gauntlet rules as `rivet
+//! The audit parses the module, runs the same Verifier rules as `rivet
 //! build`, and folds the findings into the Matt Quality Index grade from
 //! pillar 06 (`docs/pillars/06-matt-quality-index.md`).
 //!
@@ -37,7 +37,7 @@
 //! Test coverage, mutation survival, and documentation coverage measure
 //! the generated Rust crate, so they stay Rust-side until the
 //! generated-code test story exists. The breakdown lists them under
-//! `not_scored` with their reasons. A dimension whose rule the `[gauntlet]`
+//! `not_scored` with their reasons. A dimension whose rule the `[verifier]`
 //! config disables also lands in `not_scored`.
 //!
 //! Story-gate findings (E2045) do not move the grade: a storyless route
@@ -45,9 +45,9 @@
 //! breakdown reports them under `story_gate` so the audit cannot look clean
 //! on a module that fails the build.
 
-use crate::config::{GauntletConfig, RivetConfig};
+use crate::config::{VerifierConfig, RivetConfig};
 use crate::diagnostic::{Diagnostic, Severity};
-use crate::gauntlet;
+use crate::verifier;
 use crate::parser::python::parse_python_file;
 use serde_json::Value;
 use std::path::Path;
@@ -59,7 +59,7 @@ const WARNING_PENALTY: i64 = 10;
 
 /// One pillar-06 dimension the phase-1 subset can score.
 struct Dimension {
-    /// Machine key; matches the `[gauntlet]` config key where one exists.
+    /// Machine key; matches the `[verifier]` config key where one exists.
     key: &'static str,
     /// Pillar-06 label.
     label: &'static str,
@@ -67,11 +67,11 @@ struct Dimension {
     weight: &'static str,
     /// Numeric weight: high = 3, medium = 2 (critical = 4, reserved).
     weight_n: i64,
-    /// Gauntlet error code whose findings feed this dimension.
+    /// Verifier error code whose findings feed this dimension.
     code: &'static str,
 }
 
-/// The scored dimensions, in Gauntlet rule order.
+/// The scored dimensions, in Verifier rule order.
 static DIMENSIONS: [Dimension; 4] = [
     Dimension {
         key: "complexity",
@@ -158,8 +158,8 @@ struct Report {
 }
 
 impl Report {
-    /// Fold Gauntlet findings and the config into a report.
-    fn build(file: &str, findings: &[Diagnostic], config: &GauntletConfig) -> Report {
+    /// Fold Verifier findings and the config into a report.
+    fn build(file: &str, findings: &[Diagnostic], config: &VerifierConfig) -> Report {
         let scored: Vec<DimensionOutcome> = DIMENSIONS
             .iter()
             .filter(|dimension| dimension_enabled(dimension, config))
@@ -180,7 +180,7 @@ impl Report {
                 key: dimension.key,
                 label: dimension.label,
                 weight: dimension.weight,
-                reason: "rule disabled in the [gauntlet] config".into(),
+                reason: "rule disabled in the [verifier] config".into(),
             });
         }
 
@@ -290,11 +290,11 @@ impl Report {
     }
 }
 
-/// Whether a dimension's Gauntlet rule is enabled by the config.
+/// Whether a dimension's Verifier rule is enabled by the config.
 ///
 /// Complexity, duplicate code, and dead code have no off switch; type
 /// strictness follows `strict_type_checking`.
-fn dimension_enabled(dimension: &Dimension, config: &GauntletConfig) -> bool {
+fn dimension_enabled(dimension: &Dimension, config: &VerifierConfig) -> bool {
     match dimension.key {
         "type_strictness" => config.strict_type_checking,
         _ => true,
@@ -372,7 +372,7 @@ fn plural(count: usize) -> &'static str {
     if count == 1 { "" } else { "s" }
 }
 
-/// Parse the module, run the Gauntlet, and fold the findings into a
+/// Parse the module, run the Verifier, and fold the findings into a
 /// report. Findings do not fail the audit: it is a measurement, not a
 /// gate. Only a config or parse failure returns diagnostics.
 fn build_report(app_file: &Path) -> Result<Report, Vec<Diagnostic>> {
@@ -402,8 +402,8 @@ fn build_report(app_file: &Path) -> Result<Report, Vec<Diagnostic>> {
     }
 
     let module = parse_python_file(app_file).map_err(|diagnostic| vec![diagnostic])?;
-    let findings = gauntlet::run_gauntlet(&module, &config.gauntlet);
-    Ok(Report::build(&module.file, &findings, &config.gauntlet))
+    let findings = verifier::run_verifier(&module, &config.verifier);
+    Ok(Report::build(&module.file, &findings, &config.verifier))
 }
 
 /// The MQI audit report as its JSON breakdown, for callers that want the
@@ -412,7 +412,7 @@ pub(crate) fn audit_json(app_file: &Path) -> Result<String, Vec<Diagnostic>> {
     Ok(build_report(app_file)?.to_json())
 }
 
-/// Parse the module, run the Gauntlet, and print the MQI grade.
+/// Parse the module, run the Verifier, and print the MQI grade.
 pub fn run_audit(app_file: &Path, json: bool) -> Result<(), Vec<Diagnostic>> {
     let report = build_report(app_file)?;
     if json {

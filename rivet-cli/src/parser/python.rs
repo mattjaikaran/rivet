@@ -54,7 +54,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use tree_sitter::{Node, Parser};
 
-/// What a top-level module item is, for the Gauntlet rules.
+/// What a top-level module item is, for the Verifier rules.
 ///
 /// Items that the grammar accepts but the engine does not translate
 /// (runtime classes, foreign-decorated functions, stray statements) get a
@@ -89,7 +89,7 @@ pub struct Declaration {
     pub start_byte: usize,
 }
 
-/// A parsed DSL module: the syntax tree the Gauntlet rules inspect plus the
+/// A parsed DSL module: the syntax tree the Verifier rules inspect plus the
 /// blueprint the generator consumes.
 pub struct ParsedModule {
     pub file: String,
@@ -107,7 +107,7 @@ impl ParsedModule {
     }
 }
 
-/// Parse `app.py` from disk into a module the Gauntlet can audit.
+/// Parse `app.py` from disk into a module the Verifier can audit.
 pub fn parse_python_file(path: &Path) -> Result<ParsedModule, Diagnostic> {
     let source = std::fs::read_to_string(path).map_err(|err| {
         Diagnostic::blocker(
@@ -163,7 +163,7 @@ pub fn parse_python_module(
         .located(file_label, line_of(&error)));
     }
 
-    // Pass zero: classify every top-level item so the Gauntlet rules can
+    // Pass zero: classify every top-level item so the Verifier rules can
     // find routes, helpers, classes, and stray statements by byte offset.
     let decls = collect_declarations(root, source, file_label)?;
 

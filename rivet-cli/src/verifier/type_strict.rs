@@ -32,7 +32,7 @@
 //! Anything the parser cannot type already fails earlier with an `E1xxx`
 //! diagnostic; this rule owns the module-level contract.
 
-use crate::gauntlet::{Context, Finding, Rule};
+use crate::verifier::{Context, Finding, Rule};
 use crate::parser::NamedChildren;
 use crate::parser::decorator::parse_api_decorator;
 use crate::parser::python::DeclKind;
@@ -41,7 +41,7 @@ use tree_sitter::Node;
 pub(crate) struct TypeStrict;
 
 /// Non-`api` decorators on a decorated definition. A decorator that fails
-/// to parse is not counted: the parser rejects it before the Gauntlet runs.
+/// to parse is not counted: the parser rejects it before the Verifier runs.
 fn foreign_decorator_count(node: &Node<'_>, source: &str, file: &str) -> usize {
     node.named_children_all()
         .into_iter()
@@ -147,8 +147,8 @@ impl Rule for TypeStrict {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::GauntletConfig;
-    use crate::gauntlet::run_rule;
+    use crate::config::VerifierConfig;
+    use crate::verifier::run_rule;
     use crate::parser::python::parse_python_module;
 
     fn module(source: &str) -> crate::parser::python::ParsedModule {
@@ -157,7 +157,7 @@ mod tests {
 
     fn findings(source: &str) -> Vec<crate::diagnostic::Diagnostic> {
         let parsed = module(source);
-        run_rule(&parsed, &GauntletConfig::default(), &TypeStrict)
+        run_rule(&parsed, &VerifierConfig::default(), &TypeStrict)
     }
 
     #[test]

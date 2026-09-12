@@ -9,9 +9,9 @@
 //!
 //! A route whose decorator carries no `stories=[...]` fails the build with
 //! a fix suggestion. The project opts out by setting
-//! `stories_required = false` in the `[gauntlet]` config.
+//! `stories_required = false` in the `[verifier]` config.
 
-use crate::gauntlet::{Context, Finding, Rule};
+use crate::verifier::{Context, Finding, Rule};
 use crate::parser::python::DeclKind;
 use std::collections::HashMap;
 
@@ -72,8 +72,8 @@ impl Rule for StoryLink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::GauntletConfig;
-    use crate::gauntlet::run_rule;
+    use crate::config::VerifierConfig;
+    use crate::verifier::run_rule;
     use crate::parser::python::parse_python_module;
 
     fn module(source: &str) -> crate::parser::python::ParsedModule {
@@ -91,7 +91,7 @@ def ping() -> dict:
     return {"status": "pong"}
 "#,
         );
-        let diagnostics = run_rule(&parsed, &GauntletConfig::default(), &StoryLink);
+        let diagnostics = run_rule(&parsed, &VerifierConfig::default(), &StoryLink);
         assert_eq!(diagnostics.len(), 1);
         let diagnostic = &diagnostics[0];
         assert_eq!(diagnostic.error_code, "E2045");
@@ -113,7 +113,7 @@ def create_order(request: dict) -> dict:
     return {"echo": request}
 "#,
         );
-        let diagnostics = run_rule(&parsed, &GauntletConfig::default(), &StoryLink);
+        let diagnostics = run_rule(&parsed, &VerifierConfig::default(), &StoryLink);
         assert!(diagnostics.is_empty());
     }
 
@@ -128,9 +128,9 @@ def ping() -> dict:
     return {"status": "pong"}
 "#,
         );
-        let config = GauntletConfig {
+        let config = VerifierConfig {
             stories_required: false,
-            ..GauntletConfig::default()
+            ..VerifierConfig::default()
         };
         let diagnostics = run_rule(&parsed, &config, &StoryLink);
         assert!(diagnostics.is_empty());

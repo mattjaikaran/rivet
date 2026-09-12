@@ -67,7 +67,7 @@ pub(super) fn check_features(config: &RivetConfig) -> Result<(), Diagnostic> {
 
 /// Reject two routes that serve the same method and path.
 ///
-/// The Gauntlet's duplicate rule compares handler *bodies*, so two routes
+/// The Verifier's duplicate rule compares handler *bodies*, so two routes
 /// that share a method and a path but differ in body pass it. Each target
 /// then fails differently and late: the native router panics at startup with
 /// axum's "Overlapping method route", and the wasm dispatch emits two
@@ -89,7 +89,7 @@ pub(super) fn check_routes(blueprint: &ServiceBlueprint) -> Result<(), Diagnosti
             // No `.located`: the generator holds no app path, so a location
             // would name a file that may not exist. The message carries the
             // method, the path, and both handlers, which is what to search
-            // for. The Gauntlet's own `E2043` reports lines, and it runs
+            // for. The Verifier's own `E2043` reports lines, and it runs
             // before this check.
             return Err(Diagnostic::blocker(
                 "E2014",

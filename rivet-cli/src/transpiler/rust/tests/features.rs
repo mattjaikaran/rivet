@@ -177,7 +177,7 @@ fn an_array_literal_must_match_a_fixed_size_declaration() {
 }
 
 /// A blueprint with two routes on one method and path, with differing bodies
-/// so the Gauntlet's duplicate rule does not catch them.
+/// so the Verifier's duplicate rule does not catch them.
 fn duplicate_route_blueprint() -> ServiceBlueprint {
     let mut blueprint = ping_blueprint();
     blueprint.routes.push(RouteDefinition {

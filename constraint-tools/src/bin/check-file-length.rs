@@ -11,8 +11,8 @@
 //! 1. An exact relative path in [`GRANDFATHERED`] uses that ceiling. Those
 //!    legacy files are frozen ratchets at today's measured sizes: they may
 //!    not grow until split below the default ceiling.
-//! 2. A Gauntlet rule module, any file under `rivet-cli/src/gauntlet/`
-//!    except the `mod.rs` harness, uses [`GAUNTLET_CEILING`]. Rule modules
+//! 2. A Verifier rule module, any file under `rivet-cli/src/verifier/`
+//!    except the `mod.rs` harness, uses [`VERIFIER_CEILING`]. Rule modules
 //!    include their inline tests, so 300 lines is tight but generous.
 //! 3. Every other file uses [`DEFAULT_CEILING`].
 //!
@@ -30,11 +30,11 @@ use std::process::ExitCode;
 /// Ceiling for any file without a more specific policy.
 const DEFAULT_CEILING: usize = 400;
 
-/// Ceiling for one Gauntlet rule module (inline tests included).
-const GAUNTLET_CEILING: usize = 300;
+/// Ceiling for one Verifier rule module (inline tests included).
+const VERIFIER_CEILING: usize = 300;
 
-/// Path prefix that marks the Gauntlet rule directory.
-const GAUNTLET_PREFIX: &str = "rivet-cli/src/gauntlet/";
+/// Path prefix that marks the Verifier rule directory.
+const VERIFIER_PREFIX: &str = "rivet-cli/src/verifier/";
 
 /// Member source trees that this checker scans below the root.
 const MEMBER_SRC_TREES: &[&str] = &[
@@ -55,14 +55,14 @@ const GRANDFATHERED: &[(&str, usize)] = &[
 
 /// Resolve the line ceiling for a relative source path.
 ///
-/// Exact grandfather match wins, then the Gauntlet rule-module rule, then
-/// the default. `rivet-cli/src/gauntlet/mod.rs` is the harness, not a rule
+/// Exact grandfather match wins, then the Verifier rule-module rule, then
+/// the default. `rivet-cli/src/verifier/mod.rs` is the harness, not a rule
 /// module, so it falls through to the default.
 fn ceiling_for(rel: &str) -> usize {
     if let Some((_, ceiling)) = GRANDFATHERED.iter().find(|(path, _)| *path == rel) {
         return *ceiling;
     }
-    let rest = match rel.strip_prefix(GAUNTLET_PREFIX) {
+    let rest = match rel.strip_prefix(VERIFIER_PREFIX) {
         Some(rest) => rest,
         None => return DEFAULT_CEILING,
     };
@@ -70,7 +70,7 @@ fn ceiling_for(rel: &str) -> usize {
     if is_harness {
         DEFAULT_CEILING
     } else {
-        GAUNTLET_CEILING
+        VERIFIER_CEILING
     }
 }
 
@@ -161,13 +161,13 @@ mod tests {
     }
 
     #[test]
-    fn gauntlet_rule_modules_get_300() {
-        assert_eq!(ceiling_for("rivet-cli/src/gauntlet/complexity.rs"), 300);
+    fn verifier_rule_modules_get_300() {
+        assert_eq!(ceiling_for("rivet-cli/src/verifier/complexity.rs"), 300);
     }
 
     #[test]
-    fn gauntlet_mod_rs_is_the_harness_not_a_rule() {
-        assert_eq!(ceiling_for("rivet-cli/src/gauntlet/mod.rs"), 400);
+    fn verifier_mod_rs_is_the_harness_not_a_rule() {
+        assert_eq!(ceiling_for("rivet-cli/src/verifier/mod.rs"), 400);
     }
 
     #[test]
@@ -179,13 +179,13 @@ mod tests {
     #[test]
     fn boundary_is_strictly_greater() {
         assert_eq!(
-            violation_for("rivet-cli/src/gauntlet/duplicate.rs", 300),
+            violation_for("rivet-cli/src/verifier/duplicate.rs", 300),
             None
         );
         assert_eq!(
-            violation_for("rivet-cli/src/gauntlet/duplicate.rs", 301),
+            violation_for("rivet-cli/src/verifier/duplicate.rs", 301),
             Some(
-                "rivet-cli/src/gauntlet/duplicate.rs:301: exceeds ceiling of 300 lines".to_string()
+                "rivet-cli/src/verifier/duplicate.rs:301: exceeds ceiling of 300 lines".to_string()
             )
         );
     }
@@ -195,7 +195,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("check-file-length-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         write_lines(&root, "rivet-cli/src/parser/python.rs", 728)?;
-        write_lines(&root, "rivet-cli/src/gauntlet/complexity.rs", 301)?;
+        write_lines(&root, "rivet-cli/src/verifier/complexity.rs", 301)?;
         write_lines(&root, "rivet-core/src/lib.rs", 399)?;
 
         let (checked, violations) = check_root(&root);
@@ -204,7 +204,7 @@ mod tests {
         assert_eq!(checked, 3);
         assert_eq!(
             violations,
-            vec!["rivet-cli/src/gauntlet/complexity.rs:301: exceeds ceiling of 300 lines"]
+            vec!["rivet-cli/src/verifier/complexity.rs:301: exceeds ceiling of 300 lines"]
         );
         Ok(())
     }

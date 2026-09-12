@@ -1,7 +1,7 @@
 //! The tools `rivet mcp` exposes to AI agents (phase 3, pillar 09).
 //!
 //! Every tool is a thin wrapper over the phase-1 and phase-2 machinery:
-//! parsing, the Gauntlet, the MQI audit, and the `.rivet/` vector index.
+//! parsing, the Verifier, the MQI audit, and the `.rivet/` vector index.
 //! A tool never re-implements pipeline logic; it calls the same functions
 //! the CLI commands call and returns the result as JSON text (or compact
 //! markdown for a session) so any MCP client can act on it. Errors
@@ -86,10 +86,10 @@ pub struct RivetTools;
 
 #[tool_router(server_handler)]
 impl RivetTools {
-    /// Parse a Rivet DSL module and return its blueprint and Gauntlet
+    /// Parse a Rivet DSL module and return its blueprint and Verifier
     /// findings.
     #[tool(
-        description = "Parse a Rivet DSL module and return its IR blueprint and Gauntlet findings as JSON"
+        description = "Parse a Rivet DSL module and return its IR blueprint and Verifier findings as JSON"
     )]
     fn parse_app(&self, Parameters(params): Parameters<AppParams>) -> String {
         result_text(parse_payload(&params.app))
@@ -108,7 +108,7 @@ impl RivetTools {
 
     /// Return the compact markdown context of a Rivet DSL module.
     #[tool(
-        description = "Render the module summary, gauntlet config, and findings of a Rivet DSL module as compact markdown"
+        description = "Render the module summary, verifier config, and findings of a Rivet DSL module as compact markdown"
     )]
     fn session_context(&self, Parameters(params): Parameters<AppParams>) -> String {
         match render_context(Path::new(&params.app)) {
@@ -163,7 +163,7 @@ fn app_label(app_file: &Path) -> String {
         .to_string()
 }
 
-/// Parse the module, run the Gauntlet, and fold the results into one JSON
+/// Parse the module, run the Verifier, and fold the results into one JSON
 /// payload: the file, the serialized blueprint, and the findings.
 fn parse_payload(app_file: &str) -> Result<Value, Vec<Diagnostic>> {
     let path = Path::new(app_file);
@@ -182,7 +182,7 @@ fn parse_payload(app_file: &str) -> Result<Value, Vec<Diagnostic>> {
         )]
     })?;
     let module = parse_python_file(path).map_err(|diagnostic| vec![diagnostic])?;
-    let findings = crate::gauntlet::run_gauntlet(&module, &config.gauntlet);
+    let findings = crate::verifier::run_verifier(&module, &config.verifier);
 
     let blueprint = serde_json::to_value(&module.blueprint).map_err(|err| {
         vec![Diagnostic::blocker(

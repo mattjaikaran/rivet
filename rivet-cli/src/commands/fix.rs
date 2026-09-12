@@ -1,6 +1,6 @@
-//! `rivet fix`: auto-repair what the Gauntlet can deterministically repair.
+//! `rivet fix`: auto-repair what the Verifier can deterministically repair.
 //!
-//! The command parses the module, runs the same Gauntlet as `rivet build`,
+//! The command parses the module, runs the same Verifier as `rivet build`,
 //! and deletes the declarations the rules can prove are wrong. Two finding
 //! shapes are fixable by construction:
 //!
@@ -17,14 +17,14 @@
 //! command prints them with their suggested fixes and moves on.
 //!
 //! A deletion removes one whole top-level syntax node, so each round
-//! re-parses and re-runs the Gauntlet: a helper that only a now-deleted
+//! re-parses and re-runs the Verifier: a helper that only a now-deleted
 //! helper called dies on a later round. The loop converges within five
 //! rounds or fails with E3013 instead of writing a module it cannot make
 //! clean. Only a converged result is written back to the file.
 
 use crate::config::RivetConfig;
 use crate::diagnostic::Diagnostic;
-use crate::gauntlet;
+use crate::verifier;
 use crate::parser::NamedChildren;
 use crate::parser::python::{
     DeclKind, Declaration, ParsedModule, parse_python_file, parse_python_module,
@@ -190,7 +190,7 @@ fn convergence_error(file: &str, diagnostics: &[Diagnostic]) -> Vec<Diagnostic> 
     errors
 }
 
-/// Parse the module, run the Gauntlet, delete what is machine-fixable in
+/// Parse the module, run the Verifier, delete what is machine-fixable in
 /// rounds, and write the converged source back to the file.
 pub fn run_fix(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
     let project_dir = app_file
@@ -229,7 +229,7 @@ pub fn run_fix(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
     let mut rounds = 0usize;
 
     let final_diagnostics = loop {
-        let diagnostics = gauntlet::run_gauntlet(&module, &config.gauntlet);
+        let diagnostics = verifier::run_verifier(&module, &config.verifier);
 
         // Map every fixable finding to the whole top-level declaration it
         // names. A declaration two findings name is fixed once.
@@ -285,7 +285,7 @@ pub fn run_fix(app_file: &Path) -> Result<(), Vec<Diagnostic>> {
     }
 
     if applied.is_empty() {
-        println!("Nothing to fix in {label}: the Gauntlet found no machine-fixable findings.");
+        println!("Nothing to fix in {label}: the Verifier found no machine-fixable findings.");
     }
     for record in &applied {
         println!(
@@ -338,7 +338,7 @@ mod tests {
 
         let module = parse_python_file(&app).expect("fixed module must re-parse");
         let config = RivetConfig::default();
-        let findings = gauntlet::run_gauntlet(&module, &config.gauntlet);
+        let findings = verifier::run_verifier(&module, &config.verifier);
         assert!(
             findings
                 .iter()

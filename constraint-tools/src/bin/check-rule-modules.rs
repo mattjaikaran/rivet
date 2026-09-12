@@ -1,5 +1,5 @@
-//! Check that Gauntlet error-code documentation stays coherent: the E-code
-//! table in `rivet-cli/src/gauntlet/mod.rs`, its `pub mod` declarations, and
+//! Check that Verifier error-code documentation stays coherent: the E-code
+//! table in `rivet-cli/src/verifier/mod.rs`, its `pub mod` declarations, and
 //! the rule-module files on disk must agree with each module's doc codes.
 //!
 //! Usage: `cargo run -p constraint-tools --bin check-rule-modules [root]`.
@@ -10,7 +10,7 @@ use std::{fs, path::Path, process::ExitCode};
 fn main() -> ExitCode {
     let root_arg = std::env::args().nth(1).unwrap_or_else(|| ".".to_string());
     let root = Path::new(&root_arg);
-    let dir = root.join("rivet-cli").join("src").join("gauntlet");
+    let dir = root.join("rivet-cli").join("src").join("verifier");
     let mod_abs = dir.join("mod.rs");
     let mod_path = rel_path(root, &mod_abs);
     let mod_text = match fs::read_to_string(&mod_abs) {
@@ -32,7 +32,7 @@ fn main() -> ExitCode {
         }
     }
     files.sort_by(|a, b| a.0.cmp(&b.0));
-    let out = check_gauntlet(&mod_path, &mod_text, &files);
+    let out = check_verifier(&mod_path, &mod_text, &files);
     if out.is_empty() {
         let rows = table_rows(&mod_text);
         let mut lo = rows[0].1.as_str();
@@ -165,7 +165,7 @@ fn e_codes(text: &str) -> Vec<String> {
 
 /// Cross-check table, declarations, files, and doc codes; returns one
 /// `path:line: message` per violation, sorted for stable output.
-fn check_gauntlet(mod_path: &str, mod_text: &str, files: &[(String, String)]) -> Vec<String> {
+fn check_verifier(mod_path: &str, mod_text: &str, files: &[(String, String)]) -> Vec<String> {
     let rows = table_rows(mod_text);
     let declared = pub_mods(mod_text);
     let mut out = Vec::new();
@@ -237,8 +237,8 @@ fn check_gauntlet(mod_path: &str, mod_text: &str, files: &[(String, String)]) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    const MOD: &str = "rivet-cli/src/gauntlet/mod.rs";
-    const DIR: &str = "rivet-cli/src/gauntlet/";
+    const MOD: &str = "rivet-cli/src/verifier/mod.rs";
+    const DIR: &str = "rivet-cli/src/verifier/";
     const HEAD: &str = "//! Head.\n//!\n//! | code | rule | meaning |\n//! | --- | --- | --- |\n";
 
     fn table(rows: &[(&str, &str)], decls: &[&str]) -> String {
@@ -266,7 +266,7 @@ mod tests {
     }
 
     fn run_text(table: &str, files: &[(String, String)]) -> Vec<String> {
-        check_gauntlet(MOD, table, files)
+        check_verifier(MOD, table, files)
     }
 
     #[test]
@@ -288,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn coherent_gauntlet_passes() {
+    fn coherent_verifier_passes() {
         let out = run(
             &[("E2042", "complexity"), ("E2043", "duplicate")],
             &["complexity", "duplicate"],

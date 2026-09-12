@@ -172,7 +172,7 @@ fn user_prompt(story: &str, context: &str, feedback: Option<&str>) -> String {
         out.push_str("\nThe previous attempt failed with these diagnostics:\n");
         out.push_str(feedback);
         out.push_str(
-            "\nFix every diagnostic; the corrected module must parse and pass the Gauntlet.\n",
+            "\nFix every diagnostic; the corrected module must parse and pass the Verifier.\n",
         );
     }
     out.push_str("\nReturn ONLY one JSON object with two keys: \"spec\" (a short summary of the change) and \"module\" (the COMPLETE replacement python module).");
