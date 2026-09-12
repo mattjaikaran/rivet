@@ -1071,4 +1071,4 @@ exist.
   (US-010), a fall-through body that ends in a `for`, so the gate compiles the
   JSON null tail path and the example stays warning-free. And three tests now
   cover the shapes that had none: the null tail, the absent tail on a
-  completing body, and an operation and a `not` subject.
+  completing body, and an operation and a `not` subject (`3672b6d`).
