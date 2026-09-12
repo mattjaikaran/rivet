@@ -1,8 +1,11 @@
 # Handoff: rename Gauntlet to Verifier
 
-Branch `refactor/gauntlet-to-verifier`, seven commits on top of `5339cd3`
-(local `main`, which is seven commits ahead of `origin/main`). Working tree
-clean. Every commit compiles with `cargo check --workspace --all-targets`.
+The rename is seven commits; the disk-tooling commit that follows it is the
+eighth. All eight are on `main` and pushed to `origin/main`, on top of
+`5339cd3`. Each commit compiles with `cargo check --workspace --all-targets`.
+
+The table lists the rename, in order, then the tooling commit that landed
+after it.
 
 ## What changed
 
@@ -22,6 +25,7 @@ identifiers.
 | `ef1d83b` | `docs: Rename gauntlet references to verifier` | docs, prompts, tracker, CI, README |
 | `5d6361b` | `feat(build): Run gauntlet on the generated crate` | the post-generation step |
 | `120eaed` | `test(build): Cover the post-generation gate` | the new integration tests |
+| `c9c549e` | `chore(scripts): Report and reclaim disk usage` | `Makefile`, `scripts/clean.sh`, `README.md`, `docs/development-workflow.md` |
 
 ## The code rename
 

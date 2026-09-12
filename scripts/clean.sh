@@ -36,7 +36,9 @@ for arg in "$@"; do
         --all) ALL=1 ;;
         --disk) DISK_ONLY=1 ;;
         -h | --help)
-            sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            # Print the header comment block whatever its length: start after
+            # the shebang and stop at the first line that is not a comment.
+            sed -n '2,/^[^#]/p' "${BASH_SOURCE[0]}" | sed -e '$d' -e 's/^# \{0,1\}//'
             exit 0
             ;;
         *)
