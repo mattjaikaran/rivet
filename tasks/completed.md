@@ -58,28 +58,28 @@ Commits: `dd8920f` (foundation) and `77fe374` (feature).
 - Live spike verified from the compiled binary: `GET /ping` returns
   `{"status":"pong"}` and `POST /echo` echoes the JSON body.
 
-## Phase 1 - The Gauntlet (complete 2026-09-09)
+## Phase 1 - The Verifier (complete 2026-09-09)
 
-Served by `prompts/prompt-04-gauntlet.md`. All four sections are done;
+Served by `prompts/prompt-04-verifier.md`. All four sections are done;
 see the per-section entries below. The mutation-tester roadmap bullet
 stays open (blocked on the generated-code test story).
 
 ### 1.1 Foundation
 
-- Authored `prompts/prompt-04-gauntlet.md` in the prompts 00-03 format;
+- Authored `prompts/prompt-04-verifier.md` in the prompts 00-03 format;
   every 1.1-1.4 task traces to it (`3e09b54`).
-- Defined the Gauntlet rule interface under `rivet-cli/src/gauntlet/`: one
+- Defined the Verifier rule interface under `rivet-cli/src/verifier/`: one
   module per rule, a severity model (blocker/warning), a `Rule` trait, and
   findings that serialize to the agentic-JSON diagnostic shape; unit tests
   cover the harness (`3e09b54`).
-- Wired the Gauntlet between parse and generate in `commands/build.rs`;
+- Wired the Verifier between parse and generate in `commands/build.rs`;
   blockers return on the `Diagnostic` JSON path with no crate written, and
   warnings print while the build continues (`3e09b54`).
 
 ### 1.2 Rules
 
 - Cyclomatic complexity walker over DSL handler bodies and DTO classes,
-  failing above `rivet.toml` `[gauntlet] max_complexity`: a synthetic
+  failing above `rivet.toml` `[verifier] max_complexity`: a synthetic
   handler with score 10 fails with `E2042` and an `ast_path` naming the
   crossing decision; the `examples/basic` handlers pass (`3e09b54`).
 - Duplicate-code detector over handler implementation fingerprints: two
@@ -119,7 +119,7 @@ stays open (blocked on the generated-code test story).
 
 ### 1.4 Integration and docs
 
-- The CI `gauntlet-check` job runs the Gauntlet on `examples/basic`: a
+- The CI `verifier-check` job runs the Verifier on `examples/basic`: a
   real `rivet build` plus `rivet audit --json`, replacing the
   placeholder `--version` step (`ce70633`).
 - Added cargo-deny CVE scanning: `deny.toml` and a CI job that runs
@@ -137,13 +137,13 @@ stays open (blocked on the generated-code test story).
 ## Constraint tools (complete 2026-09-09)
 
 Not a roadmap phase: deterministic self-checks gate the Rivet source tree
-the way the Gauntlet gates DSL apps, preceding phase 2 so later work
+the way the Verifier gates DSL apps, preceding phase 2 so later work
 inherits them. Served by the SwarmForge constraint-tools pattern in
 `~/dev/django-ninja-boilerplate/docs/CONSTRAINT_TOOLS.md`.
 
 - Added the `constraint-tools` workspace crate with three small
   deterministic binaries: `check-file-length` (400-line default ceiling,
-  300 for Gauntlet rule modules, four grandfathered legacy files frozen
+  300 for Verifier rule modules, four grandfathered legacy files frozen
   at 728/699/679/444), `check-rule-modules` (error-code table, `pub mod`
   declarations, rule files, and doc codes agree 1:1), and `check-tracker`
   (no `- [x]` left in todo.md, no duplicate or cross-file task text, no
@@ -188,7 +188,7 @@ LanceDB vector index answers `rivet explain`. Decisions recorded in
   and duration; invocations are recorded before they run and finished with
   their status and duration (`617632e`, `68e93f9`).
 - `rivet session save` renders the current module context (parsed
-  blueprint, gauntlet config, diagnostics) as compact markdown and stores
+  blueprint, verifier config, diagnostics) as compact markdown and stores
   it; `session resume` prints it back; `session list` names the saved
   sessions (`617632e`).
 
@@ -236,7 +236,7 @@ lines finish; the section closes when the phase does.
   in-crate protocol test drives the real server over an in-memory duplex
   through `initialize`, `tools/list`, and `tools/call` and reads valid
   responses. The first tool, `parse_app`, returns the IR blueprint and
-  Gauntlet findings for a DSL module as JSON (`21e2cb6`).
+  Verifier findings for a DSL module as JSON (`21e2cb6`).
 
 ### 1.2 MCP tool set
 
@@ -262,7 +262,7 @@ lines finish; the section closes when the phase does.
   render (registration line and handler signature) to the introducing
   commit via git pickaxe. Integration test on a two-commit git fixture
   (`59ffc8a`).
-- `/fix` re-runs the Gauntlet and applies only deterministic, safe
+- `/fix` re-runs the Verifier and applies only deterministic, safe
   repairs by source span: E2044 dead helpers and DTOs, and E2046 runtime
   classes, foreign functions, and stray statements. It converges in up to
   five parse/re-check rounds and never deletes a route. Integration test
@@ -271,7 +271,7 @@ lines finish; the section closes when the phase does.
 ### 1.4 Auto-PR generation
 
 - `/plan "<story>"` creates branch `rivet/plan/<slug>`, writes the module
-  and a SPEC.md, converges against parse + Gauntlet + a real `rivet
+  and a SPEC.md, converges against parse + Verifier + a real `rivet
   build`, commits, and prints a PR body with the audit grade; `--push`
   opens the PR through `gh`. Code comes from an OpenAI-compatible
   provider (`RIVET_PLAN_BASE_URL`, `RIVET_PLAN_API_KEY`,
@@ -285,9 +285,9 @@ lines finish; the section closes when the phase does.
 - `suggested_fix` is now a required `String` on `Diagnostic` and
   `Finding`; every construction site carries a remediation written from
   its error code's meaning, and the JSON payload always emits the field
-  (`52f87ed`). Parser error paths, every Gauntlet rule, and the store
+  (`52f87ed`). Parser error paths, every Verifier rule, and the store
   error paths assert non-empty fixes; a broad invariant test in
-  `gauntlet/mod.rs` runs a fixture that trips E2043-E2046 and checks
+  `verifier/mod.rs` runs a fixture that trips E2043-E2046 and checks
   every output diagnostic (`52f87ed`).
 
 ## Repo maintenance
@@ -575,7 +575,7 @@ tracker lines finish; the section closes when the phase does.
 - `--from FILE` reads a captured payload instead of calling the tracker, and
   with no credentials it reads the payload's own shape to pick the parser,
   so the offline path needs no secrets (`c5e79d5`).
-- Pillar 05 documents the check the Gauntlet makes (`E2045`) and the
+- Pillar 05 documents the check the Verifier makes (`E2045`) and the
   reconciliation `rivet sync` adds, including the binding rule, the wire
   format, and paging (`7605413`, `c5e79d5`).
 
@@ -725,7 +725,7 @@ exist.
 ### Blueprint checks the generator makes
 
 - The generator rejects two routes that serve the same method and path with
-  `E2014`, naming the method, the path, and both handlers. The Gauntlet's
+  `E2014`, naming the method, the path, and both handlers. The Verifier's
   duplicate rule compares handler bodies, so routes that share a route but
   differ in body passed it; the native router then panicked at startup after
   the build reported success, and the WASI dispatch would have kept only the
@@ -819,7 +819,7 @@ exist.
 - `commands/build/tests/collisions.rs` drives every `RESERVED` name through
   both targets and builds one aggregate crate of all 24 legal names per
   target, asserting on both that the targets agree. The aggregate fixture
-  gives each handler a distinct body, because the Gauntlet's duplicate-code
+  gives each handler a distinct body, because the Verifier's duplicate-code
   rule rejects one body repeated across routes and that rule is not what the
   test asks about (`1c297f9`).
 - `rivet trace` still resolves a route's logic: the service block still

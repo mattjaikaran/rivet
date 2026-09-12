@@ -2,7 +2,7 @@
 
 **Objective**: Create the core data structures that unify Python and TypeScript parsing.
 
-**Context**: Every language parser we write must output this exact IR. This allows the rest of the pipeline (Gauntlet, Generator) to leverage Rust's zero-copy and const-generic features.
+**Context**: Every language parser we write must output this exact IR. This allows the rest of the pipeline (Verifier, Generator) to leverage Rust's zero-copy and const-generic features.
 
 ## Tasks
 

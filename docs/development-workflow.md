@@ -3,7 +3,7 @@
 ```mermaid
 flowchart LR
     A[Write Python/TS DSL] --> B[Run `rivet build`]
-    B --> C{Gauntlet Pass?}
+    B --> C{Verifier Pass?}
     C -->|Yes| D[Generate Rust Code]
     D --> E[Compile to Binary]
     E --> F[Run]
@@ -25,7 +25,7 @@ cargo deny check
 
 ## Repository self-checks (constraint tools)
 
-The Gauntlet gates DSL apps; `constraint-tools/` gates the Rivet source tree
+The Verifier gates DSL apps; `constraint-tools/` gates the Rivet source tree
 itself the same way. Three small deterministic binaries check the repo, and
 `scripts/gate.sh` runs every gate in one command. Run them from the repo root:
 
@@ -49,8 +49,8 @@ or 1 and prints `path:line: message` violations. The thresholds are:
 
 | Check | Threshold |
 | :--- | :--- |
-| `check-file-length` | 400 lines default; 300 for Gauntlet rule modules (`rivet-cli/src/gauntlet/*.rs` except `mod.rs`); 728/699/679/444 for four grandfathered legacy files (`parser/python.rs`, `transpiler/rust.rs`, `commands/audit.rs`, `parser/validate.rs`) that must shrink, not grow |
-| `check-rule-modules` | every E-code in the Gauntlet module table maps 1:1 to a documented rule module |
+| `check-file-length` | 400 lines default; 300 for Verifier rule modules (`rivet-cli/src/verifier/*.rs` except `mod.rs`); 728/699/679/444 for four grandfathered legacy files (`parser/python.rs`, `transpiler/rust.rs`, `commands/audit.rs`, `parser/validate.rs`) that must shrink, not grow |
+| `check-rule-modules` | every E-code in the Verifier module table maps 1:1 to a documented rule module |
 | `check-tracker` | no `- [x]` in `tasks/todo.md`; no duplicate or cross-file task text; no open item under a `(complete ...)` section |
 
 ### How to add a check
@@ -72,7 +72,7 @@ Register long-running gates (fmt, clippy, tests, deny, example) in
 
 ## Build and audit an app
 
-`rivet build` parses the DSL, runs the Gauntlet rules between parse and
+`rivet build` parses the DSL, runs the Verifier rules between parse and
 generate, writes the crate to `generated/`, and compiles it. A rule
 violation stops the build with one agentic-JSON object per finding on
 stderr; warnings print and the build continues.
@@ -92,10 +92,10 @@ with per-dimension scores and the `not_scored` list.
 ./target/release/rivet audit --json examples/basic/app.py
 ```
 
-Tune the rules in the `[gauntlet]` section of `rivet.toml`:
+Tune the rules in the `[verifier]` section of `rivet.toml`:
 
 ```toml
-[gauntlet]
+[verifier]
 max_complexity = 8          # E2042 threshold
 stories_required = true     # set false to allow storyless routes
 strict_type_checking = true # set false to skip the module-contract rule

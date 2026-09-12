@@ -166,7 +166,7 @@ rejects both before it writes a crate:
 | A route on `/__rivet/routes` or `/__rivet/` | `E2006` | The admin panel owns those paths, and axum panics on an overlapping route at startup |
 | Two routes with the same method and path | `E2014` | The native router panics on the overlap; the WASI dispatch would keep only the first arm, so the two targets would disagree |
 
-The Gauntlet's duplicate rule (`E2043`) compares handler *bodies*, so two
+The Verifier's duplicate rule (`E2043`) compares handler *bodies*, so two
 routes that share a method and a path but differ in body pass it. Both checks
 above therefore live in the generator, where they cover every target: one
 blueprint, one answer, whether the build produces a native binary or a WASI

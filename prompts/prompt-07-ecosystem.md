@@ -8,7 +8,7 @@ embedded static assets. Then close the loop outward: service discovery, an
 admin panel that lists the routes the app actually serves, and `rivet sync`
 that reconciles blueprint story IDs with Jira or Linear.
 
-**Context**: Phases 0-3 built the pipeline (`parse` → Gauntlet → generate →
+**Context**: Phases 0-3 built the pipeline (`parse` → Verifier → generate →
 `cargo build`), the `.rivet/` context engine, and the MCP and slash-command
 surfaces. Everything so far assumes one blueprint, one binary, one process.
 Phase 4 is the first phase whose subject is the *runtime topology* of the

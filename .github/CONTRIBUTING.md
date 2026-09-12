@@ -49,7 +49,7 @@ contributing. Harassment or toxic behavior is not tolerated.
 ## Quality gates
 
 CI enforces format, clippy (with `-D warnings`), tests, and cargo-deny CVE
-scanning, and runs the Gauntlet on `examples/basic` through `rivet build`.
+scanning, and runs the Verifier on `examples/basic` through `rivet build`.
 The `repo-self-checks` job runs the constraint tools that gate the Rivet
 source tree itself: file-length ceilings, rule-module coherence, and
 tracker coherence (see `docs/development-workflow.md`).
@@ -57,5 +57,5 @@ tracker coherence (see `docs/development-workflow.md`).
 `rivet audit` reports the MQI grade for a DSL module: complexity,
 duplicate-code, dead-code, and type-strictness dimensions fold into an A+
 to F grade with a JSON breakdown (see `docs/pillars/06-matt-quality-index.md`).
-Every Gauntlet failure prints machine-readable JSON diagnostics on stderr
+Every Verifier failure prints machine-readable JSON diagnostics on stderr
 that agents can act on.

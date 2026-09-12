@@ -8,14 +8,14 @@ def create_order(request: OrderCreate) -> OrderResponse:
     ...
 ```
 
-The Gauntlet enforces that every public endpoint has at least one story link
+The Verifier enforces that every public endpoint has at least one story link
 (`E2045`). `rivet sync` closes the loop outward: it reconciles those story
 IDs with the issues in Jira or Linear.
 
-## What the Gauntlet checks
+## What the Verifier checks
 
 A route whose decorator carries no `stories=[...]` fails the build. The
-project opts out with `stories_required = false` in `[gauntlet]`.
+project opts out with `stories_required = false` in `[verifier]`.
 
 The check is local: it proves the code names a story. It cannot prove the
 story exists in the tracker, or that the tracker still agrees with the code.

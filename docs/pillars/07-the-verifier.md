@@ -1,6 +1,6 @@
-# 7. The Gauntlet (Strict Linters)
+# 7. The Verifier (Strict Linters)
 
-The Gauntlet runs between parse and code generation. It blocks bad code
+The Verifier runs between parse and code generation. It blocks bad code
 from ever reaching the Rust compiler: a module that violates a blocker
 rule fails `rivet build` with one agentic-JSON object per finding, and no
 crate is written.
@@ -14,10 +14,10 @@ A finding is either a blocker or a warning:
 - **Warning** — prints to stderr as JSON plus a one-line summary; the
   build continues.
 
-The `[gauntlet]` section of `rivet.toml` tunes the rules:
+The `[verifier]` section of `rivet.toml` tunes the rules:
 
 ```toml
-[gauntlet]
+[verifier]
 max_complexity = 8          # E2042 threshold
 stories_required = true     # set false to allow storyless routes
 strict_type_checking = true # set false to skip the module-contract rule
@@ -38,7 +38,7 @@ strictness) are blockers when enabled.
 | E2045 | Story-to-code gate | Route without a story ID |
 | E2046 | Type strictness | Module construct the engine cannot translate |
 
-Each rule owns a small module under `rivet-cli/src/gauntlet/` and documents
+Each rule owns a small module under `rivet-cli/src/verifier/` and documents
 its metric and contract there (see `complexity.rs` for the decision-point
 list and `type_strict.rs` for the accepted dynamic shapes).
 
@@ -69,6 +69,6 @@ can point a fix at the exact branch. Every finding carries a
 The five rules above are enforced by `rivet build`, which runs them
 between parse and generate. `rivet audit` folds the findings into the MQI
 grade and a JSON breakdown (see `docs/pillars/06-matt-quality-index.md`),
-and the CI `gauntlet-check` job runs `examples/basic` through both
+and the CI `verifier-check` job runs `examples/basic` through both
 commands. Coverage and mutation-survival numbers stay Rust-side until the
 generated-code test story exists; the audit lists them under `not_scored`.

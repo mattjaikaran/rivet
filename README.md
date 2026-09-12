@@ -5,7 +5,7 @@ DSL and the Rivet CLI transpiles it into a fast, memory-safe Rust server built
 on [axum](https://github.com/tokio-rs/axum).
 
 The project is in early development. The [phase-0
-spike](docs/phase-0-spike.md) works end to end; phase 1 (the Gauntlet)
+spike](docs/phase-0-spike.md) works end to end; phase 1 (the Verifier)
 is closed except the mutation tester. `rivet build` parses a Python
 module, runs the quality rules between parse and generate, and compiles
 a runnable Rust binary; `rivet audit` reports the MQI grade; the

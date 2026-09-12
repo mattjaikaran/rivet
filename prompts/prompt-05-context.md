@@ -7,7 +7,7 @@ context as markdown, and index parsed blueprints in a vector store so
 it.
 
 **Context**: Phase 1 closed the compile-time story: `rivet build` parses
-the DSL, runs the Gauntlet rules between parse and generate, and compiles
+the DSL, runs the Verifier rules between parse and generate, and compiles
 the crate; `rivet audit` grades the module. The parser now returns a
 `ParsedModule` with the blueprint the generator consumes, and every command
 reports through the agentic-JSON `Diagnostic` path. This phase layers a

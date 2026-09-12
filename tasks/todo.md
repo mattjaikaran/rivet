@@ -81,7 +81,7 @@ A task is done when all of the following hold:
 | Phase | Roadmap | Pillars | Seed prompt |
 | :--- | :--- | :--- | :--- |
 | 0 - Spike | weeks 1-2 | pipeline proof | `prompts/prompt-00..03` (done) |
-| 1 - The Gauntlet | weeks 3-4 | 05, 06, 07 | `prompts/prompt-04-gauntlet.md` (done) |
+| 1 - The Verifier | weeks 3-4 | 05, 06, 07 | `prompts/prompt-04-verifier.md` (done) |
 | 2 - Context engine | weeks 5-6 | 04 | `prompts/prompt-05-context.md` (done) |
 | 3 - MCP & agentic CLI | weeks 7-8 | 09 | `prompts/prompt-06-mcp.md` (done) |
 | 4 - Ecosystem & multi-service | weeks 9-10 | 01, 02, 03 | `prompts/prompt-07-ecosystem.md` (done) |
@@ -114,9 +114,9 @@ stay false, because each needs a layer the DSL does not have yet:
 
 ---
 
-## Phase 1 - The Gauntlet (complete 2026-09-09)
+## Phase 1 - The Verifier (complete 2026-09-09)
 
-Goal: enforce strict quality at compile time, per `docs/pillars/07-the-gauntlet.md`,
+Goal: enforce strict quality at compile time, per `docs/pillars/07-the-verifier.md`,
 `docs/pillars/06-matt-quality-index.md`, and `docs/pillars/05-story-to-code-traceability.md`.
 
 All sections (1.1 foundation, 1.2 rules, 1.3 the MQI, 1.4 integration
@@ -128,7 +128,7 @@ story (see pillar 06, `not_scored`).
 
 ## Constraint tools: gate the Rivet repo itself (complete 2026-09-09)
 
-The Gauntlet gates DSL apps; this workstream gates the Rivet source tree the
+The Verifier gates DSL apps; this workstream gates the Rivet source tree the
 same way. Deterministic, small, binary pass/fail tools chained in one gate,
 after the SwarmForge pattern in
 `~/dev/django-ninja-boilerplate/docs/CONSTRAINT_TOOLS.md`. Not a roadmap

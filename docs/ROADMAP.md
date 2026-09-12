@@ -30,7 +30,7 @@ standalone binary.
 
 ---
 
-## Phase 1: The Gauntlet (Weeks 3-4)
+## Phase 1: The Verifier (Weeks 3-4)
 
 **Goal**: Enforce strict quality at compile time.
 **Deliverables**:
@@ -40,11 +40,46 @@ standalone binary.
 - [x] Duplicate Code Detector (AST hashing) - blocks redundant code.
 - [x] Story gate and dead-code rules (pillar 05) - every route tagged.
 - [x] `rivet audit` reports the MQI grade and a JSON breakdown (pillar 06).
-- [x] CI runs the Gauntlet on `examples/basic` and scans dependencies with
+- [x] CI runs the Verifier on `examples/basic` and scans dependencies with
   cargo-deny.
 - [ ] Mutation Tester (`cargo-mutants` integration) - requires 100%
   survival; stays open, blocked on the generated-code test story (see
   pillar 06, `not_scored`).
+
+### Two-layer verification model
+
+Rivet verifies at two layers. Each layer owns a different subject, and a
+different tool runs it.
+
+- **Layer 1 — Verifier (Rivet).** The DSL-level gates run inside `rivet build`
+  between parse and code generation: complexity, duplicate handlers, dead
+  helpers and DTOs, story-ID coverage, and type strictness. A blocker stops
+  the build before any crate is written. The `[verifier]` section of
+  `rivet.toml` tunes the rules.
+- **Layer 2 — Gauntlet (standalone).** The codebase-level gates run on the
+  generated Rust crate, after generation: format, lint, type-check, tests,
+  coverage, CRAP, secrets, and conformance. The `build` subcommand invokes
+  `gauntlet check --tier=standard --target=<generated-crate>` when the
+  `gauntlet` binary is on `PATH`. Exit code 2 aborts the build before it
+  compiles, exit code 3 prints the findings and continues, and a host without
+  the binary skips the step with one notice. `--no-gauntlet` skips it
+  explicitly. The step belongs to `rivet build` alone: `rivet dev` and
+  `rivet plan` build as a sub-step and skip it, so the external binary never
+  gates a command the user did not aim at it. Full integration is post-alpha.
+
+The two tools stay independent: Rivet detects the Gauntlet binary at runtime
+and never depends on it.
+
+### Config migration
+
+The `[gauntlet]` section of `rivet.toml` is now `[verifier]`. The old name
+still loads for this release: the loader prints
+`[rivet] 'rivet.toml' uses the deprecated '[gauntlet]' section; rename it to
+'[verifier]' (the old name is removed in 0.2)` to stderr and reads its
+values. When both sections are present, `[verifier]` wins. The shim carries
+`// TODO(remove-in-0.2): remove [gauntlet] compat shim`.
+
+Error codes `E2042`-`E2046` do not change; they are stable identifiers.
 
 **Status**: Closed except the mutation tester. `rivet build` enforces the
 five rules (`E2042`-`E2046`) between parse and generate; `rivet audit`
@@ -81,7 +116,7 @@ scans the dependency tree. See `tasks/completed.md`.
 **Status**: Complete. `rivet mcp` serves the parser, audit, vector, and
 context-store tools over stdio on the official rmcp SDK; `/plan` turns a
 story into a verified `rivet/plan/*` branch with a spec and audit grade
-(BYO LLM provider or `--from`), `/fix` applies the Gauntlet's
+(BYO LLM provider or `--from`), `/fix` applies the Verifier's
 deterministic repairs, `/trace` follows a request to its introducing
 commit, and every JSON diagnostic carries a `suggested_fix`. See
 `tasks/completed.md` and `docs/pillars/09-super-cli.md`.
@@ -190,3 +225,5 @@ wait. See the scope section in `tasks/todo.md`.
 - Edge deployment (Cloudflare Workers, Fly.io).
 - More language parsers (Java, Go, C#), and a TypeScript DSL front end over
   the same IR once the Python front end is complete.
+- Rivet adapter for the Gauntlet CLI so DSL-level rules can be centralized
+  and versioned independently.

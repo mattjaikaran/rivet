@@ -15,7 +15,7 @@ The overall grade (A+ to F) is reported in `rivet audit`.
 
 ## Phase-1 subset (`rivet audit`)
 
-`rivet audit` runs the Gauntlet rules over one module and folds the
+`rivet audit` runs the Verifier rules over one module and folds the
 findings into a grade. Phase 1 scores the four dimensions that the rules
 measure; the other three need the generated Rust crate and its tests, so
 they stay Rust-side (see below).
@@ -64,7 +64,7 @@ does not exist yet, so phase 1 cannot compute these metrics. Decision:
 they stay Rust-side and are **not scored**; `rivet audit` lists them in
 the `not_scored` array of the JSON breakdown with their reasons so the
 index never reports a partial metric as complete. A dimension whose rule
-the `[gauntlet]` config disables also appears in `not_scored`.
+the `[verifier]` config disables also appears in `not_scored`.
 
 The mutation-tester roadmap bullet stays open until the generated-code
 test story lands (see `docs/ROADMAP.md` phase 1).

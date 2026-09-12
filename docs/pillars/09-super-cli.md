@@ -7,7 +7,7 @@ as written.
 | Command | Purpose |
 | :--- | :--- |
 | `rivet /plan "<story>"` | Turns a user story into a verified `rivet/plan/*` branch with a spec and an audit grade |
-| `rivet /fix` | Applies the Gauntlet's deterministic repairs |
+| `rivet /fix` | Applies the Verifier's deterministic repairs |
 | `rivet /trace "<symptom>"` | Traces a request from the DSL route through the generated code to its introducing commit |
 | `rivet session save` | Saves current context (with compacted Markdown) |
 | `rivet session resume` | Restores a session |
@@ -35,7 +35,7 @@ re-implements pipeline logic. The tool set maps onto the shipped
 machinery:
 
 - `parse_app` parses a DSL module and returns its IR blueprint and
-  Gauntlet findings as JSON.
+  Verifier findings as JSON.
 - `audit_app` returns the MQI grade and dimension breakdown.
 - `vector_search` embeds a symptom and returns the nearest blueprint
   route chunks with distances.
@@ -50,7 +50,7 @@ server never nests runtimes.
 
 ## Slash commands
 
-`/fix` re-runs the Gauntlet and applies only deterministic, safe repairs
+`/fix` re-runs the Verifier and applies only deterministic, safe repairs
 by source span: dead helpers and DTOs (E2044) and runtime classes,
 foreign functions, and stray module statements (E2046). It converges in
 up to five parse/re-check rounds and never deletes a route. Findings the
@@ -71,7 +71,7 @@ the spec, deliver a branch.
    tag the story IDs they serve and stay inside the documented DSL
    subset.
 2. **Converge.** The module runs through the real pipeline: parse, the
-   Gauntlet, and `rivet build`. Local verification is the arbiter; the
+   Verifier, and `rivet build`. Local verification is the arbiter; the
    model does not grade itself. On failure the structured diagnostics
    go back to the provider once (two attempts total).
 3. **Deliver.** Branch `rivet/plan/<slug>` from HEAD, SPEC.md and the
@@ -115,6 +115,6 @@ Every diagnostic carries a `suggested_fix`. The field is a required
 `String` on both `Diagnostic` and `Finding`; the JSON payload always
 emits it, and each construction site supplies a remediation written from
 its error code's meaning. A parser error says which annotation to add; a
-Gauntlet finding says which helper to remove or how to tag a route; an
+Verifier finding says which helper to remove or how to tag a route; an
 internal failure says what to check before reporting. An agent receives
 no bare error code.

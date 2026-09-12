@@ -70,7 +70,7 @@ the project store the way `commands::explain` does.
 
 The tool set, mapped to what exists today:
 
-- `parse_app` — parse the module and run the Gauntlet. Returns the
+- `parse_app` — parse the module and run the Verifier. Returns the
   `ServiceBlueprint` as JSON plus the findings (each with
   `suggested_fix`).
 - `audit_app` — the MQI grade and dimension breakdown as JSON
@@ -99,12 +99,12 @@ clap parses, then dispatch to `commands::plan`, `commands::fix`, and
 the existing commands and records its invocation in the store.
 
 `rivet /trace "<symptom>"` traces a request through the system end to
-end: parse the module, run the Gauntlet, embed the symptom and find the
+end: parse the module, run the Verifier, embed the symptom and find the
 nearest route chunk (vector), then report the route contract, the
 generated Rust symbols the transpiler would emit, and the introducing
 commit via git pickaxe. Print one trace with source spans and commit.
 
-`rivet /fix` runs the Gauntlet and applies only fixes that are
+`rivet /fix` runs the Verifier and applies only fixes that are
 deterministic and safe: deleting module items the rules flag as dead
 (unused helpers and DTOs) or untranslatable (runtime classes, foreign
 decorators, stray statements). Rewrite `app.py` by source span, then
@@ -127,7 +127,7 @@ the code, converge the code against the spec.
 The pipeline, in order:
 
 1. **Context.** Parse and audit the current module. Assemble one compact
-   deterministic context: the module summary, the `[gauntlet]` config,
+   deterministic context: the module summary, the `[verifier]` config,
    and the current findings. This context is the only project text the
    provider sees — no raw file dumps, no full transcripts.
 2. **Spec.** Ask the provider for a spec document plus the full
@@ -135,7 +135,7 @@ The pipeline, in order:
    response. The spec records the story, the routes and DTOs it adds, and
    its acceptance checks. The module must stay inside the documented DSL
    subset and tag every new route with the story IDs it serves.
-3. **Converge.** Run the module through the real pipeline: parse, Gauntlet,
+3. **Converge.** Run the module through the real pipeline: parse, Verifier,
    `rivet build`. If a finding or a compile error appears, send the
    structured diagnostics back once (bounded retry, two attempts total)
    and converge again. Local verification is the arbiter; the model does
@@ -176,7 +176,7 @@ Token economy, encoded:
 
 - Acceptance: with `--from` and a fixture story on a git-initialized
   fixture project, `/plan` produces branch `rivet/plan/<slug>` whose
-  module parses, passes the Gauntlet, builds, and answers a request for
+  module parses, passes the Verifier, builds, and answers a request for
   the new route. The prompt assembly and response parsing unit tests
   cover the provider module offline.
 
@@ -197,7 +197,7 @@ say exactly that. Update the `json_payload_is_parseable_and_complete`
 test and any other test that assumed an absent fix.
 
 - Acceptance: a matrix of failing fixture modules (one per parser code
-  and one per Gauntlet rule) plus the store and config error paths each
+  and one per Verifier rule) plus the store and config error paths each
   emit a diagnostic whose JSON carries a non-empty `suggested_fix`.
 
 ### 6. Docs and tracker
@@ -220,10 +220,10 @@ Acceptance Criteria
 - `/plan`, `/fix`, and `/trace` each have an integration test on a
   fixture project.
 - On a fixture story, `/plan --from <file>` produces a branch whose
-  module passes the Gauntlet, builds, and answers a request for the new
+  module passes the Verifier, builds, and answers a request for the new
   route.
 - Every emitted diagnostic in an error scenario carries `suggested_fix`,
-  Gauntlet findings included.
+  Verifier findings included.
 - The provider module reads base URL, key, and model from the
   environment and never commits them.
 - `cargo fmt --all -- --check`, `cargo clippy -- -D warnings`, and
@@ -237,14 +237,14 @@ Agent Instructions
 3. Store, vector, and provider network access live in `rivet-cli`, never
    in `rivet-core`.
 4. New error codes stay in the ranges the tree already owns. The parser
-   owns `E1xxx`, the generator and Gauntlet own `E2xxx`, and the context
+   owns `E1xxx`, the generator and Verifier own `E2xxx`, and the context
    engine owns `E3xxx` — give the new commands the next free context
    codes after `E3010`.
 5. Build JSON by hand from `serde_json::Value`. Never use the `json!`
    macro, `unwrap`, or `expect` outside tests.
 6. Keep modules small — well under 400 lines including tests. Split a
    module that outgrows its concern instead of stretching it.
-7. Reuse `render_context`, `store::vector`, and the Gauntlet exactly as
+7. Reuse `render_context`, `store::vector`, and the Verifier exactly as
    they are. Do not invent a second convention beside an existing one.
 8. No secrets, no placeholders, no invented facts. Provider keys exist
    only in the environment.
@@ -255,6 +255,6 @@ Output
 A PR where an AI agent opens Rivet and finds its tools: an MCP server
 exposing the AST, the audit, and the vector index; `/plan` that turns a
 story into a verified branch with a spec and an audit grade; `/fix` that
-repairs what the Gauntlet can repair; `/trace` that follows a request to
+repairs what the Verifier can repair; `/trace` that follows a request to
 its introducing commit; and a `suggested_fix` on every error it emits —
 all recorded in pillar 09 and the roadmap.

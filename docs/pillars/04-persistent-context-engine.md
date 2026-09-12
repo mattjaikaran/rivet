@@ -37,7 +37,7 @@ Commands:
 - `rivet history [app]` lists recorded commands newest-first with an RFC
   3339 timestamp, exit status, and duration.
 - `rivet session save <name> [app]` renders the current module context (the
-  parsed blueprint, the `[gauntlet]` config, and the diagnostics it
+  parsed blueprint, the `[verifier]` config, and the diagnostics it
   produced) as compact markdown and stores it.
 - `rivet session resume <name> [app]` prints a saved session back verbatim.
 - `rivet session list [app]` lists the saved session names.
