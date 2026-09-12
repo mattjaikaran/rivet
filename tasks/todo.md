@@ -25,6 +25,7 @@ start TypeScript work.
 
 The Python DSL front end is a subset. Finish it before any other language.
 Each item below is Python-side front-end work, ordered by what it unblocks.
+Seed prompt: `prompts/prompt-09-python-frontend.md` (authored 2026-09-12).
 
 - [ ] `for` and `match` in a handler body. Assignment, `if`/`elif`/`else`,
   and several `return`s have landed; the other two statement kinds have not.
@@ -85,7 +86,8 @@ A task is done when all of the following hold:
 | 2 - Context engine | weeks 5-6 | 04 | `prompts/prompt-05-context.md` (done) |
 | 3 - MCP & agentic CLI | weeks 7-8 | 09 | `prompts/prompt-06-mcp.md` (done) |
 | 4 - Ecosystem & multi-service | weeks 9-10 | 01, 02, 03 | `prompts/prompt-07-ecosystem.md` (done) |
-| 5 - WASM & mobile | weeks 11-12 | 08 | `prompts/prompt-08-wasm-mobile.md` (to author) |
+| 5 - WASM & mobile | weeks 11-12 | 08 | `prompts/prompt-08-wasm-mobile.md` (partial: WASM landed, mobile blocked on toolchains) |
+| Front end | pre-language | 03 | `prompts/prompt-09-python-frontend.md` (active) |
 
 ---
 
