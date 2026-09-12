@@ -106,9 +106,11 @@ reads the envelope to decide the HTTP status.
 ### Why the module has no reactor
 
 Every generated route is an `async fn` that never awaits: the parser's subset
-is literals, request parameters, and one DTO construction, so no route holds
-I/O. A future is therefore ready on its first poll, and the executor is one
-poll with `Waker::noop()` — no tokio, no threads, and no runtime to carry.
+is literals, parameters, locals, branches, and one DTO construction, so no
+route holds I/O. A future is therefore ready on its first poll, and the
+executor is one poll with `Waker::noop()` — no tokio, no threads, and no
+runtime to carry.
+
 The `block_on` loop would spin on a future that returned `Pending`, which is
 why a route that awaited would have to arrive with a reactor.
 

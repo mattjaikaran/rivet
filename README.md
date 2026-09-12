@@ -177,11 +177,16 @@ make clean-all    # the above plus the workspace cargo cache
 - at most one request body per handler: a `dict`, a DTO, or a list, plus a
   return annotation (`dict`, primitives, or `-> None`)
 - annotation-only DTO classes (`class OrderCreate: sku: str`)
-- handler bodies that return literals, request values, or a single DTO
-  constructor
+- handler bodies that bind locals with `name = <expr>`, branch with
+  `if`/`elif`/`else`, and return from any branch; the expression subset is
+  literals, request values, a DTO constructor, `+ - * /`, the comparisons,
+  `and`, `or`, and `not`
 - `borrowed[str]` DTO fields (a slice of the request body) under the
   `zero_copy_deserialization` flag, and `List[T, N]` fixed-size arrays under
   `const_generics`
+- `//` and `%` are rejected: Python floors toward negative infinity and Rust
+  truncates, so the two disagree for every negative operand and the
+  generator will not pick one meaning for the other
 
 Anything outside the subset fails the build with a structured, machine-readable
 JSON error instead of a silent mistranslation. Full Python semantics are the

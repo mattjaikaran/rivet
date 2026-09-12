@@ -20,8 +20,9 @@
 //!   parameters, query parameters for the primitives the path does not name,
 //!   and at most one request body (`dict`, a DTO, or a list)
 //! - annotation-only DTO classes (`class OrderCreate: sku: str`)
-//! - handler bodies that are a single `return` of the supported expression
-//!   subset (see [`crate::parser::expr`])
+//! - handler bodies that bind locals with `name = <expr>`, branch with
+//!   `if`/`elif`/`else`, and return from any branch, over the expression
+//!   subset in [`crate::parser::expr`]
 //!
 //! Diagnostic codes raised by the front end:
 //!
@@ -32,7 +33,7 @@
 //! | E1003 | reference to an unknown or non-DTO type |
 //! | E1004 | unsupported handler signature (multiple params, defaults, ...) |
 //! | E1005 | invalid `api` decorator |
-//! | E1006 | unsupported statement or control flow in a handler body |
+//! | E1006 | unsupported statement in a handler body |
 //! | E1007 | unsupported expression (raised by the expression translator) |
 //! | E1008 | file or grammar-level failure |
 //! | E1009 | no routes found |
@@ -40,6 +41,7 @@
 //! | E1011 | identifier is not a safe Rust identifier |
 //! | E1012 | two routes share a handler name |
 //! | E1013 | identifier collides with a name the generated crate owns |
+//! | E1014 | a request parameter cannot borrow from the request body |
 //! | E1015 | invalid path parameter |
 
 use crate::diagnostic::Diagnostic;
