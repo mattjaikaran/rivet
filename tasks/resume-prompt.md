@@ -308,11 +308,14 @@ Rules that keep this cheap and correct:
 - **The generated crate must compile warning-free** for every input the change
   makes legal. An unused handler parameter warns today, and that is the one
   known exception: the user can act on it, unlike a generated name.
-- **File ceiling is 400 lines** and it bites. The largest sources are
-  `rivet-cli/src/parser/python.rs` (523, must shrink not grow),
-  `rivet-cli/src/transpiler/rust.rs` (622, must shrink not grow), and
-  `rivet-cli/src/commands/audit.rs` (427). Split into a sibling module with a
-  `tests.rs` before you reach it.
+- **File ceiling is 400 lines** and it bites. Three files are grandfathered
+  ratchets, and the numbers in
+  `constraint-tools/src/bin/check-file-length.rs` are the authority, not their
+  current size: `rivet-cli/src/parser/python.rs` (728),
+  `rivet-cli/src/transpiler/rust.rs` (699), and
+  `rivet-cli/src/commands/audit.rs` (679). A ratchet may not grow, but it has
+  real headroom below its limit, so read the table before you decide a needed
+  edit requires a split. Any other file, including a new module, takes 400.
 - **No two conventions.** Read the neighbouring module before you add one.
 - Idiomatic ownership over clones; `Result` with structured errors; no panics
   in library paths; no `unwrap`/`expect` outside tests; build JSON by hand

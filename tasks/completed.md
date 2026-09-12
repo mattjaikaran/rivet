@@ -1056,3 +1056,19 @@ exist.
 - `./scripts/gate.sh` passes: fmt, clippy `-D warnings`, the workspace
   suite, `cargo deny`, the example build and audit, and the repo
   self-checks (`6315ebb`).
+- **`while` stays out, as a recorded scope decision.** The seed prompt asked
+  for that decision explicitly. It needs no new IR beyond a condition and a
+  body, and it reuses the `for` treatment of `all_paths_return`: a `while`
+  may run zero times, so it never completes a handler. It is out because it
+  was not part of this change, not because the IR blocks it, so it is a
+  separate item and `tasks/todo.md` carries it as one (`6315ebb`).
+- A follow-up commit corrects three defects the first pass left. The `match`
+  scrutinee was wrapped in parentheses for an operation or a `not` subject,
+  which emitted `warning: unnecessary parentheses` in the generated crate —
+  a probe through the real pipeline showed `match qty + 1i64 {`,
+  `match format!(…).as_str() {`, and `match !(flag) {` all compile with no
+  wrapper, so the wrapper is gone. The example app gained `order_tally`
+  (US-010), a fall-through body that ends in a `for`, so the gate compiles the
+  JSON null tail path and the example stays warning-free. And three tests now
+  cover the shapes that had none: the null tail, the absent tail on a
+  completing body, and an operation and a `not` subject.

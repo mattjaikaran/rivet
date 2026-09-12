@@ -3,34 +3,6 @@
 
 use super::*;
 
-/// Build a one-route blueprint around a handler body, for the statement
-/// rendering tests below.
-fn route_blueprint(
-    handler: &str,
-    path: &str,
-    path_params: Vec<RouteParam>,
-    response: ResponseSpec,
-    body: Vec<Stmt>,
-) -> ServiceBlueprint {
-    ServiceBlueprint {
-        name: "app".to_string(),
-        structs: vec![],
-        routes: vec![RouteDefinition {
-            method: HttpMethod::Get,
-            path: path.to_string(),
-            path_params,
-            query_params: vec![],
-            handler_name: handler.to_string(),
-            stories: vec!["US-001".to_string()],
-            middlewares: vec![],
-            request: RequestSpec::None,
-            response,
-            body,
-        }],
-        dependencies: vec![],
-    }
-}
-
 #[test]
 fn renders_a_for_loop_over_a_list_literal() {
     let blueprint = route_blueprint(
@@ -211,6 +183,104 @@ fn a_parameter_read_inside_a_match_arm_is_cloned() {
             .main_rs
             .contains("let outside: String = name.clone();"),
         "a parameter read in an arm and outside it clones:\n{}",
+        project.main_rs
+    );
+}
+
+/// A `dict` route may fall off its end, which Python answers as `None`. The
+/// generated function needs the JSON null tail, or it ends in `()` against a
+/// `serde_json::Value` return type and fails with `E0308`.
+///
+/// A `for` may run zero times, so it never completes a handler. Before this
+/// tail existed, a body whose last statement was a `for` produced a function
+/// that did not compile.
+#[test]
+fn a_body_that_ends_in_a_loop_answers_json_null() {
+    let blueprint = route_blueprint(
+        "sum_tail",
+        "/sum/{id}",
+        vec![RouteParam {
+            name: "id".to_string(),
+            ty: TypeRef::Int,
+        }],
+        ResponseSpec::Json(TypeRef::Json),
+        vec![
+            Stmt::Assign {
+                name: "total".to_string(),
+                ty: TypeRef::Int,
+                value: Expr::Int(0),
+            },
+            Stmt::For {
+                name: "line".to_string(),
+                ty: TypeRef::Int,
+                iterable: Expr::Array(vec![Expr::Int(1), Expr::Int(2), Expr::Int(3)]),
+                body: vec![Stmt::Assign {
+                    name: "total".to_string(),
+                    ty: TypeRef::Int,
+                    value: Expr::Binary {
+                        op: BinOp::Add,
+                        left: Box::new(Expr::Ident("total".to_string())),
+                        right: Box::new(Expr::Ident("line".to_string())),
+                    },
+                }],
+            },
+        ],
+    );
+
+    let project =
+        generate_project(&blueprint, &RivetConfig::default(), Path::new(".")).expect("generate");
+
+    assert!(
+        project.main_rs.contains("for line in [1i64, 2i64, 3i64] {"),
+        "the loop is rendered:\n{}",
+        project.main_rs
+    );
+    assert!(
+        project.main_rs.contains("serde_json::Value::Null\n    }\n"),
+        "a body that can fall through ends with the JSON null tail:\n{}",
+        project.main_rs
+    );
+}
+
+/// A body that returns on every path must NOT gain the tail: it already ends
+/// in a diverging expression, so a second expression would not compile.
+#[test]
+fn a_body_that_returns_on_every_path_has_no_null_tail() {
+    let blueprint = route_blueprint(
+        "grade",
+        "/grade/{score}",
+        vec![RouteParam {
+            name: "score".to_string(),
+            ty: TypeRef::Int,
+        }],
+        ResponseSpec::Json(TypeRef::Json),
+        vec![Stmt::Match {
+            subject: Expr::Ident("score".to_string()),
+            arms: vec![
+                (
+                    Some(Expr::Int(1)),
+                    vec![Stmt::Return(Expr::Object(vec![(
+                        "grade".to_string(),
+                        Expr::Str("low".to_string()),
+                    )]))],
+                ),
+                (
+                    None,
+                    vec![Stmt::Return(Expr::Object(vec![(
+                        "grade".to_string(),
+                        Expr::Str("high".to_string()),
+                    )]))],
+                ),
+            ],
+        }],
+    );
+
+    let project =
+        generate_project(&blueprint, &RivetConfig::default(), Path::new(".")).expect("generate");
+
+    assert!(
+        !project.main_rs.contains("serde_json::Value::Null\n    }\n"),
+        "a completing body takes no tail:\n{}",
         project.main_rs
     );
 }

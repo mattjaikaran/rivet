@@ -200,3 +200,31 @@ pub(super) fn grpc_config() -> RivetConfig {
         ..RivetConfig::default()
     }
 }
+
+/// Build a one-route blueprint around a handler body, for the statement and
+/// rendering tests below.
+pub(super) fn route_blueprint(
+    handler: &str,
+    path: &str,
+    path_params: Vec<RouteParam>,
+    response: ResponseSpec,
+    body: Vec<Stmt>,
+) -> ServiceBlueprint {
+    ServiceBlueprint {
+        name: "app".to_string(),
+        structs: vec![],
+        routes: vec![RouteDefinition {
+            method: HttpMethod::Get,
+            path: path.to_string(),
+            path_params,
+            query_params: vec![],
+            handler_name: handler.to_string(),
+            stories: vec!["US-001".to_string()],
+            middlewares: vec![],
+            request: RequestSpec::None,
+            response,
+            body,
+        }],
+        dependencies: vec![],
+    }
+}

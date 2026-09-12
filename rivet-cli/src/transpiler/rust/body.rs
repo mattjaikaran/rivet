@@ -172,12 +172,13 @@ pub(super) fn render_body(
                     )
                     .located("<generated>", 1)
                 })?;
+                // A `match` scrutinee needs no parentheses around an
+                // operation or a `not`: `match a + b {` and `match !flag {`
+                // both parse, and wrapping them trips `unused_parens` in the
+                // generated crate. `render_not` supplies its own parentheses.
                 let mut scrutinee = emitter.render_typed(subject, &ty)?;
                 if ty == TypeRef::String {
                     scrutinee = format!("{scrutinee}.as_str()");
-                }
-                if matches!(subject, Expr::Binary { .. } | Expr::Not(_)) {
-                    scrutinee = format!("({scrutinee})");
                 }
                 out.push_str(&format!("{pad}match {scrutinee} {{\n"));
                 for (pattern, arm) in arms {

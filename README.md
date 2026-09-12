@@ -78,7 +78,7 @@ the frontend's HMR socket:
 
 ```bash
 ./target/release/rivet dev examples/basic/app.py
-# Detected vite: the backend keeps 9 route(s) and /api/*, port Some(5173) serves the rest
+# Detected vite: the backend keeps 10 route(s) and /api/*, port Some(5173) serves the rest
 # rivet dev listening on http://127.0.0.1:3000
 ```
 

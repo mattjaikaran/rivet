@@ -12,6 +12,7 @@ mod fixtures;
 mod path_params;
 mod query_params;
 mod statements;
+mod subjects;
 mod zero_copy;
 use fixtures::*;
 

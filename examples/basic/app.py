@@ -98,3 +98,11 @@ def grade(score: int) -> dict:
             return {"grade": "low"}
         case _:
             return {"grade": "high"}
+
+
+@api.get("/orders/{id}/tally", stories=["US-010"])
+def order_tally(id: int) -> dict:
+    """Tallies line values with a loop and may fall off its end, which answers null."""
+    total = 0
+    for line in [id, 2, 3]:
+        total = total + line
