@@ -181,6 +181,35 @@ impl Emitter<'_> {
         }
     }
 
+    /// Render the value a `for` loop walks.
+    ///
+    /// A list literal renders as an array literal, so `for … in [a, b]`
+    /// iterates by value; `vec![…]` here would trip `clippy::useless_vec` in
+    /// the generated crate. Any other iterable renders into the `Vec` the
+    /// loop target expects.
+    pub(super) fn render_iterable(
+        &self,
+        iterable: &Expr,
+        ty: &TypeRef,
+    ) -> Result<String, Diagnostic> {
+        match iterable {
+            Expr::Array(items) => {
+                let rendered = items
+                    .iter()
+                    .map(|item| self.render_typed(item, ty))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(format!("[{}]", rendered.join(", ")))
+            }
+            _ => self.render_typed(
+                iterable,
+                &TypeRef::Array {
+                    element: Box::new(ty.clone()),
+                    len: None,
+                },
+            ),
+        }
+    }
+
     /// Render an expression of type `serde_json::Value`.
     pub(super) fn render_value(&self, expr: &Expr) -> Result<String, Diagnostic> {
         match expr {

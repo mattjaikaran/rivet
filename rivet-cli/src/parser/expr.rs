@@ -6,7 +6,7 @@
 //!   dictionaries
 //! - references to a handler parameter or a local the body assigned
 //! - DTO construction: `OrderResponse(status="ok")`
-//! - arithmetic (`+ - * / // %`), comparisons (`== != < <= > >=`), `and`,
+//! - arithmetic (`+ - * /`), comparisons (`== != < <= > >=`), `and`,
 //!   `or`, and `not`
 //!
 //! Anything else (attribute access, subscripts, calls other than a DTO

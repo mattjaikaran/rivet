@@ -164,6 +164,27 @@ pub enum Stmt {
         branches: Vec<(Expr, Vec<Stmt>)>,
         otherwise: Vec<Stmt>,
     },
+    /// `for <name> in <iterable>:` — one pass of `body` per element.
+    ///
+    /// The loop binds `name` for `body` alone. The parser rejects a use of
+    /// `name` below the loop, because Rust scopes the binding to the loop and
+    /// a name that escaped it would not compile.
+    For {
+        name: String,
+        /// The element type the loop binding takes, resolved by the parser so
+        /// the generator needs no second type analysis.
+        ty: TypeRef,
+        iterable: Expr,
+        body: Vec<Stmt>,
+    },
+    /// `match <subject>:` — one arm per `case`.
+    ///
+    /// Each arm is an optional pattern and the body it guards. `None` is the
+    /// `case _` wildcard, which must come last.
+    Match {
+        subject: Expr,
+        arms: Vec<(Option<Expr>, Vec<Stmt>)>,
+    },
 }
 
 impl Stmt {
@@ -171,7 +192,11 @@ impl Stmt {
     ///
     /// A handler whose response carries a value must return on every path, so
     /// the parser asks this before it accepts the body. An `if` completes
-    /// only when it has an `else` and every branch completes.
+    /// only when it has an `else` and every branch completes. A `for` never
+    /// completes, because the collection it walks may be empty, so a `for` is
+    /// never the statement that ends the body. A `match` completes only when
+    /// a wildcard arm catches every subject the other arms leave and every
+    /// arm completes.
     pub fn all_paths_return(body: &[Stmt]) -> bool {
         match body.last() {
             Some(Stmt::Return(_)) => true,
@@ -185,6 +210,11 @@ impl Stmt {
                         .iter()
                         .all(|(_, branch)| Self::all_paths_return(branch))
             }
+            Some(Stmt::For { .. }) => false,
+            Some(Stmt::Match { arms, .. }) => {
+                arms.iter().any(|(pattern, _)| pattern.is_none())
+                    && arms.iter().all(|(_, arm)| Self::all_paths_return(arm))
+            }
             _ => false,
         }
     }
@@ -194,15 +224,23 @@ impl Stmt {
         let mut out = Vec::new();
         for stmt in body {
             out.push(stmt);
-            if let Stmt::If {
-                branches,
-                otherwise,
-            } = stmt
-            {
-                for (_, branch) in branches {
-                    out.extend(Self::walk(branch));
+            match stmt {
+                Stmt::If {
+                    branches,
+                    otherwise,
+                } => {
+                    for (_, branch) in branches {
+                        out.extend(Self::walk(branch));
+                    }
+                    out.extend(Self::walk(otherwise));
                 }
-                out.extend(Self::walk(otherwise));
+                Stmt::For { body, .. } => out.extend(Self::walk(body)),
+                Stmt::Match { arms, .. } => {
+                    for (_, arm) in arms {
+                        out.extend(Self::walk(arm));
+                    }
+                }
+                Stmt::Return(_) | Stmt::Assign { .. } => {}
             }
         }
         out

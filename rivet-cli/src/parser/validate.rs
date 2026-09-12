@@ -57,7 +57,9 @@ pub(crate) fn validate_returns(
 /// Check every return in one block, in source order.
 ///
 /// `env` gains each local as the walk reaches it, so a `return` below an
-/// assignment can name the value that assignment bound.
+/// assignment can name the value that assignment bound. A nested block's
+/// bindings disappear when the block ends, which is what the generator emits:
+/// a name bound in an `if`, `for`, or `match` arm is not in scope after it.
 fn check_block(
     body: &[Stmt],
     route: &RouteDefinition,
@@ -65,6 +67,7 @@ fn check_block(
     dtos: &HashMap<String, StructDefinition>,
     env: &mut HashMap<String, TypeRef>,
 ) -> Result<(), Diagnostic> {
+    let outer: Vec<String> = env.keys().cloned().collect();
     for statement in body {
         match statement {
             Stmt::Return(value) => check_return(value, route, file, dtos, env)?,
@@ -76,12 +79,28 @@ fn check_block(
                 otherwise,
             } => {
                 for (_, branch) in branches {
-                    check_block(branch, route, file, dtos, env)?;
+                    let mut inner = env.clone();
+                    check_block(branch, route, file, dtos, &mut inner)?;
                 }
-                check_block(otherwise, route, file, dtos, env)?;
+                let mut inner = env.clone();
+                check_block(otherwise, route, file, dtos, &mut inner)?;
+            }
+            Stmt::For { name, ty, body, .. } => {
+                let mut inner = env.clone();
+                inner.insert(name.clone(), ty.clone());
+                check_block(body, route, file, dtos, &mut inner)?;
+            }
+            Stmt::Match { arms, .. } => {
+                for (_, arm) in arms {
+                    let mut inner = env.clone();
+                    check_block(arm, route, file, dtos, &mut inner)?;
+                }
             }
         }
     }
+    // Everything the block introduced goes out of scope here, so a `return`
+    // below cannot resolve a name the block bound.
+    env.retain(|name, _| outer.contains(name));
     Ok(())
 }
 

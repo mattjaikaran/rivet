@@ -5,11 +5,12 @@
 //! functions, either directly or over gRPC, so the configured topology never
 //! changes a route's code.
 
+use super::body::{BodyContext, render_body};
 use super::{Codegen, Emitter, count_idents_in, param_types};
 use crate::diagnostic::Diagnostic;
 use rivet_core::ir::{RequestSpec, ResponseSpec, RouteDefinition, ServiceBlueprint, Stmt, TypeRef};
 use rivet_core::reserved;
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 /// Render `mod service`: one function per route, in blueprint order.
 pub(super) fn render_service_module(
@@ -102,6 +103,9 @@ pub(super) fn render_route(
 ) -> Result<RenderedRoute, Diagnostic> {
     let counts = count_idents_in(route);
     let mut env = param_types(route);
+    // Names this renderer emitted a `let` for, so a later assignment to one
+    // becomes a plain reassignment instead of a second `let`.
+    let mut declared = HashSet::new();
 
     let path_params: Vec<(String, String)> = route
         .path_params
@@ -126,15 +130,8 @@ pub(super) fn render_route(
         ResponseSpec::Json(_) => "serde_json::Value".to_string(),
     };
 
-    let body = match route.body.as_slice() {
-        [] => {
-            if matches!(route.response, ResponseSpec::None) {
-                String::new()
-            } else {
-                // A value route with no return still answers JSON null.
-                "serde_json::Value::Null".to_string()
-            }
-        }
+    let mut body = match route.body.as_slice() {
+        [] if matches!(route.response, ResponseSpec::None) => String::new(),
         [Stmt::Return(expr)] if !matches!(route.response, ResponseSpec::None) => {
             // A single return is the common shape; render it as a tail
             // expression so the generated function stays byte-for-byte the
@@ -154,9 +151,20 @@ pub(super) fn render_route(
             },
             route.body.as_slice(),
             &mut env,
+            &mut declared,
             0,
         )?,
     };
+
+    // A `dict` route may fall off its end: Python answers `None` and the route
+    // answers JSON null, so the generated function needs that tail. Every
+    // other statement leaves `()` behind, because a Rust block whose last
+    // statement is a `for` or a branch evaluates to `()` rather than diverging.
+    if matches!(route.response, ResponseSpec::Json(TypeRef::Json))
+        && !Stmt::all_paths_return(&route.body)
+    {
+        body.push_str("serde_json::Value::Null\n");
+    }
 
     Ok(RenderedRoute {
         path_params,
@@ -165,95 +173,6 @@ pub(super) fn render_route(
         return_ty,
         body,
     })
-}
-
-/// The context a body render carries down its recursion.
-///
-/// It is the same at every level — the surrounding function supplies it once —
-/// so it travels as one value rather than as four arguments.
-struct BodyContext<'a, 'c> {
-    codegen: &'a Codegen<'c>,
-    counts: &'a HashMap<String, usize>,
-    response: &'a ResponseSpec,
-}
-
-/// Render a handler body as Rust statements, at column zero.
-///
-/// Each statement is one line (an `if` block spans several), and `render_fn`
-/// indents the whole block. The environment gains a binding for every local
-/// the walk assigns, so a later statement resolves the local's type.
-fn render_body(
-    context: &BodyContext<'_, '_>,
-    body: &[Stmt],
-    env: &mut HashMap<String, TypeRef>,
-    indent: usize,
-) -> Result<String, Diagnostic> {
-    let pad = "    ".repeat(indent);
-    let mut out = String::new();
-    for stmt in body {
-        match stmt {
-            Stmt::Assign { name, ty, value } => {
-                let rendered = {
-                    let emitter = Emitter {
-                        codegen: context.codegen,
-                        params: env,
-                        counts: context.counts,
-                    };
-                    emitter.render_typed(value, ty)?
-                };
-                let rust_ty = context.codegen.rust_type(ty, false)?;
-                out.push_str(&format!("{pad}let {name}: {rust_ty} = {rendered};\n"));
-                env.insert(name.clone(), ty.clone());
-            }
-            Stmt::Return(expr) => {
-                if matches!(context.response, ResponseSpec::None) {
-                    // A bare `return` lowers to `Expr::Null`; under `-> None`
-                    // it renders as the plain `return;`.
-                    out.push_str(&format!("{pad}return;\n"));
-                } else {
-                    let value = {
-                        let emitter = Emitter {
-                            codegen: context.codegen,
-                            params: env,
-                            counts: context.counts,
-                        };
-                        emitter.render_return_value(expr, context.response)?
-                    };
-                    out.push_str(&format!("{pad}return {value};\n"));
-                }
-            }
-            Stmt::If {
-                branches,
-                otherwise,
-            } => {
-                // Render every condition first, so the immutable borrow of
-                // `env` ends before the recursion below mutates it.
-                let mut conditions = Vec::with_capacity(branches.len());
-                for (cond, _) in branches {
-                    let emitter = Emitter {
-                        codegen: context.codegen,
-                        params: env,
-                        counts: context.counts,
-                    };
-                    conditions.push(emitter.render_typed(cond, &TypeRef::Bool)?);
-                }
-                for (i, ((_, branch), cond)) in branches.iter().zip(&conditions).enumerate() {
-                    if i == 0 {
-                        out.push_str(&format!("{pad}if {cond} {{\n"));
-                    } else {
-                        out.push_str(&format!("{pad}}} else if {cond} {{\n"));
-                    }
-                    out.push_str(&render_body(context, branch, env, indent + 1)?);
-                }
-                if !otherwise.is_empty() {
-                    out.push_str(&format!("{pad}}} else {{\n"));
-                    out.push_str(&render_body(context, otherwise, env, indent + 1)?);
-                }
-                out.push_str(&format!("{pad}}}\n"));
-            }
-        }
-    }
-    Ok(out)
 }
 
 /// Shift every line of `text` right by `spaces`.

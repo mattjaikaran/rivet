@@ -21,8 +21,9 @@
 //!   and at most one request body (`dict`, a DTO, or a list)
 //! - annotation-only DTO classes (`class OrderCreate: sku: str`)
 //! - handler bodies that bind locals with `name = <expr>`, branch with
-//!   `if`/`elif`/`else`, and return from any branch, over the expression
-//!   subset in [`crate::parser::expr`]
+//!   `if`/`elif`/`else`, loop over a list with `for`, match a value against
+//!   literals with `match`/`case`, and return from any block, over the
+//!   expression subset in [`crate::parser::expr`]
 //!
 //! Diagnostic codes raised by the front end:
 //!
@@ -43,6 +44,8 @@
 //! | E1013 | identifier collides with a name the generated crate owns |
 //! | E1014 | a request parameter cannot borrow from the request body |
 //! | E1015 | invalid path parameter |
+//! | E1016 | a name breaks the block-scope, loop-binding, or one-type rule |
+//! | E1017 | invalid `match` arm: pattern, wildcard, or subject type |
 
 use crate::diagnostic::Diagnostic;
 use crate::parser::{

@@ -1,8 +1,9 @@
 //! Handler bodies: the supported statement subset.
 //!
 //! A body is a sequence of statements. It may bind locals, branch on a
-//! condition, and return from any branch. Everything else is rejected with a
-//! diagnostic rather than translated by guesswork.
+//! condition, loop over a list, match a value against literals, and return
+//! from any block. Everything else is rejected with a diagnostic rather than
+//! translated by guesswork.
 //!
 //! Two shapes are easy to read wrongly in this grammar:
 //!
@@ -11,13 +12,20 @@
 //!   admission check has to look one level down;
 //! - `child_by_field_name("alternative")` on an `if_statement` answers only
 //!   the first `elif`/`else`, so the alternatives are read as named children.
+//!
+//! A block's bindings live for that block alone. Python scopes a local to the
+//! whole function, but Rust scopes the `let` to the block that holds it, so a
+//! name an arm bound would not compile when a statement below the arm reads
+//! it. [`parse_block`] therefore drops the names a block introduced.
+
+mod flow;
 
 use crate::diagnostic::Diagnostic;
 use crate::parser::expr;
 use crate::parser::{NamedChildren, is_docstring, line_of, node_text};
 use rivet_core::infer;
 use rivet_core::ir::{Expr, Stmt, TypeRef};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tree_sitter::Node;
 
 /// Parse a handler body into its statements.
@@ -43,18 +51,23 @@ pub(crate) fn parse_handler_body(
 }
 
 /// Parse the statements of one block.
+///
+/// The bindings the block introduces disappear when the block ends, so a
+/// statement below cannot read a name an `if`, `for`, or `match` block bound.
 fn parse_block(
     block: &Node<'_>,
     source: &str,
     file: &str,
     env: &mut HashMap<String, TypeRef>,
 ) -> Result<Vec<Stmt>, Diagnostic> {
+    let outer: HashSet<String> = env.keys().cloned().collect();
     let mut statements = Vec::new();
     for statement in block.named_children_all() {
         if let Some(parsed) = parse_statement(&statement, source, file, env)? {
             statements.push(parsed);
         }
     }
+    env.retain(|name, _| outer.contains(name));
     Ok(statements)
 }
 
@@ -96,10 +109,12 @@ fn parse_statement(
             Ok(Some(Stmt::Return(value)))
         }
         "if_statement" => parse_if(statement, source, file, env).map(Some),
+        "for_statement" => flow::parse_for(statement, source, file, env).map(Some),
+        "match_statement" => flow::parse_match(statement, source, file, env).map(Some),
         other => Err(Diagnostic::blocker(
             "E1006",
             format!("`{other}` statements are not supported in handler bodies yet"),
-            "a handler body holds assignments, `if`/`elif`/`else`, and `return`; move other work into the body of one of those",
+            "a handler body holds assignments, `if`/`elif`/`else`, `for`, `match`, and `return`; move other work into the body of one of those",
         )
         .located(file, line)),
     }
@@ -158,9 +173,25 @@ fn parse_assignment(
         )
         .located(file, line)
     })?;
-    if matches!(ty, TypeRef::Named(_) | TypeRef::Json) {
-        // A DTO or a dict local is fine to bind; this arm exists so the type
-        // is recorded for the statements that read it.
+    // A local keeps one type. Python would let `total` become a string here,
+    // but the generated crate binds it once and would fail to compile, so
+    // this is a diagnostic rather than a cargo error.
+    if let Some(bound) = env.get(name)
+        && *bound != ty
+    {
+        return Err(Diagnostic::blocker(
+            "E1016",
+            format!(
+                "`{name}` already holds a `{}`; this assignment gives it a `{}`",
+                bound.label(),
+                ty.label()
+            ),
+            format!(
+                "assign a `{}` value, or bind the new value under a different name",
+                bound.label()
+            ),
+        )
+        .located(file, line));
     }
     env.insert(name.to_string(), ty.clone());
     Ok(Stmt::Assign {
@@ -304,7 +335,7 @@ fn unsupported(statement: &Node<'_>, source: &str, file: &str, line: usize) -> D
     Diagnostic::blocker(
         "E1006",
         format!("the statement `{shown}` is not supported in handler bodies yet"),
-        "a handler body holds assignments, `if`/`elif`/`else`, and `return`; use a local to name an intermediate value",
+        "a handler body holds assignments, `if`/`elif`/`else`, `for`, `match`, and `return`; use a local to name an intermediate value",
     )
     .located(file, line)
 }

@@ -78,7 +78,7 @@ the frontend's HMR socket:
 
 ```bash
 ./target/release/rivet dev examples/basic/app.py
-# Detected vite: the backend keeps 5 route(s) and /api/*, port Some(5173) serves the rest
+# Detected vite: the backend keeps 9 route(s) and /api/*, port Some(5173) serves the rest
 # rivet dev listening on http://127.0.0.1:3000
 ```
 
@@ -185,9 +185,10 @@ every dependency from scratch.
   return annotation (`dict`, primitives, or `-> None`)
 - annotation-only DTO classes (`class OrderCreate: sku: str`)
 - handler bodies that bind locals with `name = <expr>`, branch with
-  `if`/`elif`/`else`, and return from any branch; the expression subset is
-  literals, request values, a DTO constructor, `+ - * /`, the comparisons,
-  `and`, `or`, and `not`
+  `if`/`elif`/`else`, loop with `for`, pattern-match with `match`, and
+  return from any branch; the expression subset is literals, request
+  values, a DTO constructor, `+ - * /`, the comparisons, `and`, `or`, and
+  `not`
 - `borrowed[str]` DTO fields (a slice of the request body) under the
   `zero_copy_deserialization` flag, and `List[T, N]` fixed-size arrays under
   `const_generics`

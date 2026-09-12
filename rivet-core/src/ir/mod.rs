@@ -318,4 +318,37 @@ mod tests {
         }];
         assert!(!Stmt::all_paths_return(&without_else));
     }
+
+    /// A `for` may run zero times, so it never completes a handler; a `match`
+    /// completes only through a wildcard arm whose body completes.
+    #[test]
+    fn a_loop_never_completes_and_a_match_completes_through_its_wildcard() {
+        let returns = vec![Stmt::Return(Expr::Int(1))];
+        let arms = |wildcard: bool| {
+            let mut arms = vec![(Some(Expr::Int(1)), returns.clone())];
+            if wildcard {
+                arms.push((None, returns.clone()));
+            }
+            arms
+        };
+        let match_on = |arms: Vec<(Option<Expr>, Vec<Stmt>)>| {
+            vec![Stmt::Match {
+                subject: Expr::Ident("score".to_string()),
+                arms,
+            }]
+        };
+
+        assert!(!Stmt::all_paths_return(&[Stmt::For {
+            name: "line".to_string(),
+            ty: TypeRef::Int,
+            iterable: Expr::Array(vec![Expr::Int(1)]),
+            body: returns.clone(),
+        }]));
+        assert!(Stmt::all_paths_return(&match_on(arms(true))));
+        assert!(!Stmt::all_paths_return(&match_on(arms(false))));
+        assert!(!Stmt::all_paths_return(&match_on(vec![
+            (Some(Expr::Int(1)), returns.clone()),
+            (None, vec![]),
+        ])));
+    }
 }

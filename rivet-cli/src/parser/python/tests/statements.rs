@@ -192,12 +192,12 @@ fn rejects_operands_that_cannot_combine() {
 #[test]
 fn rejects_an_unsupported_statement() {
     let diagnostic = parse(
-        "from rivet import api\n\n@api.get(\"/n\", stories=[\"US-1\"])\ndef n() -> dict:\n    for x in [1]:\n        return {\"n\": x}\n    return {}\n",
+        "from rivet import api\n\n@api.get(\"/n\", stories=[\"US-1\"])\ndef n() -> dict:\n    while True:\n        return {\"n\": 1}\n",
     )
-    .expect_err("a loop must fail");
+    .expect_err("a while loop must fail");
     assert_eq!(diagnostic.error_code, "E1006");
     assert!(
-        diagnostic.message.contains("for_statement"),
+        diagnostic.message.contains("while_statement"),
         "the diagnostic names the statement: {}",
         diagnostic.message
     );

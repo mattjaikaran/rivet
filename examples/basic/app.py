@@ -79,3 +79,22 @@ def order_total(id: int, quantity: int) -> dict:
         return {"id": id, "total": total, "tier": "bulk"}
     else:
         return {"id": id, "total": total, "tier": "single"}
+
+
+@api.get("/orders/{id}/sum", stories=["US-008"])
+def order_sum(id: int, quantity: int) -> dict:
+    """Sums a fixed list of line values and returns the total with the quantity."""
+    total = 0
+    for line in [1, 2, 3]:
+        total = total + line
+    return {"id": id, "total": total, "quantity": quantity}
+
+
+@api.get("/grade/{score}", stories=["US-009"])
+def grade(score: int) -> dict:
+    """Grades a score, returning low for one and high otherwise."""
+    match score:
+        case 1:
+            return {"grade": "low"}
+        case _:
+            return {"grade": "high"}

@@ -10,15 +10,16 @@
 use super::*;
 
 /// A fixture app with a parameterless route, a body-taking route, a DTO that
-/// carries a fixed-size array, a route whose DTO borrows from the body, and
-/// a route with an integer path parameter.
+/// carries a fixed-size array, a route whose DTO borrows from the body, a
+/// route with an integer path parameter, and a route that loops over a list
+/// and matches an integer parameter.
 ///
 /// The array field proves the serde bridge travels into the wasm crate too:
 /// the DTO renderer is shared, so a bridge emitted for one target and not the
 /// other would fail to compile here. The borrowed field proves the same for
 /// `#[serde(borrow)]`: the module decodes from the body text, so no string is
 /// copied on the way in.
-const FIXTURE_APP: &str = "from typing import List\n\nfrom rivet import api\n\n@api.get(\"/ping\", stories=[\"US-001\"])\ndef ping() -> dict:\n    return {\"status\": \"pong\"}\n\n@api.post(\"/echo\", stories=[\"US-002\"])\ndef echo(request: dict) -> dict:\n    return {\"echo\": request}\n\nclass Embedding:\n    values: List[float, 4]\n\n@api.post(\"/embed\", stories=[\"US-003\"])\ndef embed(request: Embedding) -> Embedding:\n    return request\n\nclass Note:\n    text: borrowed[str]\n\n@api.post(\"/notes\", stories=[\"US-004\"])\ndef create_note(request: Note) -> dict:\n    return {\"echo\": request}\n\n@api.get(\"/orders/{id}\", stories=[\"US-010\"])\ndef get_order(id: int) -> dict:\n    return {\"id\": id}\n\n@api.get(\"/search\", stories=[\"US-020\"])\ndef search(page: int, size: int, name: str) -> dict:\n    return {\"page\": page, \"size\": size, \"name\": name}\n";
+const FIXTURE_APP: &str = "from typing import List\n\nfrom rivet import api\n\n@api.get(\"/ping\", stories=[\"US-001\"])\ndef ping() -> dict:\n    return {\"status\": \"pong\"}\n\n@api.post(\"/echo\", stories=[\"US-002\"])\ndef echo(request: dict) -> dict:\n    return {\"echo\": request}\n\nclass Embedding:\n    values: List[float, 4]\n\n@api.post(\"/embed\", stories=[\"US-003\"])\ndef embed(request: Embedding) -> Embedding:\n    return request\n\nclass Note:\n    text: borrowed[str]\n\n@api.post(\"/notes\", stories=[\"US-004\"])\ndef create_note(request: Note) -> dict:\n    return {\"echo\": request}\n\n@api.get(\"/orders/{id}\", stories=[\"US-010\"])\ndef get_order(id: int) -> dict:\n    return {\"id\": id}\n\n@api.get(\"/search\", stories=[\"US-020\"])\ndef search(page: int, size: int, name: str) -> dict:\n    return {\"page\": page, \"size\": size, \"name\": name}\n\n@api.get(\"/aggregate/{limit}\", stories=[\"US-021\"])\ndef aggregate(limit: int) -> dict:\n    total = 0\n    for item in [1, 2, 3, 4]:\n        total = total + item\n    match limit:\n        case 1:\n            return {\"total\": total, \"label\": \"single\"}\n        case _:\n            return {\"total\": total, \"label\": \"many\"}\n";
 
 /// Build the fixture for the wasm target and answer the module path.
 fn build_wasm(dir: &ScratchDir, name: &str) -> std::path::PathBuf {
@@ -177,6 +178,40 @@ fn assert_protocol(run: impl Fn(&str) -> String) {
     // A trailing slash adds an empty segment and misses too.
     let trailing = run("{\"method\":\"GET\",\"path\":\"/orders/42/\"}");
     assert_eq!(status(&trailing), 404, "{trailing}");
+
+    // A body that loops over a list literal and matches an integer parameter:
+    // the loop sums the list and the match selects the label, on both the
+    // host build and the module.
+    let single = run("{\"method\":\"GET\",\"path\":\"/aggregate/1\"}");
+    assert_eq!(status(&single), 200, "{single}");
+    assert_eq!(
+        body(&single)
+            .get("total")
+            .and_then(serde_json::Value::as_i64),
+        Some(10),
+        "the loop sums the list: {single}"
+    );
+    assert_eq!(
+        body(&single)
+            .get("label")
+            .and_then(serde_json::Value::as_str),
+        Some("single"),
+        "the match arms the parameter: {single}"
+    );
+
+    // The wildcard catches every value the earlier arm leaves.
+    let many = run("{\"method\":\"GET\",\"path\":\"/aggregate/7\"}");
+    assert_eq!(status(&many), 200, "{many}");
+    assert_eq!(
+        body(&many).get("total").and_then(serde_json::Value::as_i64),
+        Some(10),
+        "the loop sums the list: {many}"
+    );
+    assert_eq!(
+        body(&many).get("label").and_then(serde_json::Value::as_str),
+        Some("many"),
+        "the wildcard catches every other value: {many}"
+    );
 
     // Query parameters: values reach the service as their declared types.
     let search = run("{\"method\":\"GET\",\"path\":\"/search?page=2&size=10&name=ada\"}");

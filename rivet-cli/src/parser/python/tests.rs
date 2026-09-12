@@ -126,8 +126,8 @@ fn rejects_unknown_decorator_keyword() {
     assert!(!diagnostic.suggested_fix.is_empty());
 }
 
-/// A loop is still outside the body subset; an assignment is not, which is
-/// what this test used to guard.
+/// A `while` loop is still outside the body subset; `for` and `match` are not,
+/// which is what this test used to guard alongside the assignment check.
 #[test]
 fn rejects_unsupported_body_statement() {
     let diagnostic = parse(
@@ -394,6 +394,7 @@ fn a_handler_name_the_generated_crate_owns_still_parses() {
 }
 
 mod borrow;
+mod flow;
 mod path_params;
 mod query_params;
 mod statements;

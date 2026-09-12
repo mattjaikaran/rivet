@@ -1,13 +1,17 @@
 use super::*;
 use crate::config::{PluginConfig, Transport, TransportMode};
 use crate::test_support::ScratchDir;
-use rivet_core::ir::{HttpMethod, ResponseSpec};
+use rivet_core::ir::{
+    BinOp, Expr, HttpMethod, RequestSpec, ResponseSpec, RouteDefinition, RouteParam,
+    ServiceBlueprint, Stmt, TypeRef,
+};
 use std::fs;
 
 mod features;
 mod fixtures;
 mod path_params;
 mod query_params;
+mod statements;
 mod zero_copy;
 use fixtures::*;
 

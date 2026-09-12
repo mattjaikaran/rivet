@@ -20,6 +20,7 @@ use std::path::Path;
 
 mod admin;
 mod assets;
+mod body;
 mod borrow;
 mod channel;
 mod discovery;
@@ -458,36 +459,96 @@ fn param_types(route: &RouteDefinition) -> HashMap<String, TypeRef> {
 }
 
 /// Count identifier uses across every expression of a route's body.
+///
+/// A name a loop body uses runs once per element, so a single textual use
+/// there still moves a non-`Copy` value on the first iteration. [`Emitter::
+/// owned_ident`] clones a name its count shows the body uses more than once,
+/// so a use inside a loop counts twice. The innermost loop's own binding is
+/// exempt: each of its iterations hands that name a fresh value, so moving it
+/// is legal. An outer loop's binding is not exempt inside an inner loop, where
+/// it is used once per inner element.
 fn count_idents_in(route: &RouteDefinition) -> HashMap<String, usize> {
-    fn visit(expr: &Expr, counts: &mut HashMap<String, usize>) {
+    /// True when `name` is the innermost loop's own binding.
+    fn is_innermost_binding(bindings: &[String], name: &str) -> bool {
+        bindings.last().is_some_and(|binding| binding == name)
+    }
+
+    /// Add `weight` to every identifier the expression mentions.
+    fn visit(expr: &Expr, weight: usize, bindings: &[String], counts: &mut HashMap<String, usize>) {
         match expr {
-            Expr::Ident(name) => *counts.entry(name.clone()).or_insert(0) += 1,
-            Expr::Array(items) => items.iter().for_each(|item| visit(item, counts)),
-            Expr::Object(entries) => entries.iter().for_each(|(_, item)| visit(item, counts)),
-            Expr::Construct { args, .. } => args.iter().for_each(|(_, item)| visit(item, counts)),
-            Expr::Binary { left, right, .. } => {
-                visit(left, counts);
-                visit(right, counts);
+            Expr::Ident(name) => {
+                // A loop's own binding takes a fresh value each iteration, so
+                // moving it is legal and it needs no clone.
+                let weight = if is_innermost_binding(bindings, name) {
+                    1
+                } else {
+                    weight
+                };
+                *counts.entry(name.clone()).or_insert(0) += weight;
             }
-            Expr::Not(operand) => visit(operand, counts),
+            Expr::Array(items) => items
+                .iter()
+                .for_each(|item| visit(item, weight, bindings, counts)),
+            Expr::Object(entries) => entries
+                .iter()
+                .for_each(|(_, item)| visit(item, weight, bindings, counts)),
+            Expr::Construct { args, .. } => args
+                .iter()
+                .for_each(|(_, item)| visit(item, weight, bindings, counts)),
+            Expr::Binary { left, right, .. } => {
+                visit(left, weight, bindings, counts);
+                visit(right, weight, bindings, counts);
+            }
+            Expr::Not(operand) => visit(operand, weight, bindings, counts),
             _ => {}
         }
     }
-    let mut counts = HashMap::new();
-    for stmt in Stmt::walk(&route.body) {
-        match stmt {
-            Stmt::Return(expr) => visit(expr, &mut counts),
-            Stmt::Assign { value, .. } => visit(value, &mut counts),
-            // The branch bodies are already part of the walk; only the
-            // conditions are not, because they guard the branches rather than
-            // being statements of them.
-            Stmt::If { branches, .. } => {
-                for (cond, _) in branches {
-                    visit(cond, &mut counts);
+
+    /// Visit one block. `in_loop` marks a body that runs once per element.
+    fn block(
+        body: &[Stmt],
+        in_loop: bool,
+        bindings: &mut Vec<String>,
+        counts: &mut HashMap<String, usize>,
+    ) {
+        let weight = if in_loop { 2 } else { 1 };
+        for stmt in body {
+            match stmt {
+                Stmt::Return(expr) => visit(expr, weight, bindings, counts),
+                Stmt::Assign { value, .. } => visit(value, weight, bindings, counts),
+                Stmt::If {
+                    branches,
+                    otherwise,
+                } => {
+                    for (cond, branch) in branches {
+                        visit(cond, weight, bindings, counts);
+                        block(branch, in_loop, bindings, counts);
+                    }
+                    block(otherwise, in_loop, bindings, counts);
+                }
+                Stmt::For {
+                    name,
+                    iterable,
+                    body,
+                    ..
+                } => {
+                    visit(iterable, weight, bindings, counts);
+                    bindings.push(name.clone());
+                    block(body, true, bindings, counts);
+                    bindings.pop();
+                }
+                Stmt::Match { subject, arms } => {
+                    visit(subject, weight, bindings, counts);
+                    for (_, arm) in arms {
+                        block(arm, in_loop, bindings, counts);
+                    }
                 }
             }
         }
     }
+
+    let mut counts = HashMap::new();
+    block(&route.body, false, &mut Vec::new(), &mut counts);
     counts
 }
 
